@@ -16,6 +16,16 @@ from app.models import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_data_dir(tmp_path, monkeypatch):
+    """Point every test at a per-test ``SDC_DATA_DIR``.
+
+    Without this, importing ``app.main`` triggers the FastAPI lifespan
+    which calls ``init_db`` against the developer's working tree.
+    """
+    monkeypatch.setenv("SDC_DATA_DIR", str(tmp_path / "data"))
+
+
 @pytest.fixture
 def sample_issue() -> NewsletterIssue:
     """An issue patterned after `14.9-BeijingAutoShow-5.03.26` with stripped-down content."""

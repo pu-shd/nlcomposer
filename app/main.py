@@ -11,6 +11,7 @@ and the JSON-driven endpoints used by the front-end:
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +19,7 @@ from pathlib import Path
 
 import httpx
 
+from .db import connect, init_db
 from .eml import build_eml, build_eml_filename, render_html, render_text
 from .fetch import ArticleMetadata, fetch_article_metadata, validate_fetch_url
 from .models import NewsletterIssue
@@ -30,6 +32,17 @@ from .podcast import (
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _INDEX_HTML = _STATIC_DIR / "index.html"
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    conn = connect()
+    try:
+        init_db(conn)
+    finally:
+        conn.close()
+    yield
+
+
 app = FastAPI(
     title="sdc-composer",
     description=(
@@ -37,6 +50,7 @@ app = FastAPI(
         "matching the historical issue style."
     ),
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 if _STATIC_DIR.exists():

@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 *.eml.out
+data/
 .env
 .env.*
 !.env.example
