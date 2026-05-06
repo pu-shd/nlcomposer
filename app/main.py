@@ -11,15 +11,16 @@ and the JSON-driven endpoints used by the front-end:
 
 from __future__ import annotations
 
+import sqlite3
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 import httpx
 
-from .db import connect, init_db
+from .db import connect, get_db, init_db
 from .eml import build_eml, build_eml_filename, render_html, render_text
 from .fetch import ArticleMetadata, fetch_article_metadata, validate_fetch_url
 from .models import NewsletterIssue
@@ -28,6 +29,7 @@ from .podcast import (
     fetch_youtube_metadata,
     validate_youtube_url,
 )
+from .settings import AppSettings, load_settings, save_settings
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _INDEX_HTML = _STATIC_DIR / "index.html"
@@ -88,6 +90,21 @@ def download_eml(issue: NewsletterIssue) -> Response:
         media_type="message/rfc822",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.get("/api/settings", response_model=AppSettings)
+def get_settings(conn: sqlite3.Connection = Depends(get_db)) -> AppSettings:
+    """Return current app-wide settings, or built-in defaults if unset."""
+    return load_settings(conn)
+
+
+@app.put("/api/settings", response_model=AppSettings)
+def put_settings(
+    settings: AppSettings,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> AppSettings:
+    """Replace the stored settings with the supplied payload."""
+    return save_settings(conn, settings)
 
 
 @app.get("/api/fetch/article")

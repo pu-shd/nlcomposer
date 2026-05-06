@@ -10,6 +10,7 @@
 <header class="topbar">
   <h1>SDC Composer</h1>
   <div class="actions">
+    <button type="button" id="open-settings" class="btn ghost" aria-haspopup="dialog">Settings</button>
     <button type="button" id="toggle-preview" class="btn" aria-pressed="false">Hide preview</button>
     <button type="button" id="refresh-preview" class="btn">Refresh preview</button>
     <button type="button" id="download-eml" class="btn primary">Download .eml</button>
@@ -243,6 +244,54 @@
     <button type="button" class="btn-remove" aria-label="Remove">×</button>
   </div>
 </template>
+
+<dialog id="settings-dialog" aria-labelledby="settings-title">
+  <form id="settings-form" method="dialog" autocomplete="off">
+    <header class="dialog-header">
+      <h2 id="settings-title">App settings</h2>
+      <button type="button" class="btn-remove" id="settings-close" aria-label="Close">&times;</button>
+    </header>
+    <p class="hint">Defaults applied to every new draft. Edit once; carry across issues.</p>
+    <div class="grid-2">
+      <label>From name
+        <input type="text" name="from_name" required>
+      </label>
+      <label>From email
+        <input type="email" name="from_email" required>
+      </label>
+      <label>To email
+        <input type="email" name="to_email" required>
+      </label>
+      <label>Reply-To
+        <input type="email" name="reply_to" placeholder="optional">
+      </label>
+      <label class="span-2">Unsubscribe URL
+        <input type="url" name="unsubscribe_url" placeholder="https://...">
+      </label>
+      <label class="span-2">Masthead logo URL
+        <input type="url" name="masthead_logo_url" placeholder="https://...">
+      </label>
+      <label class="span-2">Default intro HTML
+        <textarea name="default_intro_html" rows="2" placeholder="<p>Greetings…</p>"></textarea>
+      </label>
+      <label class="span-2">Default footer HTML
+        <textarea name="default_footer_html" rows="2" placeholder="<p>This list is maintained by …</p>"></textarea>
+      </label>
+      <label>Preview debounce (ms)
+        <input type="number" name="preview_debounce_ms" min="0" max="5000" step="50">
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="auto_archive_on_download">
+        Auto-archive on .eml download
+      </label>
+    </div>
+    <footer class="dialog-actions">
+      <small id="settings-status" class="status" aria-live="polite"></small>
+      <button type="button" class="btn ghost" id="settings-cancel">Cancel</button>
+      <button type="submit" class="btn primary" id="settings-save">Save</button>
+    </footer>
+  </form>
+</dialog>
 
 <script src="/static/composer.js"></script>
 </body>

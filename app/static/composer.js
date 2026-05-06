@@ -434,13 +434,14 @@
 
   // ───────── Preview ─────────────────────────────────────────────────
   let pending = null;
+  let previewDebounceMs = 400;
   const schedulePreview = () => {
     setStatus('Editing…');
     if (pending) clearTimeout(pending);
     pending = setTimeout(() => {
       pending = null;
       doPreview();
-    }, 400);
+    }, previewDebounceMs);
   };
 
   const doPreview = async () => {
@@ -578,6 +579,150 @@
   form.addEventListener('input', schedulePreview);
   form.addEventListener('change', schedulePreview);
 
+  // ───────── Settings dialog ─────────────────────────────────────────
+  // App-wide defaults loaded from /api/settings. Used to seed the form on
+  // first load (so the user can edit defaults once and have every new
+  // draft start there) and exposed via a modal dialog.
+  const settingsDialog = document.getElementById('settings-dialog');
+  const settingsForm = document.getElementById('settings-form');
+  const settingsStatus = document.getElementById('settings-status');
+  const SETTINGS_FIELDS = [
+    'from_name', 'from_email', 'to_email', 'reply_to',
+    'unsubscribe_url', 'masthead_logo_url',
+    'default_intro_html', 'default_footer_html',
+    'preview_debounce_ms', 'auto_archive_on_download',
+  ];
+
+  let currentSettings = null;
+
+  const setSettingsStatus = (msg, kind = 'info') => {
+    if (!settingsStatus) return;
+    settingsStatus.textContent = msg || '';
+    settingsStatus.dataset.kind = kind;
+  };
+
+  const fillSettingsForm = (s) => {
+    SETTINGS_FIELDS.forEach((k) => {
+      const el = settingsForm.elements[k];
+      if (!el) return;
+      const v = s[k];
+      if (el.type === 'checkbox') el.checked = !!v;
+      else el.value = v == null ? '' : v;
+    });
+  };
+
+  const collectSettings = () => {
+    const out = {};
+    SETTINGS_FIELDS.forEach((k) => {
+      const el = settingsForm.elements[k];
+      if (!el) return;
+      if (el.type === 'checkbox') {
+        out[k] = el.checked;
+      } else if (el.type === 'number') {
+        const n = el.value === '' ? null : Number(el.value);
+        if (n !== null && !Number.isNaN(n)) out[k] = n;
+      } else {
+        const v = trim(el.value);
+        if (v !== '') out[k] = v;
+      }
+    });
+    return out;
+  };
+
+  // Apply settings to the main composer form. Called once on initial load
+  // (before the user can have edited anything) so saved settings win over
+  // the HTML's value="…" attributes after a page refresh. Required fields
+  // (from_name/from_email/to_email) are always overwritten; optional ones
+  // only when the setting is non-empty so they don't clobber HTML defaults.
+  const applySettingsToForm = (s) => {
+    if (!s) return;
+    const set = (name, val) => {
+      const el = form.elements[name];
+      if (el && val !== null && val !== undefined) el.value = String(val);
+    };
+    set('from_name', s.from_name);
+    set('from_email', s.from_email);
+    set('to_email', s.to_email);
+    if (s.reply_to) set('reply_to', s.reply_to);
+    if (s.unsubscribe_url) set('unsubscribe_url', s.unsubscribe_url);
+    if (s.masthead_logo_url) set('masthead_logo_url', s.masthead_logo_url);
+    if (s.default_intro_html) set('intro_html', s.default_intro_html);
+    if (s.default_footer_html) set('footer_html', s.default_footer_html);
+    if (typeof s.preview_debounce_ms === 'number' && s.preview_debounce_ms >= 0) {
+      previewDebounceMs = s.preview_debounce_ms;
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (!res.ok) return null;
+      const data = await res.json();
+      currentSettings = data;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const openSettingsDialog = async () => {
+    setSettingsStatus('');
+    if (!currentSettings) await loadSettings();
+    if (currentSettings) fillSettingsForm(currentSettings);
+    if (typeof settingsDialog.showModal === 'function') {
+      settingsDialog.showModal();
+    } else {
+      settingsDialog.setAttribute('open', '');
+    }
+  };
+
+  const closeSettingsDialog = () => {
+    if (typeof settingsDialog.close === 'function') {
+      settingsDialog.close();
+    } else {
+      settingsDialog.removeAttribute('open');
+    }
+  };
+
+  const saveSettings = async (e) => {
+    if (e) e.preventDefault();
+    const payload = collectSettings();
+    setSettingsStatus('Saving…');
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setSettingsStatus(`Save ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      currentSettings = await res.json();
+      // Reflect any preview-debounce change immediately.
+      if (typeof currentSettings.preview_debounce_ms === 'number') {
+        previewDebounceMs = currentSettings.preview_debounce_ms;
+      }
+      setSettingsStatus('Saved', 'ok');
+      setTimeout(closeSettingsDialog, 350);
+    } catch (err) {
+      setSettingsStatus('Network error: ' + err.message, 'error');
+    }
+  };
+
+  document.getElementById('open-settings').addEventListener('click', openSettingsDialog);
+  document.getElementById('settings-cancel').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeSettingsDialog();
+  });
+  document.getElementById('settings-close').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeSettingsDialog();
+  });
+  settingsForm.addEventListener('submit', saveSettings);
+
   // ───────── Initial seed: today's date + a starter article + sponsor block ──
   const today = new Date().toISOString().slice(0, 10);
   form.elements['issue_date'].value = today;
@@ -591,5 +736,10 @@
     html: '<p>Carry-forward block — duplicate from last issue.</p>',
     enabled: true,
   });
-  doPreview();
+  // Pull settings before the first preview so any saved defaults
+  // (from_name/from_email/etc.) end up in the rendered .eml.
+  loadSettings().then((s) => {
+    if (s) applySettingsToForm(s);
+    doPreview();
+  });
 })();
