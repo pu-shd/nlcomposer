@@ -399,8 +399,9 @@ html, body {
   align-self: end;
 }
 
-/* Templates dialog ─────────────────────────────────────────────── */
-#templates-dialog {
+/* Templates and Drafts dialogs ─────────────────────────────────── */
+#templates-dialog,
+#drafts-dialog {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0;
@@ -409,16 +410,19 @@ html, body {
   background: var(--panel);
   color: var(--text);
 }
-#templates-dialog::backdrop {
+#templates-dialog::backdrop,
+#drafts-dialog::backdrop {
   background: rgba(31, 36, 48, 0.45);
 }
-#templates-dialog .dialog-body {
+#templates-dialog .dialog-body,
+#drafts-dialog .dialog-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 18px 20px 16px;
 }
-#templates-dialog .dialog-header {
+#templates-dialog .dialog-header,
+#drafts-dialog .dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -426,18 +430,21 @@ html, body {
   padding-bottom: 8px;
   margin: 0;
 }
-#templates-dialog .dialog-header h2 {
+#templates-dialog .dialog-header h2,
+#drafts-dialog .dialog-header h2 {
   margin: 0;
   font-size: 15px;
   color: var(--accent);
   letter-spacing: 0.02em;
 }
-#templates-dialog .hint {
+#templates-dialog .hint,
+#drafts-dialog .hint {
   margin: 0;
   font-size: 12px;
   color: var(--muted);
 }
-#templates-dialog .templates-list {
+#templates-dialog .templates-list,
+#drafts-dialog .templates-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -447,7 +454,8 @@ html, body {
   max-height: 40vh;
   overflow-y: auto;
 }
-#templates-dialog .template-row {
+#templates-dialog .template-row,
+#drafts-dialog .template-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -460,21 +468,25 @@ html, body {
   background: var(--accent-soft);
   border-color: var(--accent);
 }
-#templates-dialog .template-meta {
+#templates-dialog .template-meta,
+#drafts-dialog .template-meta {
   display: flex;
   flex-direction: column;
   gap: 2px;
   flex: 1;
   min-width: 0;
 }
-#templates-dialog .template-meta strong {
+#templates-dialog .template-meta strong,
+#drafts-dialog .template-meta strong {
   font-size: 13px;
 }
-#templates-dialog .template-meta small {
+#templates-dialog .template-meta small,
+#drafts-dialog .template-meta small {
   color: var(--muted);
   font-size: 11px;
 }
-#templates-dialog .template-actions {
+#templates-dialog .template-actions,
+#drafts-dialog .template-actions {
   display: flex;
   gap: 6px;
   flex: 0 0 auto;
@@ -492,28 +504,32 @@ html, body {
   font-weight: 600;
   vertical-align: middle;
 }
-#templates-dialog .templates-create {
+#templates-dialog .templates-create,
+#drafts-dialog .templates-create {
   border-top: 1px solid var(--border);
   padding-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-#templates-dialog .templates-create h3 {
+#templates-dialog .templates-create h3,
+#drafts-dialog .templates-create h3 {
   margin: 0;
   font-size: 13px;
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-#templates-dialog .templates-create label {
+#templates-dialog .templates-create label,
+#drafts-dialog .templates-create label {
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
   color: var(--muted);
 }
-#templates-dialog .templates-create input {
+#templates-dialog .templates-create input,
+#drafts-dialog .templates-create input {
   font: inherit;
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -521,13 +537,16 @@ html, body {
   background: white;
   color: var(--text);
 }
-#templates-dialog .grid-2 {
+#templates-dialog .grid-2,
+#drafts-dialog .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px 10px;
 }
-#templates-dialog .span-2 { grid-column: 1 / -1; }
-#templates-dialog .dialog-actions {
+#templates-dialog .span-2,
+#drafts-dialog .span-2 { grid-column: 1 / -1; }
+#templates-dialog .dialog-actions,
+#drafts-dialog .dialog-actions {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -536,7 +555,8 @@ html, body {
   padding-top: 10px;
   margin: 4px 0 0;
 }
-#templates-dialog .dialog-actions .status {
+#templates-dialog .dialog-actions .status,
+#drafts-dialog .dialog-actions .status {
   margin-right: auto;
   text-align: left;
   min-width: 0;

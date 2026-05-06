@@ -21,6 +21,17 @@ from pathlib import Path
 import httpx
 
 from .db import connect, get_db, init_db
+from .draft_store import (
+    Draft,
+    DraftCreate,
+    DraftSummary,
+    DraftUpdate,
+    create_draft,
+    delete_draft,
+    get_draft,
+    list_drafts,
+    update_draft,
+)
 from .eml import build_eml, build_eml_filename, render_html, render_text
 from .fetch import ArticleMetadata, fetch_article_metadata, validate_fetch_url
 from .models import NewsletterIssue
@@ -178,6 +189,56 @@ def api_delete_template(
         raise HTTPException(status_code=409, detail=str(e))
     if not deleted:
         raise HTTPException(status_code=404, detail="Template not found")
+    return Response(status_code=204)
+
+
+@app.get("/api/drafts", response_model=list[DraftSummary])
+def api_list_drafts(
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[DraftSummary]:
+    """Return all drafts (most-recently-updated first), without their payloads."""
+    return list_drafts(conn)
+
+
+@app.get("/api/drafts/{draft_id}", response_model=Draft)
+def api_get_draft(
+    draft_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Draft:
+    d = get_draft(conn, draft_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return d
+
+
+@app.post("/api/drafts", response_model=Draft, status_code=201)
+def api_create_draft(
+    body: DraftCreate,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Draft:
+    return create_draft(conn, body)
+
+
+@app.put("/api/drafts/{draft_id}", response_model=Draft)
+def api_update_draft(
+    draft_id: int,
+    body: DraftUpdate,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Draft:
+    updated = update_draft(conn, draft_id, body)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return updated
+
+
+@app.delete("/api/drafts/{draft_id}", status_code=204)
+def api_delete_draft(
+    draft_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Response:
+    deleted = delete_draft(conn, draft_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Draft not found")
     return Response(status_code=204)
 
 

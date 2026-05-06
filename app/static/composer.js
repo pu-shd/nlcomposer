@@ -947,6 +947,169 @@
     closeTemplatesDialog();
   });
 
+  // ───────── Drafts dialog ──────────────────────────────────────────
+  // Saved-but-incomplete issues. Differs from templates: no builtin flag,
+  // no name uniqueness, list ordered by recency.
+  const draftsDialog = document.getElementById('drafts-dialog');
+  const draftsList = document.getElementById('drafts-list');
+  const draftsCreateForm = document.getElementById('drafts-create-form');
+  const draftsStatus = document.getElementById('drafts-status');
+
+  const setDraftsStatus = (msg, kind = 'info') => {
+    if (!draftsStatus) return;
+    draftsStatus.textContent = msg || '';
+    draftsStatus.dataset.kind = kind;
+  };
+
+  const formatDraftTimestamp = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString();
+  };
+
+  const renderDraftsList = (items) => {
+    if (!Array.isArray(items) || items.length === 0) {
+      draftsList.innerHTML = '<li class="hint">No drafts yet.</li>';
+      return;
+    }
+    draftsList.innerHTML = items.map((d) => `
+      <li data-draft-id="${d.id}" class="template-row">
+        <div class="template-meta">
+          <strong>${escapeHtml(d.name)}</strong>
+          <small>updated ${escapeHtml(formatDraftTimestamp(d.updated_at))}</small>
+        </div>
+        <div class="template-actions">
+          <button type="button" class="btn" data-action="load">Load</button>
+          <button type="button" class="btn ghost" data-action="delete">Delete</button>
+        </div>
+      </li>
+    `).join('');
+  };
+
+  const refreshDraftsList = async () => {
+    setDraftsStatus('');
+    try {
+      const res = await fetch('/api/drafts');
+      if (!res.ok) {
+        setDraftsStatus(`List failed: ${res.status}`, 'error');
+        return;
+      }
+      renderDraftsList(await res.json());
+    } catch (e) {
+      setDraftsStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  const loadDraft = async (id) => {
+    setDraftsStatus('Loading…');
+    try {
+      const res = await fetch(`/api/drafts/${id}`);
+      if (!res.ok) {
+        setDraftsStatus(`Load ${res.status}`, 'error');
+        return;
+      }
+      const draft = await res.json();
+      loadIssueIntoForm(draft.payload || {});
+      const dateEl = form.elements['issue_date'];
+      if (dateEl && !dateEl.value) {
+        dateEl.value = new Date().toISOString().slice(0, 10);
+      }
+      setDraftsStatus(`Loaded "${draft.name}"`, 'ok');
+      setTimeout(closeDraftsDialog, 350);
+    } catch (e) {
+      setDraftsStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  const deleteDraft = async (id, name) => {
+    if (!confirm(`Delete draft "${name}"? This cannot be undone.`)) return;
+    setDraftsStatus('Deleting…');
+    try {
+      const res = await fetch(`/api/drafts/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setDraftsStatus(`Delete ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      await refreshDraftsList();
+      setDraftsStatus('Deleted.', 'ok');
+    } catch (e) {
+      setDraftsStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  draftsList.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const row = btn.closest('[data-draft-id]');
+    if (!row) return;
+    const id = Number(row.dataset.draftId);
+    if (btn.dataset.action === 'load') loadDraft(id);
+    else if (btn.dataset.action === 'delete') {
+      const name = row.querySelector('strong')?.textContent || '';
+      deleteDraft(id, name);
+    }
+  });
+
+  const openDraftsDialog = async () => {
+    setDraftsStatus('');
+    draftsCreateForm.reset();
+    await refreshDraftsList();
+    if (typeof draftsDialog.showModal === 'function') {
+      draftsDialog.showModal();
+    } else {
+      draftsDialog.setAttribute('open', '');
+    }
+  };
+
+  const closeDraftsDialog = () => {
+    if (typeof draftsDialog.close === 'function') {
+      draftsDialog.close();
+    } else {
+      draftsDialog.removeAttribute('open');
+    }
+  };
+
+  draftsCreateForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(draftsCreateForm);
+    const name = trim(fd.get('name') || '');
+    if (!name) {
+      setDraftsStatus('Name required.', 'error');
+      return;
+    }
+    let payload;
+    try { payload = buildIssue(); }
+    catch (err) { setDraftsStatus('Build error: ' + err.message, 'error'); return; }
+    setDraftsStatus('Saving…');
+    try {
+      const res = await fetch('/api/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, payload }),
+      });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setDraftsStatus(`Save ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      draftsCreateForm.reset();
+      await refreshDraftsList();
+      setDraftsStatus('Saved.', 'ok');
+    } catch (err) {
+      setDraftsStatus('Network error: ' + err.message, 'error');
+    }
+  });
+
+  document.getElementById('open-drafts').addEventListener('click', openDraftsDialog);
+  document.getElementById('drafts-close').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeDraftsDialog();
+  });
+
   document.getElementById('open-settings').addEventListener('click', openSettingsDialog);
   document.getElementById('settings-cancel').addEventListener('click', (e) => {
     e.preventDefault();

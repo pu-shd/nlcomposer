@@ -12,6 +12,7 @@
   <div class="actions">
     <button type="button" id="open-settings" class="btn ghost" aria-haspopup="dialog">Settings</button>
     <button type="button" id="open-templates" class="btn ghost" aria-haspopup="dialog">Templates</button>
+    <button type="button" id="open-drafts" class="btn ghost" aria-haspopup="dialog">Drafts</button>
     <button type="button" id="toggle-preview" class="btn" aria-pressed="false">Hide preview</button>
     <button type="button" id="refresh-preview" class="btn">Refresh preview</button>
     <button type="button" id="download-eml" class="btn primary">Download .eml</button>
@@ -317,6 +318,31 @@
       <footer class="dialog-actions">
         <small id="templates-status" class="status" aria-live="polite"></small>
         <button type="submit" class="btn primary">Save template</button>
+      </footer>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="drafts-dialog" aria-labelledby="drafts-title">
+  <div class="dialog-body">
+    <header class="dialog-header">
+      <h2 id="drafts-title">Drafts</h2>
+      <button type="button" class="btn-remove" id="drafts-close" aria-label="Close">&times;</button>
+    </header>
+    <p class="hint">Save the current form as a draft, then load or delete it later. Drafts persist across page reloads.</p>
+
+    <ul class="templates-list" id="drafts-list" aria-live="polite"></ul>
+
+    <form id="drafts-create-form" autocomplete="off" class="templates-create">
+      <h3>Save current as draft</h3>
+      <div class="grid-2">
+        <label class="span-2">Name
+          <input type="text" name="name" required placeholder="e.g. WIP — Beijing show">
+        </label>
+      </div>
+      <footer class="dialog-actions">
+        <small id="drafts-status" class="status" aria-live="polite"></small>
+        <button type="submit" class="btn primary">Save draft</button>
       </footer>
     </form>
   </div>
