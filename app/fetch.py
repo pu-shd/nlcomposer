@@ -11,11 +11,15 @@ network call without touching the public Internet.
 
 from __future__ import annotations
 
-from typing import Optional, TypedDict
+import json
+from datetime import date, datetime
+from typing import Any, Iterable, Optional, TypedDict
 from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+
+from .links import sanitize_url
 
 _DEFAULT_TIMEOUT = 8.0
 _DEFAULT_USER_AGENT = (
@@ -29,6 +33,7 @@ class ArticleMetadata(TypedDict, total=False):
 
     headline: str
     byline: str
+    date_text: str
     pull_quote: str
     publication_logo_url: str
     read_more_url: str
@@ -43,7 +48,8 @@ def validate_fetch_url(url: str) -> str:
     accidents (``file://``, ``http://localhost``).
     """
 
-    parsed = urlparse(url.strip())
+    cleaned = sanitize_url(url.strip()) or ""
+    parsed = urlparse(cleaned)
     if parsed.scheme not in ("http", "https"):
         raise ValueError("only http(s) URLs are supported")
     if not parsed.netloc:
@@ -53,7 +59,7 @@ def validate_fetch_url(url: str) -> str:
         ".localhost"
     ):
         raise ValueError("URL host is not allowed")
-    return url.strip()
+    return cleaned
 
 
 def _meta_content(soup: BeautifulSoup, **attrs: str) -> Optional[str]:
@@ -72,6 +78,122 @@ def _first(*values: Optional[str]) -> Optional[str]:
         if v:
             return v
     return None
+
+
+def _walk_jsonld(payload: Any) -> Iterable[dict]:
+    """Yield every dict inside a JSON-LD payload (handles ``@graph`` and lists)."""
+
+    if isinstance(payload, dict):
+        yield payload
+        graph = payload.get("@graph")
+        if isinstance(graph, list):
+            for item in graph:
+                yield from _walk_jsonld(item)
+    elif isinstance(payload, list):
+        for item in payload:
+            yield from _walk_jsonld(item)
+
+
+def _jsonld_author_name(author: Any) -> Optional[str]:
+    """Pull a printable name out of a JSON-LD ``author`` field."""
+
+    if isinstance(author, str):
+        return author.strip() or None
+    if isinstance(author, dict):
+        name = author.get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+        return None
+    if isinstance(author, list):
+        names: list[str] = []
+        for item in author:
+            n = _jsonld_author_name(item)
+            if n:
+                names.append(n)
+        if names:
+            return ", ".join(names)
+    return None
+
+
+def _parse_jsonld_meta(soup: BeautifulSoup) -> dict[str, Optional[str]]:
+    """Scan ``<script type="application/ld+json">`` blocks for author + date."""
+
+    out: dict[str, Optional[str]] = {"author": None, "date": None}
+    for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+        text = script.string or script.get_text() or ""
+        text = text.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        for entry in _walk_jsonld(payload):
+            if not isinstance(entry, dict):
+                continue
+            if not out["author"] and "author" in entry:
+                out["author"] = _jsonld_author_name(entry["author"])
+            if not out["date"]:
+                d = entry.get("datePublished") or entry.get("dateCreated")
+                if isinstance(d, str) and d.strip():
+                    out["date"] = d.strip()
+            if out["author"] and out["date"]:
+                return out
+    return out
+
+
+def _time_datetime(soup: BeautifulSoup) -> Optional[str]:
+    """Return the ``datetime`` attr from the first ``<time datetime=…>`` tag."""
+
+    tag = soup.find("time", attrs={"datetime": True})
+    if tag is None:
+        return None
+    val = tag.get("datetime")
+    if isinstance(val, str) and val.strip():
+        return val.strip()
+    return None
+
+
+def _clean_byline(value: Optional[str]) -> Optional[str]:
+    """Drop URL-shaped values (``article:author`` often holds a profile URL)."""
+
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.lower().startswith(("http://", "https://")):
+        return None
+    return text
+
+
+def _format_short_date(raw: Optional[str]) -> Optional[str]:
+    """Render an ISO-8601 datetime / date into the ``"Apr 27"`` style we print.
+
+    The byline format Alain uses in the corpus is short month + day, no year
+    (the issue date already supplies the year). We accept both
+    ``2026-04-27T10:00:00Z`` and ``2026-04-27`` shapes.
+    """
+
+    if not raw:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    # ``Z`` suffix → +00:00 so ``fromisoformat`` accepts it (Py ≥ 3.11 also
+    # parses ``Z`` natively, but normalizing is harmless and broader).
+    norm = text.replace("Z", "+00:00")
+    parsed: Optional[date] = None
+    try:
+        parsed = datetime.fromisoformat(norm).date()
+    except ValueError:
+        try:
+            parsed = date.fromisoformat(text[:10])
+        except ValueError:
+            parsed = None
+    if parsed is None:
+        return None
+    return f"{parsed.strftime('%b')} {parsed.day}"
 
 
 def _find_icon_href(soup: BeautifulSoup) -> Optional[str]:
@@ -99,6 +221,7 @@ def parse_article_metadata(html: str, base_url: str) -> ArticleMetadata:
 
     soup = BeautifulSoup(html, "html.parser")
     out: ArticleMetadata = {}
+    jsonld = _parse_jsonld_meta(soup)
 
     title = _first(
         _meta_content(soup, property="og:title"),
@@ -108,14 +231,35 @@ def parse_article_metadata(html: str, base_url: str) -> ArticleMetadata:
     if title:
         out["headline"] = title
 
-    byline = _first(
+    byline = _clean_byline(_first(
         _meta_content(soup, **{"name": "author"}),
-        _meta_content(soup, property="article:author"),
+        _clean_byline(_meta_content(soup, property="article:author")),
         _meta_content(soup, **{"name": "byl"}),
         _meta_content(soup, **{"name": "sailthru.author"}),
-    )
+        _meta_content(soup, **{"name": "parsely-author"}),
+        _meta_content(soup, **{"name": "twitter:creator"}),
+        _meta_content(soup, **{"name": "DC.creator"}),
+        jsonld.get("author"),
+    ))
     if byline:
         out["byline"] = byline
+
+    date_raw = _first(
+        _meta_content(soup, property="article:published_time"),
+        _meta_content(soup, property="og:article:published_time"),
+        _meta_content(soup, **{"itemprop": "datePublished"}),
+        _meta_content(soup, **{"name": "parsely-pub-date"}),
+        _meta_content(soup, **{"name": "date"}),
+        _meta_content(soup, **{"name": "pubdate"}),
+        _meta_content(soup, **{"name": "publishdate"}),
+        _meta_content(soup, **{"name": "DC.date.issued"}),
+        _meta_content(soup, **{"name": "sailthru.date"}),
+        jsonld.get("date"),
+        _time_datetime(soup),
+    )
+    formatted_date = _format_short_date(date_raw)
+    if formatted_date:
+        out["date_text"] = formatted_date
 
     excerpt = _first(
         _meta_content(soup, property="og:description"),

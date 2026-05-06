@@ -30,6 +30,34 @@
   // ───────── Helpers ─────────────────────────────────────────────────
   const trim = (v) => (typeof v === 'string' ? v.trim() : v);
   const nonEmpty = (v) => v !== '' && v !== null && v !== undefined;
+
+  // Mirror of app/links.py: unwrap Microsoft Safelinks before they enter
+  // the issue. Server-side validation runs the same logic, but doing it
+  // on the client too means the user sees the clean URL immediately —
+  // including before they click Fetch — and avoids a round-trip.
+  const SAFELINK_HOST_RX = /(^|\.)safelinks\.protection\.outlook\.com$/i;
+  const sanitizeUrl = (raw) => {
+    if (typeof raw !== 'string') return raw;
+    let current = raw.trim();
+    for (let i = 0; i < 5; i += 1) {
+      let parsed;
+      try { parsed = new URL(current); } catch { return current; }
+      if (!SAFELINK_HOST_RX.test(parsed.hostname)) return current;
+      const inner = parsed.searchParams.get('url') || parsed.searchParams.get('URL');
+      if (!inner) return current;
+      let innerParsed;
+      try { innerParsed = new URL(inner); } catch { return current; }
+      if (!/^https?:$/.test(innerParsed.protocol)) return current;
+      current = inner;
+    }
+    return current;
+  };
+  const sanitizeUrlInput = (input) => {
+    if (!input) return '';
+    const cleaned = sanitizeUrl(input.value || '');
+    if (cleaned !== input.value) input.value = cleaned;
+    return cleaned;
+  };
   const setStatus = (msg, kind = 'info') => {
     status.textContent = msg || '';
     status.dataset.kind = kind;
@@ -102,7 +130,7 @@
     const urlInput = card.querySelector('[data-field="url"]');
     const statusEl = card.querySelector('[data-role="fetch-status"]');
     const button = card.querySelector('[data-action="fetch-article"]');
-    const url = trim(urlInput?.value || '');
+    const url = sanitizeUrlInput(urlInput);
     const setFetchStatus = (msg, kind = 'info') => {
       if (!statusEl) return;
       statusEl.textContent = msg || '';
@@ -128,7 +156,7 @@
         return;
       }
       const meta = await res.json();
-      const fields = ['headline', 'byline', 'pull_quote', 'publication_logo_url', 'read_more_url'];
+      const fields = ['headline', 'byline', 'date_text', 'pull_quote', 'publication_logo_url', 'read_more_url'];
       let filled = 0;
       fields.forEach((f) => {
         const el = card.querySelector(`[data-field="${f}"]`);
@@ -179,7 +207,7 @@
     const urlInput = root.querySelector('[data-field="youtube_video_url"]');
     const statusEl = root.querySelector('[data-role="youtube-fetch-status"]');
     const button = root.querySelector('[data-action="fetch-youtube"]');
-    const url = trim(urlInput?.value || '');
+    const url = sanitizeUrlInput(urlInput);
     const setFetchStatus = (msg, kind = 'info') => {
       if (!statusEl) return;
       statusEl.textContent = msg || '';
@@ -507,6 +535,46 @@
     location.reload();
   });
 
+  // ───────── Preview pane toggle + viewport switch ───────────────────
+  const layout = document.querySelector('.layout');
+  const previewPane = document.querySelector('.preview-pane');
+  const togglePreview = document.getElementById('toggle-preview');
+  togglePreview.addEventListener('click', () => {
+    const hidden = layout.classList.toggle('preview-hidden');
+    togglePreview.textContent = hidden ? 'Show preview' : 'Hide preview';
+    togglePreview.setAttribute('aria-pressed', hidden ? 'true' : 'false');
+  });
+
+  const viewportButtons = document.querySelectorAll(
+    '.viewport-switch button[data-viewport]',
+  );
+  viewportButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const vp = btn.dataset.viewport;
+      previewPane.classList.remove('vp-phone', 'vp-tablet', 'vp-desktop');
+      previewPane.classList.add(`vp-${vp}`);
+      viewportButtons.forEach((b) =>
+        b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'),
+      );
+      // Force a fresh render so the iframe re-evaluates its embedded
+      // @media queries against the new width and the user sees the layout
+      // recomputed end-to-end (not just a CSS resize of stale content).
+      doPreview();
+    });
+  });
+
+  // Strip Microsoft Safelinks the moment a URL field is touched so the
+  // user sees the cleaned URL and the preview/eml never carry the wrapper.
+  // Run before schedulePreview so the debounced render reads cleaned values.
+  const maybeSanitizeUrlEvent = (e) => {
+    const t = e.target;
+    if (t && t.tagName === 'INPUT' && t.type === 'url') sanitizeUrlInput(t);
+  };
+  form.addEventListener('paste', (e) => {
+    // Wait a tick so the pasted value lands in input.value.
+    setTimeout(() => maybeSanitizeUrlEvent(e), 0);
+  });
+  form.addEventListener('change', maybeSanitizeUrlEvent);
   form.addEventListener('input', schedulePreview);
   form.addEventListener('change', schedulePreview);
 

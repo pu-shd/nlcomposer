@@ -1,5 +1,8 @@
 SmartDrivingCars Newsletter
 {{ issue.effective_display_date() }}
+
+{{ issue.header_slug() }}
+
 {{ issue.edition_line() }}
 
 {% if issue.intro_html -%}
@@ -40,6 +43,11 @@ SmartDrivingCars Newsletter
 * {{ h.override_label or a.headline }} — {{ a.url }}
 {% endif -%}
 {% endfor %}
+{% endif -%}
+{% if issue.footer_html -%}
+{{ issue.footer_html | striptags }}
+{% else -%}
+This newsletter is maintained by the newsletter editor.
 {% endif -%}
 {% if issue.unsubscribe_url -%}
 Unsubscribe: {{ issue.unsubscribe_url }}

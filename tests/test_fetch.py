@@ -31,6 +31,7 @@ SUBSTACK_HTML = """
     <meta property="og:title" content="Beijing Auto Show 2026: A Field Report">
     <meta property="og:description" content="Sore feet, a dead phone, and the cleanest single-day read on the Chinese auto industry we have had in years.">
     <meta name="author" content="P. Perspective">
+    <meta property="article:published_time" content="2026-04-27T08:30:00Z">
     <link rel="apple-touch-icon" href="/favicon-180.png">
     <link rel="icon" href="/favicon.ico">
   </head>
@@ -64,6 +65,7 @@ def test_parse_substack_style():
     )
     assert md["headline"] == "Beijing Auto Show 2026: A Field Report"
     assert md["byline"] == "P. Perspective"
+    assert md["date_text"] == "Apr 27"
     assert "Sore feet" in md["pull_quote"]
     # apple-touch-icon wins over icon, and relative path resolves:
     assert (
@@ -91,8 +93,87 @@ def test_parse_bare_page_falls_back_to_title_and_default_favicon():
     md = parse_article_metadata(BARE_HTML, "https://example.com/posts/1")
     assert md["headline"] == "Plain Page"
     assert "byline" not in md
+    assert "date_text" not in md
     assert "pull_quote" not in md
     assert md["publication_logo_url"] == "https://example.com/favicon.ico"
+
+
+JSONLD_HTML = """
+<!doctype html>
+<html><head>
+  <title>JSON-LD page</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {"@type": "WebSite", "name": "Example"},
+      {
+        "@type": "NewsArticle",
+        "headline": "JSON-LD headline",
+        "author": [{"@type": "Person", "name": "Jane Reporter"}],
+        "datePublished": "2026-05-03T13:14:00-04:00"
+      }
+    ]
+  }
+  </script>
+</head><body></body></html>
+"""
+
+
+def test_parse_jsonld_supplies_byline_and_date():
+    md = parse_article_metadata(JSONLD_HTML, "https://example.com/jsonld")
+    assert md["byline"] == "Jane Reporter"
+    assert md["date_text"] == "May 3"
+
+
+TIME_TAG_HTML = """
+<!doctype html>
+<html><head>
+  <title>Time-tag page</title>
+  <meta name="author" content="A. Writer">
+</head><body>
+  <article>
+    <time datetime="2026-01-09">January 9, 2026</time>
+    <p>...</p>
+  </article>
+</body></html>
+"""
+
+
+def test_parse_time_tag_used_when_no_meta_date():
+    md = parse_article_metadata(TIME_TAG_HTML, "https://example.com/time")
+    assert md["byline"] == "A. Writer"
+    assert md["date_text"] == "Jan 9"
+
+
+URL_BYLINE_HTML = """
+<!doctype html>
+<html><head>
+  <title>Profile-URL byline</title>
+  <meta property="article:author" content="https://example.com/authors/jane">
+  <meta name="byl" content="Jane Reporter">
+</head><body></body></html>
+"""
+
+
+def test_parse_drops_url_byline_in_favor_of_text():
+    md = parse_article_metadata(URL_BYLINE_HTML, "https://example.com/u")
+    # The article:author is a profile URL — must not become the byline.
+    assert md["byline"] == "Jane Reporter"
+
+
+BAD_DATE_HTML = """
+<!doctype html>
+<html><head>
+  <title>Bad date</title>
+  <meta property="article:published_time" content="not a date at all">
+</head><body></body></html>
+"""
+
+
+def test_parse_unparseable_date_omitted_silently():
+    md = parse_article_metadata(BAD_DATE_HTML, "https://example.com/x")
+    assert "date_text" not in md
 
 
 def test_validate_fetch_url_rejects_non_http():

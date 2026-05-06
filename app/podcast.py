@@ -20,6 +20,8 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+from .links import sanitize_url
+
 _DEFAULT_TIMEOUT = 8.0
 _DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (compatible; sdc-composer/0.1; "
@@ -76,7 +78,8 @@ def validate_youtube_url(url: str) -> str:
     does so the endpoint cannot be turned into an SSRF probe by accident.
     """
 
-    parsed = urlparse(url.strip())
+    cleaned = sanitize_url(url.strip()) or ""
+    parsed = urlparse(cleaned)
     if parsed.scheme not in ("http", "https"):
         raise ValueError("only http(s) URLs are supported")
     if not parsed.netloc:
@@ -86,9 +89,9 @@ def validate_youtube_url(url: str) -> str:
         ".localhost"
     ):
         raise ValueError("URL host is not allowed")
-    if not extract_video_id(url):
+    if not extract_video_id(cleaned):
         raise ValueError("URL is not a recognizable YouTube video URL")
-    return url.strip()
+    return cleaned
 
 
 # ───────── Timecode parsing ───────────────────────────────────────────────

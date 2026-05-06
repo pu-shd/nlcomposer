@@ -9,9 +9,17 @@ seen in production newsletters.
 from __future__ import annotations
 
 from datetime import date as _date
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import AnyHttpUrl, BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, BeforeValidator, Field
+
+from .links import sanitize_url
+
+# Any URL field on a NewsletterIssue runs through ``sanitize_url`` before
+# pydantic does its own URL parsing — so a Microsoft Safelink pasted into
+# the form (or arriving via the JSON API) gets unwrapped at the boundary
+# and the rest of the app only ever sees the real target.
+SanitizedHttpUrl = Annotated[AnyHttpUrl, BeforeValidator(sanitize_url)]
 
 
 class Article(BaseModel):
@@ -23,7 +31,7 @@ class Article(BaseModel):
     """
 
     headline: str
-    url: AnyHttpUrl
+    url: SanitizedHttpUrl
     byline: Optional[str] = None
     date_text: Optional[str] = Field(
         default=None,
@@ -31,11 +39,11 @@ class Article(BaseModel):
     )
     pull_quote: Optional[str] = None
     read_more_label: str = "Read more"
-    read_more_url: Optional[AnyHttpUrl] = Field(
+    read_more_url: Optional[SanitizedHttpUrl] = Field(
         default=None,
         description="Defaults to `url` when omitted.",
     )
-    publication_logo_url: Optional[AnyHttpUrl] = Field(
+    publication_logo_url: Optional[SanitizedHttpUrl] = Field(
         default=None,
         description="Small logo/icon shown next to the headline (favicon by default).",
     )
@@ -53,7 +61,7 @@ class PodcastTimecode(BaseModel):
 
     timecode: str = Field(description='As displayed, e.g. "0:50" or "17:35"')
     label: str
-    url: AnyHttpUrl = Field(
+    url: SanitizedHttpUrl = Field(
         description="Deep link into the YouTube video at the timecode.",
     )
 
@@ -63,9 +71,9 @@ class PodcastEpisode(BaseModel):
 
     episode_number: Optional[int] = None
     title: str
-    zoomcast_url: Optional[AnyHttpUrl] = None
-    podcast_url: Optional[AnyHttpUrl] = None
-    youtube_video_url: Optional[AnyHttpUrl] = None
+    zoomcast_url: Optional[SanitizedHttpUrl] = None
+    podcast_url: Optional[SanitizedHttpUrl] = None
+    youtube_video_url: Optional[SanitizedHttpUrl] = None
     guest: Optional[str] = None
     summary: Optional[str] = None
     timecodes: list[PodcastTimecode] = Field(default_factory=list)
@@ -112,7 +120,7 @@ class NewsletterIssue(BaseModel):
         default=None,
         description='Printed date string, e.g. "Sunday, May 3, 2026". Auto-generated if omitted.',
     )
-    masthead_logo_url: Optional[AnyHttpUrl] = None
+    masthead_logo_url: Optional[SanitizedHttpUrl] = None
     masthead_logo_cid: Optional[str] = Field(
         default=None,
         description="Content-ID for an inline-attached logo image (set by the eml builder).",
@@ -139,7 +147,7 @@ class NewsletterIssue(BaseModel):
     highlights: list[HighlightRef] = Field(default_factory=list)
 
     footer_html: Optional[str] = None
-    unsubscribe_url: Optional[AnyHttpUrl] = None
+    unsubscribe_url: Optional[SanitizedHttpUrl] = None
 
     def effective_subject(self) -> str:
         if self.subject:
@@ -160,6 +168,19 @@ class NewsletterIssue(BaseModel):
         return (
             f"{self.issue_number}{suffix} edition of the "
             f"{self.issue_year}{year_suffix} year of SmartDrivingCars eLetter"
+        )
+
+    def header_slug(self) -> str:
+        """The middle line of the masthead header — e.g. ``14.9-BeijingAutoShow-5.03.26``.
+
+        Format intentionally differs from the .eml filename: issue number and
+        month are unpadded, day and 2-digit year are zero-padded, mirroring
+        the historical newsletter style.
+        """
+        d = self.issue_date
+        return (
+            f"{self.issue_year}.{self.issue_number}-{self.issue_title}-"
+            f"{d.month}.{d.day:02d}.{d.year % 100:02d}"
         )
 
 

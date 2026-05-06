@@ -2,10 +2,35 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{ issue.effective_subject() }}</title>
+<style type="text/css">
+  /* Inline styles remain the desktop default — these only fire on small
+     viewports and on email clients that honor <style> blocks (Apple Mail,
+     iOS Mail, Gmail web/Android, Outlook for Mac). Outlook on Windows
+     ignores @media and falls back to the inline 640px layout. */
+  @media only screen and (max-width: 480px) {
+    table.container { width: 100% !important; }
+    .masthead-h1   { font-size: 22px !important; }
+    .article-pad   { padding: 14px 14px 0 14px !important; }
+    .article-h3    { font-size: 17px !important; line-height: 1.3 !important; }
+    .article-body  { font-size: 15px !important; line-height: 1.55 !important; }
+    .pub-icon      { width: 18px !important; height: 18px !important; }
+    .podcast-pad   { padding: 20px 14px 0 14px !important; }
+    .podcast-h3    { font-size: 17px !important; }
+    .podcast-title,
+    .podcast-summary,
+    .podcast-list  { font-size: 15px !important; line-height: 1.55 !important; }
+    .static-pad    { padding: 20px 14px 0 14px !important; font-size: 15px !important; line-height: 1.55 !important; }
+    .static-h3     { font-size: 16px !important; }
+    .highlights-pad  { padding: 24px 14px 0 14px !important; }
+    .highlights-list { font-size: 15px !important; line-height: 1.55 !important; }
+    .footer-pad    { padding: 26px 14px 18px 14px !important; }
+  }
+</style>
 </head>
-<body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#222222;">
-<table role="presentation" align="center" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:100%;margin:0 auto;">
+<body style="margin:0;padding:0;background:#ffffff;font-family:'Times New Roman',Times,Georgia,serif;color:#222222;">
+<table role="presentation" align="center" width="640" cellpadding="0" cellspacing="0" border="0" class="container" style="width:640px;max-width:100%;margin:0 auto;">
 
   {# ── MASTHEAD ─────────────────────────────────────────────────────── #}
   <tr><td style="padding:18px 16px 6px 16px;text-align:center;">
@@ -14,14 +39,15 @@
     {%- elif issue.masthead_logo_url %}
       <img src="{{ issue.masthead_logo_url }}" alt="SmartDrivingCars" style="max-width:100%;height:auto;display:inline-block;border:0;">
     {%- else %}
-      <h1 style="font-family:Arial,Helvetica,sans-serif;color:#1a4480;margin:0;font-size:24px;">SmartDrivingCars</h1>
+      <h1 class="masthead-h1" style="font-family:'Times New Roman',Times,Georgia,serif;color:#1a4480;margin:0;font-size:24px;">SmartDrivingCars</h1>
     {%- endif %}
   </td></tr>
 
   {# ── HEADER LINE ──────────────────────────────────────────────────── #}
   <tr><td style="padding:4px 16px 0 16px;text-align:center;font-size:14px;color:#444;">
-    <strong>{{ issue.effective_display_date() }}</strong><br>
-    <span style="font-style:italic;">{{ issue.edition_line() }}</span>
+    <p style="margin:0 0 8px 0;"><strong>{{ issue.effective_display_date() }}</strong></p>
+    <p style="margin:0 0 8px 0;">{{ issue.header_slug() }}</p>
+    <p style="margin:0;font-style:italic;">{{ issue.edition_line() }}</p>
   </td></tr>
 
   {# ── INTRO ───────────────────────────────────────────────────────── #}
@@ -33,14 +59,14 @@
 
   {# ── ARTICLES ────────────────────────────────────────────────────── #}
   {%- for article in issue.articles %}
-  <tr><td style="padding:18px 16px 0 16px;">
-    <h3 style="font-family:Arial,Helvetica,sans-serif;font-size:18px;margin:0 0 6px 0;line-height:1.25;">
+  <tr><td class="article-pad" style="padding:18px 16px 0 16px;">
+    <h3 class="article-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:18px;margin:0 0 6px 0;line-height:1.25;">
       {%- if article.publication_logo_url %}
-        <img src="{{ article.publication_logo_url }}" alt="" width="20" height="20" style="vertical-align:middle;margin-right:6px;border:0;">
+        <img class="pub-icon" src="{{ article.publication_logo_url }}" alt="" width="20" height="20" style="vertical-align:middle;margin-right:6px;border:0;">
       {%- endif %}
       <a href="{{ article.url }}" style="color:#1a4480;text-decoration:none;">{{ article.headline }}</a>
     </h3>
-    <div style="font-size:14px;line-height:1.5;color:#222;">
+    <div class="article-body" style="font-size:14px;line-height:1.5;color:#222;">
       {%- set parts = [] %}
       {%- if article.byline %}{% set _ = parts.append(article.byline) %}{% endif %}
       {%- if article.date_text %}{% set _ = parts.append(article.date_text) %}{% endif %}
@@ -50,7 +76,7 @@
       {%- endif %}
       <a href="{{ article.effective_read_more_url() }}" style="color:#1a4480;">{{ article.read_more_label }}</a>
       {%- if article.alain_comment %}
-        <span style="color:#444;"> Hmmmm&hellip; {{ article.alain_comment }} <em>Alain</em></span>
+        <span style="color:#b91c1c;font-style:italic;"> Hmmmm&hellip; {{ article.alain_comment }} Alain</span>
       {%- endif %}
     </div>
   </td></tr>
@@ -59,21 +85,21 @@
   {# ── PODCAST ─────────────────────────────────────────────────────── #}
   {%- if issue.podcast %}
   {%- set p = issue.podcast %}
-  <tr><td style="padding:24px 16px 0 16px;">
-    <h3 style="font-family:Arial,Helvetica,sans-serif;font-size:18px;margin:0 0 6px 0;">
+  <tr><td class="podcast-pad" style="padding:24px 16px 0 16px;">
+    <h3 class="podcast-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:18px;margin:0 0 6px 0;">
       SmartDrivingCars
       {%- if p.zoomcast_url %} <a href="{{ p.zoomcast_url }}" style="color:#1a4480;">ZoomCast{% if p.episode_number %} {{ p.episode_number }}{% endif %}</a> /{% endif %}
       {%- if p.podcast_url %} <a href="{{ p.podcast_url }}" style="color:#1a4480;">Podcasts{% if p.episode_number %} {{ p.episode_number }}{% endif %}</a>{% endif %}
       {%- if p.guest %} - w/{{ p.guest }}{% endif %}
     </h3>
     {%- if p.title %}
-      <p style="margin:0 0 6px 0;font-size:15px;font-weight:bold;">{{ p.title }}</p>
+      <p class="podcast-title" style="margin:0 0 6px 0;font-size:15px;font-weight:bold;">{{ p.title }}</p>
     {%- endif %}
     {%- if p.summary %}
-      <p style="margin:0 0 8px 0;font-size:14px;line-height:1.45;">{{ p.summary }}</p>
+      <p class="podcast-summary" style="margin:0 0 8px 0;font-size:14px;line-height:1.45;">{{ p.summary }}</p>
     {%- endif %}
     {%- if p.timecodes %}
-    <ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.5;">
+    <ul class="podcast-list" style="margin:0;padding-left:20px;font-size:14px;line-height:1.5;">
       {%- for tc in p.timecodes %}
       <li><a href="{{ tc.url }}" style="color:#1a4480;">{{ tc.timecode }}</a> {{ tc.label }}</li>
       {%- endfor %}
@@ -84,9 +110,9 @@
 
   {# ── STATIC BLOCKS (sponsor / book / conferences) ────────────────── #}
   {%- for block in issue.static_blocks if block.enabled %}
-  <tr><td style="padding:24px 16px 0 16px;font-size:14px;line-height:1.5;">
+  <tr><td class="static-pad" style="padding:24px 16px 0 16px;font-size:14px;line-height:1.5;">
     {%- if block.title %}
-    <h3 style="font-family:Arial,Helvetica,sans-serif;font-size:16px;margin:0 0 6px 0;color:#1a4480;">{{ block.title }}</h3>
+    <h3 class="static-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:16px;margin:0 0 6px 0;color:#1a4480;">{{ block.title }}</h3>
     {%- endif %}
     {{ block.html | safe }}
   </td></tr>
@@ -94,9 +120,9 @@
 
   {# ── BOTTOM HIGHLIGHTS REPEAT ────────────────────────────────────── #}
   {%- if issue.highlights %}
-  <tr><td style="padding:28px 16px 0 16px;border-top:1px solid #ddd;">
-    <h3 style="font-family:Arial,Helvetica,sans-serif;font-size:16px;margin:12px 0 8px 0;">Highlights</h3>
-    <ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.5;">
+  <tr><td class="highlights-pad" style="padding:28px 16px 0 16px;border-top:1px solid #ddd;">
+    <h3 class="highlights-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:16px;margin:12px 0 8px 0;">Highlights</h3>
+    <ul class="highlights-list" style="margin:0;padding-left:20px;font-size:14px;line-height:1.5;">
       {%- for h in issue.highlights %}
         {%- if h.article_index < issue.articles | length %}
           {%- set a = issue.articles[h.article_index] %}
@@ -108,11 +134,11 @@
   {%- endif %}
 
   {# ── FOOTER ──────────────────────────────────────────────────────── #}
-  <tr><td style="padding:32px 16px 24px 16px;border-top:1px solid #ddd;font-size:12px;color:#666;text-align:center;">
+  <tr><td class="footer-pad" style="padding:32px 16px 24px 16px;border-top:1px solid #ddd;font-size:12px;color:#666;text-align:center;">
     {%- if issue.footer_html %}
       {{ issue.footer_html | safe }}
     {%- else %}
-      <p style="margin:0 0 6px 0;">This list is maintained by the SmartDrivingCars team.</p>
+      <p style="margin:0 0 6px 0;">This newsletter is maintained by the newsletter editor.</p>
     {%- endif %}
     {%- if issue.unsubscribe_url %}
       <p style="margin:0;">To unsubscribe from this list, click <a href="{{ issue.unsubscribe_url }}" style="color:#1a4480;">here</a>.</p>

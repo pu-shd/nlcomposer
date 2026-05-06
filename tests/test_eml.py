@@ -17,8 +17,10 @@ from app.eml import build_eml, build_eml_filename, render_html, render_text
 
 def test_render_html_contains_required_blocks(sample_issue):
     html = render_html(sample_issue)
-    # Header
+    # Header — three stacked lines below the masthead
     assert "SmartDrivingCars" in html
+    assert "Sunday, May 3, 2026" in html
+    assert "14.9-BeijingAutoShow-5.03.26" in html
     assert "9th edition of the 14th year" in html
     # Articles
     assert "Beijing Auto Show 2026" in html

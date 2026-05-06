@@ -10,6 +10,7 @@
 <header class="topbar">
   <h1>SDC Composer</h1>
   <div class="actions">
+    <button type="button" id="toggle-preview" class="btn" aria-pressed="false">Hide preview</button>
     <button type="button" id="refresh-preview" class="btn">Refresh preview</button>
     <button type="button" id="download-eml" class="btn primary">Download .eml</button>
     <button type="button" id="reset-form" class="btn ghost">Reset</button>
@@ -72,7 +73,7 @@
       <details open>
         <summary>Articles <span class="count" id="articles-count">0</span></summary>
         <div id="articles" class="repeating"></div>
-        <button type="button" class="btn ghost" id="add-article">+ Add article</button>
+        <button type="button" class="btn add" id="add-article">+ Add article</button>
       </details>
 
       <details>
@@ -88,14 +89,14 @@
         <summary>Static blocks <span class="count" id="static-count">0</span></summary>
         <p class="hint">Sponsor blurb, book promo, ATS/BTR conferences, etc. Carry these forward across issues.</p>
         <div id="static-blocks" class="repeating"></div>
-        <button type="button" class="btn ghost" id="add-static">+ Add block</button>
+        <button type="button" class="btn add" id="add-static">+ Add block</button>
       </details>
 
       <details>
         <summary>Bottom highlights <span class="count" id="highlights-count">0</span></summary>
         <p class="hint">Repeats articles at the bottom without icons or commentary. Pick which articles to feature and optionally override the label.</p>
         <div id="highlights" class="repeating"></div>
-        <button type="button" class="btn ghost" id="add-highlight">+ Add highlight</button>
+        <button type="button" class="btn add" id="add-highlight">+ Add highlight</button>
       </details>
 
       <details>
@@ -105,7 +106,7 @@
             <textarea name="footer_html" rows="2" placeholder="<p>This list is maintained by …</p>"></textarea>
           </label>
           <label class="span-2">Unsubscribe URL
-            <input type="url" name="unsubscribe_url" placeholder="https://smartdrivingcar.com/unsubscribe">
+            <input type="url" name="unsubscribe_url" value="https://newsletter.example.edu/newsletter">
           </label>
         </div>
       </details>
@@ -113,12 +114,25 @@
     </form>
   </section>
 
-  <section class="preview-pane" aria-label="Live preview">
+  <section class="preview-pane vp-desktop" aria-label="Live preview">
     <div class="preview-header">
       <span>Preview</span>
+      <div class="viewport-switch" role="group" aria-label="Preview viewport size">
+        <button type="button" data-viewport="phone" aria-label="Phone preview" title="Phone (390px)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="1.5" width="6" height="13" rx="1.2"/><line x1="7" y1="12.5" x2="9" y2="12.5"/></svg>
+        </button>
+        <button type="button" data-viewport="tablet" aria-label="Tablet preview" title="Tablet (768px)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2" width="11" height="12" rx="1.2"/><line x1="7" y1="12.5" x2="9" y2="12.5"/></svg>
+        </button>
+        <button type="button" data-viewport="desktop" aria-label="Desktop preview" title="Desktop (full width)" aria-pressed="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.2"/><line x1="5.5" y1="14" x2="10.5" y2="14"/><line x1="8" y1="11.5" x2="8" y2="14"/></svg>
+        </button>
+      </div>
       <small id="preview-meta"></small>
     </div>
-    <iframe id="preview" title="Newsletter preview"></iframe>
+    <div class="preview-frame">
+      <iframe id="preview" title="Newsletter preview"></iframe>
+    </div>
   </section>
 </main>
 
@@ -136,7 +150,7 @@
         </div>
         <small class="fetch-status" data-role="fetch-status"></small>
       </label>
-      <label>Byline
+      <label>Author/Byline
         <input type="text" data-field="byline" placeholder="P. Perspective">
       </label>
       <label>Date text
@@ -189,7 +203,7 @@
       <textarea data-field="summary" rows="3"></textarea>
     </label>
     <fieldset class="span-2 card">
-      <legend>Timecodes <button type="button" class="btn-remove btn ghost" id="add-timecode">+ Add timecode</button></legend>
+      <legend>Timecodes <button type="button" class="btn add btn-add-inline" id="add-timecode">+ Add timecode</button></legend>
       <div id="timecodes" class="repeating compact"></div>
     </fieldset>
   </div>

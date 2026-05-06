@@ -67,6 +67,33 @@ html, body {
 .btn.primary:hover { background: #163764; }
 .btn.ghost { background: transparent; }
 
+.btn.add {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px dashed var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.btn.add:hover {
+  background: var(--accent);
+  color: white;
+  border-style: solid;
+}
+.btn.add.btn-add-inline {
+  display: inline-block;
+  width: auto;
+  margin: 0 0 0 8px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .btn-remove {
   background: transparent;
   border: none;
@@ -99,8 +126,8 @@ html, body {
 
 .preview-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 12px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   font-weight: 600;
@@ -109,13 +136,59 @@ html, body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+.preview-header > #preview-meta { margin-left: auto; }
 
-#preview {
+.viewport-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.viewport-switch button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--border);
+}
+.viewport-switch button:last-child { border-right: 0; }
+.viewport-switch button:hover { background: var(--accent-soft); color: var(--accent); }
+.viewport-switch button[aria-pressed="true"] {
+  background: var(--accent);
+  color: white;
+}
+.viewport-switch svg { width: 14px; height: 14px; display: block; }
+
+.preview-frame {
   flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  background: var(--bg);
+  overflow: auto;
+  padding: 12px;
+  min-height: 0;
+}
+#preview {
+  background: white;
   border: 0;
   width: 100%;
-  background: white;
+  height: 100%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  transition: max-width 0.15s ease;
 }
+.preview-pane.vp-phone   #preview { max-width: 390px; }
+.preview-pane.vp-tablet  #preview { max-width: 768px; }
+.preview-pane.vp-desktop #preview { max-width: none; box-shadow: none; }
+
+.layout.preview-hidden { grid-template-columns: 1fr; }
+.layout.preview-hidden .preview-pane { display: none; }
 
 #composer details {
   background: var(--panel);

@@ -35,3 +35,25 @@ def test_effective_subject_falls_back_to_year_number_title():
 def test_article_read_more_falls_back_to_url():
     a = Article(headline="x", url="https://example.com/a")
     assert str(a.effective_read_more_url()) == "https://example.com/a"
+
+
+def test_header_slug_matches_corpus_format():
+    issue = NewsletterIssue(
+        issue_year=14,
+        issue_number=9,
+        issue_title="BeijingAutoShow",
+        issue_date=date(2026, 5, 3),
+    )
+    # year and issue number are unpadded; month is unpadded; day and 2-digit
+    # year are zero-padded — see the historical newsletter examples.
+    assert issue.header_slug() == "14.9-BeijingAutoShow-5.03.26"
+
+
+def test_header_slug_handles_two_digit_month_and_pre_2000_year():
+    issue = NewsletterIssue(
+        issue_year=14,
+        issue_number=12,
+        issue_title="YearEnd",
+        issue_date=date(2026, 12, 7),
+    )
+    assert issue.header_slug() == "14.12-YearEnd-12.07.26"
