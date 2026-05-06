@@ -14,3 +14,4 @@ build/
 .ralph/
 CLAUDE.md
 .claude/
+docker-compose.override.yml
