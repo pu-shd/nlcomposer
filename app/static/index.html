@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SDC Composer</title>
+<link rel="stylesheet" href="/static/composer.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>SDC Composer</h1>
+  <div class="actions">
+    <button type="button" id="refresh-preview" class="btn">Refresh preview</button>
+    <button type="button" id="download-eml" class="btn primary">Download .eml</button>
+    <button type="button" id="reset-form" class="btn ghost">Reset</button>
+  </div>
+  <div class="status" id="status" aria-live="polite"></div>
+</header>
+
+<main class="layout">
+  <section class="form-pane" aria-label="Composer form">
+    <form id="composer" autocomplete="off">
+
+      <details open>
+        <summary>Issue header</summary>
+        <div class="grid-2">
+          <label>Year (e.g. 14)
+            <input type="number" name="issue_year" required min="1" value="14">
+          </label>
+          <label>Number (e.g. 9)
+            <input type="number" name="issue_number" required min="1" value="9">
+          </label>
+          <label>Title slug
+            <input type="text" name="issue_title" required placeholder="BeijingAutoShow" value="BeijingAutoShow">
+          </label>
+          <label>Issue date
+            <input type="date" name="issue_date" required>
+          </label>
+          <label class="span-2">Display date (optional override)
+            <input type="text" name="display_date" placeholder='Sunday, May 3, 2026'>
+          </label>
+          <label class="span-2">Masthead logo URL
+            <input type="url" name="masthead_logo_url" placeholder="https://...">
+          </label>
+          <label class="span-2">Intro HTML (optional)
+            <textarea name="intro_html" rows="3" placeholder="<p>Greetings…</p>"></textarea>
+          </label>
+        </div>
+      </details>
+
+      <details>
+        <summary>From / To / Subject</summary>
+        <div class="grid-2">
+          <label>From name
+            <input type="text" name="from_name" value="Newsletter Editor">
+          </label>
+          <label>From email
+            <input type="email" name="from_email" value="editor@example.edu">
+          </label>
+          <label>To email
+            <input type="email" name="to_email" value="subscribers@example.edu">
+          </label>
+          <label>Reply-To
+            <input type="email" name="reply_to" placeholder="optional">
+          </label>
+          <label class="span-2">Subject (auto-generated if blank)
+            <input type="text" name="subject" placeholder="auto: SmartDrivingCars 14.09 — BeijingAutoShow">
+          </label>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Articles <span class="count" id="articles-count">0</span></summary>
+        <div id="articles" class="repeating"></div>
+        <button type="button" class="btn ghost" id="add-article">+ Add article</button>
+      </details>
+
+      <details>
+        <summary>Podcast</summary>
+        <label class="checkbox">
+          <input type="checkbox" id="podcast-enabled">
+          Include podcast section
+        </label>
+        <div id="podcast-fields" class="podcast-fields" hidden></div>
+      </details>
+
+      <details>
+        <summary>Static blocks <span class="count" id="static-count">0</span></summary>
+        <p class="hint">Sponsor blurb, book promo, ATS/BTR conferences, etc. Carry these forward across issues.</p>
+        <div id="static-blocks" class="repeating"></div>
+        <button type="button" class="btn ghost" id="add-static">+ Add block</button>
+      </details>
+
+      <details>
+        <summary>Bottom highlights <span class="count" id="highlights-count">0</span></summary>
+        <p class="hint">Repeats articles at the bottom without icons or commentary. Pick which articles to feature and optionally override the label.</p>
+        <div id="highlights" class="repeating"></div>
+        <button type="button" class="btn ghost" id="add-highlight">+ Add highlight</button>
+      </details>
+
+      <details>
+        <summary>Footer</summary>
+        <div class="grid-2">
+          <label class="span-2">Footer HTML (optional)
+            <textarea name="footer_html" rows="2" placeholder="<p>This list is maintained by …</p>"></textarea>
+          </label>
+          <label class="span-2">Unsubscribe URL
+            <input type="url" name="unsubscribe_url" placeholder="https://smartdrivingcar.com/unsubscribe">
+          </label>
+        </div>
+      </details>
+
+    </form>
+  </section>
+
+  <section class="preview-pane" aria-label="Live preview">
+    <div class="preview-header">
+      <span>Preview</span>
+      <small id="preview-meta"></small>
+    </div>
+    <iframe id="preview" title="Newsletter preview"></iframe>
+  </section>
+</main>
+
+<template id="article-template">
+  <fieldset class="card">
+    <legend>Article <span class="idx"></span> <button type="button" class="btn-remove" aria-label="Remove">×</button></legend>
+    <div class="grid-2">
+      <label class="span-2">Headline
+        <input type="text" data-field="headline" required>
+      </label>
+      <label class="span-2">URL
+        <input type="url" data-field="url" required>
+      </label>
+      <label>Byline
+        <input type="text" data-field="byline" placeholder="P. Perspective">
+      </label>
+      <label>Date text
+        <input type="text" data-field="date_text" placeholder="Apr 27">
+      </label>
+      <label class="span-2">Pull quote
+        <textarea data-field="pull_quote" rows="2"></textarea>
+      </label>
+      <label>Read-more label
+        <input type="text" data-field="read_more_label" placeholder="Read more">
+      </label>
+      <label>Read-more URL (defaults to URL)
+        <input type="url" data-field="read_more_url">
+      </label>
+      <label class="span-2">Publication logo URL (favicon)
+        <input type="url" data-field="publication_logo_url">
+      </label>
+      <label class="span-2">Alain comment (Hmmmm…)
+        <textarea data-field="alain_comment" rows="2"></textarea>
+      </label>
+    </div>
+  </fieldset>
+</template>
+
+<template id="podcast-template">
+  <div class="grid-2">
+    <label>Episode #
+      <input type="number" data-field="episode_number" min="1">
+    </label>
+    <label>Guest
+      <input type="text" data-field="guest">
+    </label>
+    <label class="span-2">Title
+      <input type="text" data-field="title" placeholder="On episode 412 of Smart Driving Cars…">
+    </label>
+    <label>ZoomCast (YouTube) URL
+      <input type="url" data-field="zoomcast_url">
+    </label>
+    <label>Podcasts URL
+      <input type="url" data-field="podcast_url">
+    </label>
+    <label class="span-2">YouTube video URL (used for timecode auto-fill later)
+      <input type="url" data-field="youtube_video_url">
+    </label>
+    <label class="span-2">Summary
+      <textarea data-field="summary" rows="3"></textarea>
+    </label>
+    <fieldset class="span-2 card">
+      <legend>Timecodes <button type="button" class="btn-remove btn ghost" id="add-timecode">+ Add timecode</button></legend>
+      <div id="timecodes" class="repeating compact"></div>
+    </fieldset>
+  </div>
+</template>
+
+<template id="timecode-template">
+  <div class="row">
+    <input type="text" data-field="timecode" placeholder="MM:SS" required style="width:7em;">
+    <input type="text" data-field="label" placeholder="Label" required>
+    <input type="url" data-field="url" placeholder="https://www.youtube.com/watch?v=…&amp;t=50s" required>
+    <button type="button" class="btn-remove" aria-label="Remove">×</button>
+  </div>
+</template>
+
+<template id="static-template">
+  <fieldset class="card">
+    <legend>Block <span class="idx"></span> <button type="button" class="btn-remove" aria-label="Remove">×</button></legend>
+    <div class="grid-2">
+      <label>Title
+        <input type="text" data-field="title" required>
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" data-field="enabled" checked>
+        Enabled
+      </label>
+      <label class="span-2">HTML
+        <textarea data-field="html" rows="4" placeholder='<p>Sponsor blurb…</p>'></textarea>
+      </label>
+    </div>
+  </fieldset>
+</template>
+
+<template id="highlight-template">
+  <div class="row">
+    <select data-field="article_index" required></select>
+    <input type="text" data-field="override_label" placeholder="Override label (optional)">
+    <button type="button" class="btn-remove" aria-label="Remove">×</button>
+  </div>
+</template>
+
+<script src="/static/composer.js"></script>
+</body>
+</html>

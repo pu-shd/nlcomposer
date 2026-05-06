@@ -1,14 +1,17 @@
 """FastAPI entrypoint for the sdc-composer web app.
 
-This iteration delivers the skeleton: a health endpoint, a JSON-driven
-``/api/preview/html`` endpoint that returns the rendered HTML, and a
-``/api/eml`` endpoint that returns the assembled ``.eml`` for download.
-A real form-driven UI is added in a follow-up task (``ui:composer``).
+Serves the single-page composer UI at ``/`` (from ``app/static/index.html``)
+and the JSON-driven endpoints used by the front-end:
+
+* ``POST /api/preview/html`` — render a NewsletterIssue to HTML for the
+  live preview pane.
+* ``POST /api/preview/text`` — plain-text alternative.
+* ``POST /api/eml`` — assemble and stream a downloadable ``.eml`` file.
 """
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -17,6 +20,7 @@ from .eml import build_eml, build_eml_filename, render_html, render_text
 from .models import NewsletterIssue
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+_INDEX_HTML = _STATIC_DIR / "index.html"
 
 app = FastAPI(
     title="sdc-composer",
@@ -38,16 +42,9 @@ def healthz() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
-    """Placeholder landing page until the composer UI lands."""
-    return (
-        "<!doctype html><html><head><title>sdc-composer</title></head><body>"
-        "<h1>sdc-composer</h1>"
-        "<p>POST a NewsletterIssue JSON to <code>/api/preview/html</code> for a"
-        " rendered preview, or to <code>/api/eml</code> to download the"
-        " assembled <code>.eml</code> file.</p>"
-        '<p>API docs: <a href="/docs">/docs</a></p>'
-        "</body></html>"
-    )
+    if not _INDEX_HTML.exists():
+        raise HTTPException(status_code=500, detail="composer index.html missing")
+    return _INDEX_HTML.read_text(encoding="utf-8")
 
 
 @app.post("/api/preview/html", response_class=HTMLResponse)
