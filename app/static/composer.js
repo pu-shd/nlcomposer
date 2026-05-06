@@ -712,6 +712,241 @@
     }
   };
 
+  // ───────── Issue load (for templates / drafts) ────────────────────
+  // Replace the form contents with a NewsletterIssue payload. Used by
+  // the templates dialog ("Use") and (future) drafts dialog ("Load").
+  // Missing fields fall back to the issue's current values, except for
+  // repeating sections — they are fully replaced (no merge).
+  const loadIssueIntoForm = (issue) => {
+    if (!issue || typeof issue !== 'object') return;
+    const SCALAR_FIELDS = [
+      'issue_year', 'issue_number', 'issue_title', 'issue_date',
+      'display_date', 'masthead_logo_url', 'intro_html',
+      'from_name', 'from_email', 'to_email', 'reply_to', 'subject',
+      'footer_html', 'unsubscribe_url',
+    ];
+    SCALAR_FIELDS.forEach((name) => {
+      const el = form.elements[name];
+      if (!el) return;
+      const v = issue[name];
+      if (v == null) {
+        if (el.type !== 'checkbox') el.value = '';
+        return;
+      }
+      el.value = String(v);
+    });
+
+    // Articles — clear, then re-add.
+    articlesContainer.innerHTML = '';
+    (Array.isArray(issue.articles) ? issue.articles : []).forEach((a) => {
+      addArticle(a || {});
+    });
+    if (articlesContainer.children.length === 0) {
+      addArticle({}); // keep at least one empty card so the user can start typing
+    }
+
+    // Static blocks — clear, then re-add.
+    staticContainer.innerHTML = '';
+    (Array.isArray(issue.static_blocks) ? issue.static_blocks : []).forEach((b) => {
+      addStatic(b || {});
+    });
+
+    // Highlights — clear, then re-add. Must run after articles so the
+    // refreshHighlightOptions select gets the right option list.
+    highlightsContainer.innerHTML = '';
+    (Array.isArray(issue.highlights) ? issue.highlights : []).forEach((h) => {
+      addHighlight(h || {});
+    });
+
+    // Podcast — toggle the section and fill if present.
+    if (issue.podcast && typeof issue.podcast === 'object') {
+      podcastEnabled.checked = true;
+      podcastFields.hidden = false;
+      renderPodcastFields();
+      const pod = issue.podcast;
+      ['episode_number', 'guest', 'title', 'zoomcast_url', 'podcast_url', 'youtube_video_url', 'summary'].forEach((k) => {
+        const el = podcastNode.querySelector(`[data-field="${k}"]`);
+        if (el && pod[k] != null) el.value = String(pod[k]);
+      });
+      if (Array.isArray(pod.timecodes)) {
+        pod.timecodes.forEach((tc) => addTimecode(tc || {}));
+      }
+    } else {
+      podcastEnabled.checked = false;
+      podcastFields.hidden = true;
+      podcastFields.innerHTML = '';
+      podcastNode = null;
+      timecodesContainer = null;
+    }
+
+    renumber();
+    schedulePreview();
+  };
+
+  // ───────── Templates dialog ────────────────────────────────────────
+  // Persisted presets in the DB. The dialog lists them, lets the user
+  // pick one to seed the form ("Use"), delete user-owned ones, and save
+  // the current form as a new template.
+  const templatesDialog = document.getElementById('templates-dialog');
+  const templatesList = document.getElementById('templates-list');
+  const templatesCreateForm = document.getElementById('templates-create-form');
+  const templatesStatus = document.getElementById('templates-status');
+
+  const setTemplatesStatus = (msg, kind = 'info') => {
+    if (!templatesStatus) return;
+    templatesStatus.textContent = msg || '';
+    templatesStatus.dataset.kind = kind;
+  };
+
+  const escapeHtml = (s) =>
+    String(s == null ? '' : s).replace(/[<>&"']/g, (c) =>
+      ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  const renderTemplatesList = (items) => {
+    if (!Array.isArray(items) || items.length === 0) {
+      templatesList.innerHTML = '<li class="hint">No templates yet.</li>';
+      return;
+    }
+    templatesList.innerHTML = items.map((t) => `
+      <li data-template-id="${t.id}" class="template-row${t.builtin ? ' builtin' : ''}">
+        <div class="template-meta">
+          <strong>${escapeHtml(t.name)}</strong>
+          ${t.builtin ? '<span class="badge">built-in</span>' : ''}
+          ${t.description ? `<small>${escapeHtml(t.description)}</small>` : ''}
+        </div>
+        <div class="template-actions">
+          <button type="button" class="btn" data-action="use">Use</button>
+          ${t.builtin ? '' : '<button type="button" class="btn ghost" data-action="delete">Delete</button>'}
+        </div>
+      </li>
+    `).join('');
+  };
+
+  const refreshTemplatesList = async () => {
+    setTemplatesStatus('');
+    try {
+      const res = await fetch('/api/templates');
+      if (!res.ok) {
+        setTemplatesStatus(`List failed: ${res.status}`, 'error');
+        return;
+      }
+      renderTemplatesList(await res.json());
+    } catch (e) {
+      setTemplatesStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  const useTemplate = async (id) => {
+    setTemplatesStatus('Loading…');
+    try {
+      const res = await fetch(`/api/templates/${id}`);
+      if (!res.ok) {
+        setTemplatesStatus(`Load ${res.status}`, 'error');
+        return;
+      }
+      const tpl = await res.json();
+      loadIssueIntoForm(tpl.payload || {});
+      // If the template has no issue_date, seed today so the form is valid.
+      const dateEl = form.elements['issue_date'];
+      if (dateEl && !dateEl.value) {
+        dateEl.value = new Date().toISOString().slice(0, 10);
+      }
+      setTemplatesStatus(`Loaded "${tpl.name}"`, 'ok');
+      setTimeout(closeTemplatesDialog, 350);
+    } catch (e) {
+      setTemplatesStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  const deleteTemplate = async (id, name) => {
+    if (!confirm(`Delete template "${name}"? This cannot be undone.`)) return;
+    setTemplatesStatus('Deleting…');
+    try {
+      const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setTemplatesStatus(`Delete ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      await refreshTemplatesList();
+      setTemplatesStatus('Deleted.', 'ok');
+    } catch (e) {
+      setTemplatesStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  templatesList.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const row = btn.closest('[data-template-id]');
+    if (!row) return;
+    const id = Number(row.dataset.templateId);
+    if (btn.dataset.action === 'use') useTemplate(id);
+    else if (btn.dataset.action === 'delete') {
+      const name = row.querySelector('strong')?.textContent || '';
+      deleteTemplate(id, name);
+    }
+  });
+
+  const openTemplatesDialog = async () => {
+    setTemplatesStatus('');
+    templatesCreateForm.reset();
+    await refreshTemplatesList();
+    if (typeof templatesDialog.showModal === 'function') {
+      templatesDialog.showModal();
+    } else {
+      templatesDialog.setAttribute('open', '');
+    }
+  };
+
+  const closeTemplatesDialog = () => {
+    if (typeof templatesDialog.close === 'function') {
+      templatesDialog.close();
+    } else {
+      templatesDialog.removeAttribute('open');
+    }
+  };
+
+  templatesCreateForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(templatesCreateForm);
+    const name = trim(fd.get('name') || '');
+    const description = trim(fd.get('description') || '') || null;
+    if (!name) {
+      setTemplatesStatus('Name required.', 'error');
+      return;
+    }
+    let payload;
+    try { payload = buildIssue(); }
+    catch (err) { setTemplatesStatus('Build error: ' + err.message, 'error'); return; }
+    setTemplatesStatus('Saving…');
+    try {
+      const res = await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description, payload }),
+      });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setTemplatesStatus(`Save ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      templatesCreateForm.reset();
+      await refreshTemplatesList();
+      setTemplatesStatus('Saved.', 'ok');
+    } catch (err) {
+      setTemplatesStatus('Network error: ' + err.message, 'error');
+    }
+  });
+
+  document.getElementById('open-templates').addEventListener('click', openTemplatesDialog);
+  document.getElementById('templates-close').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeTemplatesDialog();
+  });
+
   document.getElementById('open-settings').addEventListener('click', openSettingsDialog);
   document.getElementById('settings-cancel').addEventListener('click', (e) => {
     e.preventDefault();

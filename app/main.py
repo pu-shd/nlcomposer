@@ -30,6 +30,20 @@ from .podcast import (
     validate_youtube_url,
 )
 from .settings import AppSettings, load_settings, save_settings
+from .template_store import (
+    BuiltinDeleteError,
+    Template,
+    TemplateCreate,
+    TemplateNameConflictError,
+    TemplateSummary,
+    TemplateUpdate,
+    create_template,
+    delete_template,
+    get_template,
+    list_templates,
+    seed_default_templates,
+    update_template,
+)
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _INDEX_HTML = _STATIC_DIR / "index.html"
@@ -40,6 +54,7 @@ async def lifespan(app: FastAPI):
     conn = connect()
     try:
         init_db(conn)
+        seed_default_templates(conn)
     finally:
         conn.close()
     yield
@@ -105,6 +120,65 @@ def put_settings(
 ) -> AppSettings:
     """Replace the stored settings with the supplied payload."""
     return save_settings(conn, settings)
+
+
+@app.get("/api/templates", response_model=list[TemplateSummary])
+def api_list_templates(
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[TemplateSummary]:
+    """Return all templates (builtins first), without their payloads."""
+    return list_templates(conn)
+
+
+@app.get("/api/templates/{template_id}", response_model=Template)
+def api_get_template(
+    template_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Template:
+    t = get_template(conn, template_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return t
+
+
+@app.post("/api/templates", response_model=Template, status_code=201)
+def api_create_template(
+    body: TemplateCreate,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Template:
+    try:
+        return create_template(conn, body)
+    except TemplateNameConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@app.put("/api/templates/{template_id}", response_model=Template)
+def api_update_template(
+    template_id: int,
+    body: TemplateUpdate,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Template:
+    try:
+        updated = update_template(conn, template_id, body)
+    except TemplateNameConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return updated
+
+
+@app.delete("/api/templates/{template_id}", status_code=204)
+def api_delete_template(
+    template_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Response:
+    try:
+        deleted = delete_template(conn, template_id)
+    except BuiltinDeleteError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return Response(status_code=204)
 
 
 @app.get("/api/fetch/article")

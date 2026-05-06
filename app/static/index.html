@@ -11,6 +11,7 @@
   <h1>SDC Composer</h1>
   <div class="actions">
     <button type="button" id="open-settings" class="btn ghost" aria-haspopup="dialog">Settings</button>
+    <button type="button" id="open-templates" class="btn ghost" aria-haspopup="dialog">Templates</button>
     <button type="button" id="toggle-preview" class="btn" aria-pressed="false">Hide preview</button>
     <button type="button" id="refresh-preview" class="btn">Refresh preview</button>
     <button type="button" id="download-eml" class="btn primary">Download .eml</button>
@@ -291,6 +292,34 @@
       <button type="submit" class="btn primary" id="settings-save">Save</button>
     </footer>
   </form>
+</dialog>
+
+<dialog id="templates-dialog" aria-labelledby="templates-title">
+  <div class="dialog-body">
+    <header class="dialog-header">
+      <h2 id="templates-title">Templates</h2>
+      <button type="button" class="btn-remove" id="templates-close" aria-label="Close">&times;</button>
+    </header>
+    <p class="hint">Start a new draft from a saved preset, or save the current form as a new template.</p>
+
+    <ul class="templates-list" id="templates-list" aria-live="polite"></ul>
+
+    <form id="templates-create-form" autocomplete="off" class="templates-create">
+      <h3>Save current as template</h3>
+      <div class="grid-2">
+        <label class="span-2">Name
+          <input type="text" name="name" required placeholder="e.g. Year-end roundup">
+        </label>
+        <label class="span-2">Description (optional)
+          <input type="text" name="description" placeholder="">
+        </label>
+      </div>
+      <footer class="dialog-actions">
+        <small id="templates-status" class="status" aria-live="polite"></small>
+        <button type="submit" class="btn primary">Save template</button>
+      </footer>
+    </form>
+  </div>
 </dialog>
 
 <script src="/static/composer.js"></script>
