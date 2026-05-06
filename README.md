@@ -26,11 +26,18 @@ make test         # runs the pytest suite
 make run          # uvicorn on http://127.0.0.1:8000
 ```
 
-Then POST a `NewsletterIssue` JSON to:
+Open `http://127.0.0.1:8000/` for the single-page composer (form on the
+left, live preview on the right, **Download .eml** in the topbar). Each
+article row also has a **Fetch** button that scrapes the URL for
+headline / byline / excerpt / favicon and pre-fills empty fields.
+
+API endpoints used by the UI:
 
 - `POST /api/preview/html` — rendered HTML body
 - `POST /api/preview/text` — rendered plain-text body
 - `POST /api/eml` — full multipart `.eml` (downloads as attachment)
+- `GET  /api/fetch/article?url=…` — scrape og:title / og:description /
+  meta author / favicon for a candidate article URL
 
 Swagger UI is available at `/docs`.
 
@@ -43,5 +50,5 @@ docker-compose --profile test run --rm tests
 
 ## Status
 
-This is the bootstrap iteration. The composer UI, URL/YouTube automation,
-draft persistence, and SMTP send are tracked as follow-up tasks.
+Composer UI and article-URL automation are live. YouTube/podcast timecode
+parsing, draft persistence, and SMTP send are tracked as follow-up tasks.

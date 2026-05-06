@@ -85,9 +85,72 @@
       renumber();
       schedulePreview();
     });
+    const fetchBtn = node.querySelector('[data-action="fetch-article"]');
+    if (fetchBtn) {
+      fetchBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        fetchArticleInto(node);
+      });
+    }
     articlesContainer.appendChild(node);
     renumber();
     return node;
+  };
+
+  // ───────── Article fetch (auto-fill from URL) ──────────────────────
+  const fetchArticleInto = async (card) => {
+    const urlInput = card.querySelector('[data-field="url"]');
+    const statusEl = card.querySelector('[data-role="fetch-status"]');
+    const button = card.querySelector('[data-action="fetch-article"]');
+    const url = trim(urlInput?.value || '');
+    const setFetchStatus = (msg, kind = 'info') => {
+      if (!statusEl) return;
+      statusEl.textContent = msg || '';
+      statusEl.dataset.kind = kind;
+    };
+    if (!url) {
+      setFetchStatus('Enter a URL first.', 'error');
+      urlInput?.focus();
+      return;
+    }
+    if (button) {
+      button.disabled = true;
+    }
+    setFetchStatus('Fetching…');
+    try {
+      const res = await fetch(
+        `/api/fetch/article?url=${encodeURIComponent(url)}`,
+      );
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setFetchStatus(`Fetch ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      const meta = await res.json();
+      const fields = ['headline', 'byline', 'pull_quote', 'publication_logo_url', 'read_more_url'];
+      let filled = 0;
+      fields.forEach((f) => {
+        const el = card.querySelector(`[data-field="${f}"]`);
+        if (!el) return;
+        if (!nonEmpty(trim(el.value)) && nonEmpty(meta[f])) {
+          el.value = meta[f];
+          filled += 1;
+        }
+      });
+      if (filled === 0) {
+        setFetchStatus('Fetched, but all fields already had values.', 'ok');
+      } else {
+        setFetchStatus(`Filled ${filled} field${filled === 1 ? '' : 's'}.`, 'ok');
+      }
+      schedulePreview();
+    } catch (e) {
+      setFetchStatus('Network error: ' + e.message, 'error');
+    } finally {
+      if (button) {
+        button.disabled = false;
+      }
+    }
   };
 
   // ───────── Podcast ─────────────────────────────────────────────────

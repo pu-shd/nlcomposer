@@ -247,6 +247,23 @@ html, body {
   padding: 0 6px;
 }
 
+#composer .row.inline {
+  width: 100%;
+}
+#composer .row.inline > input { flex: 1; }
+#composer .btn-fetch {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+#composer .fetch-status {
+  font-size: 11px;
+  color: var(--muted);
+  min-height: 14px;
+}
+#composer .fetch-status[data-kind="error"] { color: var(--danger); }
+#composer .fetch-status[data-kind="ok"] { color: #166534; }
+
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; height: auto; }
   .form-pane { border-right: 0; border-bottom: 1px solid var(--border); }

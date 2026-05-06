@@ -59,6 +59,17 @@ def test_static_assets_are_served():
     assert "buildIssue" in js.text
     assert "/api/preview/html" in js.text
     assert "/api/eml" in js.text
+    # Article fetch automation must be wired through the UI:
+    assert "/api/fetch/article" in js.text
+    assert "fetchArticleInto" in js.text
+
+
+def test_article_template_includes_fetch_button():
+    body = client.get("/").text
+    # Each cloned article card carries a Fetch button so the user can
+    # auto-populate headline/byline/excerpt/favicon from the URL.
+    assert 'data-action="fetch-article"' in body
+    assert 'data-role="fetch-status"' in body
 
 
 def test_preview_endpoint_renders_for_minimal_issue():

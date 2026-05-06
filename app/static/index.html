@@ -130,7 +130,11 @@
         <input type="text" data-field="headline" required>
       </label>
       <label class="span-2">URL
-        <input type="url" data-field="url" required>
+        <div class="row inline">
+          <input type="url" data-field="url" required>
+          <button type="button" class="btn ghost btn-fetch" data-action="fetch-article" title="Fetch headline / byline / excerpt / favicon from the URL">Fetch</button>
+        </div>
+        <small class="fetch-status" data-role="fetch-status"></small>
       </label>
       <label>Byline
         <input type="text" data-field="byline" placeholder="P. Perspective">
