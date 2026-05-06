@@ -21,6 +21,11 @@ import httpx
 from .eml import build_eml, build_eml_filename, render_html, render_text
 from .fetch import ArticleMetadata, fetch_article_metadata, validate_fetch_url
 from .models import NewsletterIssue
+from .podcast import (
+    YoutubeMetadata,
+    fetch_youtube_metadata,
+    validate_youtube_url,
+)
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _INDEX_HTML = _STATIC_DIR / "index.html"
@@ -90,6 +95,35 @@ def fetch_article(
 
     try:
         meta: ArticleMetadata = fetch_article_metadata(url)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"upstream returned {e.response.status_code}",
+        )
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"fetch failed: {e}")
+
+    return JSONResponse(content=dict(meta))
+
+
+@app.get("/api/fetch/youtube")
+def fetch_youtube(
+    url: str = Query(..., description="Public YouTube video URL to scrape."),
+) -> JSONResponse:
+    """Fetch a YouTube video and return metadata to pre-fill a podcast block.
+
+    Returns a JSON object with optional ``title``, ``summary``,
+    ``youtube_video_url``, and a ``timecodes`` list of
+    ``{timecode, label, url}`` parsed from MM:SS lines in the description.
+    """
+
+    try:
+        validate_youtube_url(url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        meta: YoutubeMetadata = fetch_youtube_metadata(url)
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=502,

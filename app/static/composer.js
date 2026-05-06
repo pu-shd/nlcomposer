@@ -165,6 +165,84 @@
       e.preventDefault();
       addTimecode();
     });
+    const ytFetchBtn = podcastNode.querySelector('[data-action="fetch-youtube"]');
+    if (ytFetchBtn) {
+      ytFetchBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        fetchYouTubeInto(podcastNode);
+      });
+    }
+  };
+
+  // ───────── YouTube fetch (auto-fill title / summary / timecodes) ───
+  const fetchYouTubeInto = async (root) => {
+    const urlInput = root.querySelector('[data-field="youtube_video_url"]');
+    const statusEl = root.querySelector('[data-role="youtube-fetch-status"]');
+    const button = root.querySelector('[data-action="fetch-youtube"]');
+    const url = trim(urlInput?.value || '');
+    const setFetchStatus = (msg, kind = 'info') => {
+      if (!statusEl) return;
+      statusEl.textContent = msg || '';
+      statusEl.dataset.kind = kind;
+    };
+    if (!url) {
+      setFetchStatus('Enter a YouTube URL first.', 'error');
+      urlInput?.focus();
+      return;
+    }
+    if (button) button.disabled = true;
+    setFetchStatus('Fetching…');
+    try {
+      const res = await fetch(
+        `/api/fetch/youtube?url=${encodeURIComponent(url)}`,
+      );
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setFetchStatus(`Fetch ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      const meta = await res.json();
+      let filled = 0;
+      // Only fill empty fields (don't clobber Alain's edits).
+      ['title', 'summary', 'youtube_video_url'].forEach((f) => {
+        const el = root.querySelector(`[data-field="${f}"]`);
+        if (!el) return;
+        if (!nonEmpty(trim(el.value)) && nonEmpty(meta[f])) {
+          el.value = meta[f];
+          filled += 1;
+        }
+      });
+      // Append timecodes — but don't duplicate ones already in the list.
+      let added = 0;
+      if (Array.isArray(meta.timecodes) && timecodesContainer) {
+        const existing = new Set(
+          [...timecodesContainer.querySelectorAll('.row')].map((row) => {
+            const tc = row.querySelector('[data-field="timecode"]')?.value || '';
+            return trim(tc);
+          }).filter(Boolean),
+        );
+        meta.timecodes.forEach((tc) => {
+          if (!tc || !tc.timecode || existing.has(tc.timecode)) return;
+          addTimecode({ timecode: tc.timecode, label: tc.label || '', url: tc.url || '' });
+          existing.add(tc.timecode);
+          added += 1;
+        });
+      }
+      if (filled === 0 && added === 0) {
+        setFetchStatus('Fetched, but nothing new to fill.', 'ok');
+      } else {
+        const parts = [];
+        if (filled) parts.push(`${filled} field${filled === 1 ? '' : 's'}`);
+        if (added) parts.push(`${added} timecode${added === 1 ? '' : 's'}`);
+        setFetchStatus(`Filled ${parts.join(' + ')}.`, 'ok');
+      }
+      schedulePreview();
+    } catch (e) {
+      setFetchStatus('Network error: ' + e.message, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
   };
 
   const addTimecode = (data = {}) => {

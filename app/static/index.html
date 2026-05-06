@@ -178,8 +178,12 @@
     <label>Podcasts URL
       <input type="url" data-field="podcast_url">
     </label>
-    <label class="span-2">YouTube video URL (used for timecode auto-fill later)
-      <input type="url" data-field="youtube_video_url">
+    <label class="span-2">YouTube video URL
+      <div class="row inline">
+        <input type="url" data-field="youtube_video_url">
+        <button type="button" class="btn ghost btn-fetch" data-action="fetch-youtube" title="Fetch title, description, and MM:SS timecodes from the YouTube video">Fetch</button>
+      </div>
+      <small class="fetch-status" data-role="youtube-fetch-status"></small>
     </label>
     <label class="span-2">Summary
       <textarea data-field="summary" rows="3"></textarea>
