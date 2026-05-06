@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+*.eml.out
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+build/
+*.egg-info/
+.ralph/
+CLAUDE.md
+.claude/

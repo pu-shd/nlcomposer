@@ -1,0 +1,46 @@
+SmartDrivingCars Newsletter
+{{ issue.effective_display_date() }}
+{{ issue.edition_line() }}
+
+{% if issue.intro_html -%}
+{{ issue.intro_html | striptags }}
+
+{% endif -%}
+{% for article in issue.articles -%}
+=== {{ article.headline }} ===
+{{ article.url }}
+{% if article.byline %}{{ article.byline }}{% if article.date_text %}, {{ article.date_text }}{% endif %}{% endif %}
+{% if article.pull_quote %}"{{ article.pull_quote }}"{% endif %}
+{{ article.read_more_label }}: {{ article.effective_read_more_url() }}
+{% if article.alain_comment %}Hmmmm... {{ article.alain_comment }} -Alain{% endif %}
+
+{% endfor -%}
+{% if issue.podcast -%}
+--- SmartDrivingCars Podcast ---
+{% set p = issue.podcast -%}
+{% if p.title %}{{ p.title }}{% endif %}
+{% if p.zoomcast_url %}ZoomCast: {{ p.zoomcast_url }}{% endif %}
+{% if p.podcast_url %}Podcasts: {{ p.podcast_url }}{% endif %}
+{% if p.summary %}{{ p.summary }}{% endif %}
+{% for tc in p.timecodes %}
+  {{ tc.timecode }} {{ tc.label }} ({{ tc.url }})
+{%- endfor %}
+
+{% endif -%}
+{% for block in issue.static_blocks if block.enabled -%}
+{% if block.title %}--- {{ block.title }} ---{% endif %}
+{{ block.html | striptags }}
+
+{% endfor -%}
+{% if issue.highlights -%}
+--- Highlights ---
+{% for h in issue.highlights -%}
+{% if h.article_index < issue.articles | length -%}
+{% set a = issue.articles[h.article_index] -%}
+* {{ h.override_label or a.headline }} — {{ a.url }}
+{% endif -%}
+{% endfor %}
+{% endif -%}
+{% if issue.unsubscribe_url -%}
+Unsubscribe: {{ issue.unsubscribe_url }}
+{% endif -%}

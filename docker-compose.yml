@@ -1,0 +1,22 @@
+services:
+  app:
+    build: .
+    image: sdc-composer:dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./assets:/app/assets
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+
+  tests:
+    build: .
+    image: sdc-composer:dev
+    command: pytest -q
+    volumes:
+      - ./app:/app/app
+      - ./tests:/app/tests
+    profiles: ["test"]
