@@ -275,3 +275,138 @@ def test_composer_js_calls_drafts_endpoint(client: TestClient):
     js = client.get("/static/composer.js").text
     assert "/api/drafts" in js
     assert "openDraftsDialog" in js
+
+
+# ───────── form_sections round-trip (drag-sort persistence) ──────────
+
+
+def test_round_trip_form_sections_preserves_user_drag_order(
+    sample_issue, client: TestClient,
+):
+    """Persistence of the FAB-spawned + drag-sorted section layout.
+
+    Simulates a user who:
+      1. Started with the default (Articles, Podcast, Static blocks).
+      2. Used the FAB to add a SECOND Articles section.
+      3. Dragged the new Articles section to sit BEFORE Podcast — so the
+         order on screen is now: Articles A, Articles B, Podcast, Static.
+      4. Saved as a draft.
+
+    On reload the draft must come back with the same `form_sections`
+    array AND the articles list still grouped per section, so
+    ``loadIssueIntoForm`` can rebuild the exact layout the user left.
+    """
+    base = sample_issue.model_dump(mode="json")
+    # Two articles in section A, one in section B (drag-spawned).
+    section_a_articles = base["articles"][:2]
+    section_b_articles = base["articles"][2:3] or [base["articles"][0]]
+    statics = base["static_blocks"]
+    podcast = base["podcast"]
+
+    payload = {
+        **{k: v for k, v in base.items() if k not in {"articles", "static_blocks"}},
+        "articles": section_a_articles + section_b_articles,
+        "static_blocks": statics,
+        "podcast": podcast,
+        "form_sections": [
+            {"type": "articles", "id": "s-1", "count": len(section_a_articles)},
+            {"type": "articles", "id": "s-4", "count": len(section_b_articles)},
+            {"type": "podcast", "id": "s-2", "enabled": True},
+            {"type": "static_blocks", "id": "s-3", "count": len(statics)},
+        ],
+    }
+
+    created = client.post(
+        "/api/drafts", json={"name": "drag-reordered", "payload": payload},
+    )
+    assert created.status_code == 201, created.text
+    draft_id = created.json()["id"]
+
+    fetched = client.get(f"/api/drafts/{draft_id}").json()
+    fs = fetched["payload"]["form_sections"]
+    # Order matters — this IS the user's drag result.
+    assert [s["type"] for s in fs] == [
+        "articles", "articles", "podcast", "static_blocks",
+    ]
+    # Per-section item counts survived too.
+    counts_by_id = {s["id"]: s.get("count") for s in fs if "count" in s}
+    assert counts_by_id["s-1"] == len(section_a_articles)
+    assert counts_by_id["s-4"] == len(section_b_articles)
+    assert counts_by_id["s-3"] == len(statics)
+    # Podcast section still flagged enabled.
+    assert next(s for s in fs if s["type"] == "podcast")["enabled"] is True
+    # The flat articles list still has section A's items first, B's after —
+    # which is how ``buildIssue`` flattens DOM-ordered sections.
+    assert (
+        fetched["payload"]["articles"][: len(section_a_articles)]
+        == section_a_articles
+    )
+
+
+def test_round_trip_form_sections_preserves_dragged_first_section(
+    sample_issue, client: TestClient,
+):
+    """User drags Static blocks to the very top of the sortable region.
+    Saved + reloaded layout must reflect the new section order.
+    """
+    base = sample_issue.model_dump(mode="json")
+    payload = {
+        **base,
+        "form_sections": [
+            {"type": "static_blocks", "id": "s-3", "count": len(base["static_blocks"])},
+            {"type": "articles", "id": "s-1", "count": len(base["articles"])},
+            {"type": "podcast", "id": "s-2", "enabled": base.get("podcast") is not None},
+        ],
+    }
+    created = client.post(
+        "/api/drafts",
+        json={"name": "static-on-top", "payload": payload},
+    )
+    assert created.status_code == 201, created.text
+    fetched = client.get(f"/api/drafts/{created.json()['id']}").json()
+    assert [s["type"] for s in fetched["payload"]["form_sections"]] == [
+        "static_blocks", "articles", "podcast",
+    ]
+
+
+def test_round_trip_form_sections_legacy_payload_without_metadata(
+    sample_issue, client: TestClient,
+):
+    """A draft saved by an older build of the composer (no
+    ``form_sections``) must still load cleanly. The composer's load
+    path falls back to a single section of each type.
+    """
+    base = sample_issue.model_dump(mode="json")
+    base.pop("form_sections", None)
+    created = client.post(
+        "/api/drafts", json={"name": "legacy", "payload": base},
+    )
+    assert created.status_code == 201, created.text
+    fetched = client.get(f"/api/drafts/{created.json()['id']}").json()
+    # Round-trip preserved the canonical fields untouched.
+    assert "form_sections" not in fetched["payload"]
+    assert len(fetched["payload"]["articles"]) == len(base["articles"])
+
+
+def test_dropping_a_section_removes_it_from_form_sections(
+    sample_issue, client: TestClient,
+):
+    """If the user clicked the section's × to remove a podcast section
+    they no longer want, the saved layout has no podcast entry."""
+    base = sample_issue.model_dump(mode="json")
+    base.pop("podcast", None)
+    payload = {
+        **base,
+        "form_sections": [
+            {"type": "articles", "id": "s-1", "count": len(base["articles"])},
+            {"type": "static_blocks", "id": "s-3", "count": len(base["static_blocks"])},
+        ],
+    }
+    created = client.post(
+        "/api/drafts", json={"name": "no-podcast", "payload": payload},
+    )
+    assert created.status_code == 201, created.text
+    fetched = client.get(f"/api/drafts/{created.json()['id']}").json()
+    types = [s["type"] for s in fetched["payload"]["form_sections"]]
+    assert "podcast" not in types
+    assert types == ["articles", "static_blocks"]

@@ -11,14 +11,15 @@
   const previewMeta = document.getElementById('preview-meta');
   const status = document.getElementById('status');
 
-  const articlesContainer = document.getElementById('articles');
-  const staticContainer = document.getElementById('static-blocks');
+  // Form is now organized as a fixed Issue Details + a sortable region
+  // (#sortable-sections) holding one or more Articles / Podcast / Static
+  // blocks <details>, then fixed Bottom highlights and Footer. Multiple
+  // instances of any sortable section type are allowed; their order is
+  // user-controlled via drag-and-drop on the section summary bars and
+  // round-trips through draft save/load via the `form_sections` payload
+  // metadata array.
+  const sortableSections = document.getElementById('sortable-sections');
   const highlightsContainer = document.getElementById('highlights');
-  const podcastEnabled = document.getElementById('podcast-enabled');
-  const podcastFields = document.getElementById('podcast-fields');
-
-  const articlesCount = document.getElementById('articles-count');
-  const staticCount = document.getElementById('static-count');
   const highlightsCount = document.getElementById('highlights-count');
 
   const articleTpl = document.getElementById('article-template');
@@ -26,6 +27,23 @@
   const timecodeTpl = document.getElementById('timecode-template');
   const staticTpl = document.getElementById('static-template');
   const highlightTpl = document.getElementById('highlight-template');
+  const articlesSectionTpl = document.getElementById('articles-section-template');
+  const podcastSectionTpl = document.getElementById('podcast-section-template');
+  const staticBlocksSectionTpl = document.getElementById('static-blocks-section-template');
+
+  // Stable per-section ids so refs (e.g. saved draft form_sections) survive
+  // page reloads even though the underlying DOM is rebuilt from templates.
+  let nextSectionId = 0;
+  const newSectionId = () => `s-${++nextSectionId}`;
+
+  // Helpers for walking sortable sections of a given type in DOM order.
+  const sortableSectionsAll = () => [...sortableSections.querySelectorAll(':scope > .sortable-section')];
+  const sortableSectionsOfType = (type) =>
+    sortableSectionsAll().filter((s) => s.dataset.sectionType === type);
+  const allArticleCards = () =>
+    [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="articles"] .articles-container .article-card')];
+  const allStaticCards = () =>
+    [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="static_blocks"] .statics-container fieldset.card')];
 
   // ───────── Helpers ─────────────────────────────────────────────────
   const trim = (v) => (typeof v === 'string' ? v.trim() : v);
@@ -149,22 +167,43 @@
   };
 
   const renumber = () => {
-    [...articlesContainer.querySelectorAll('.article-card')].forEach((card, i) => {
+    // Article numbering is global across every Articles section so that
+    // a highlight reference like "#3" still maps to a unique card even
+    // when the form has multiple Articles sections.
+    allArticleCards().forEach((card, i) => {
       const idx = card.querySelector('.idx');
       if (idx) idx.textContent = `#${i + 1}`;
       updateArticleHeaderPreview(card);
     });
-    [...staticContainer.querySelectorAll('fieldset.card')].forEach((card, i) => {
+    allStaticCards().forEach((card, i) => {
       const idx = card.querySelector('.idx');
       if (idx) idx.textContent = `#${i + 1}`;
     });
-    articlesCount.textContent = articlesContainer.querySelectorAll('.article-card').length;
-    staticCount.textContent = staticContainer.querySelectorAll('fieldset.card').length;
+    // Per-section counts in the section summary badges.
+    sortableSectionsOfType('articles').forEach((sec) => {
+      const badge = sec.querySelector('[data-role="articles-count"]');
+      if (badge) badge.textContent = sec.querySelectorAll('.article-card').length;
+    });
+    sortableSectionsOfType('static_blocks').forEach((sec) => {
+      const badge = sec.querySelector('[data-role="static-count"]');
+      if (badge) badge.textContent = sec.querySelectorAll('fieldset.card').length;
+    });
     highlightsCount.textContent = highlightsContainer.querySelectorAll('.row').length;
     refreshHighlightOptions();
   };
 
-  const addArticle = (data = {}) => {
+  // Pick a target Articles section's container — defaults to the LAST one
+  // so "+ Add article" from the Articles-section template appends to its
+  // own list, but the FAB-less seed path uses the first section.
+  const articlesContainerOf = (section) =>
+    section.querySelector('[data-role="articles-container"]');
+  const staticsContainerOf = (section) =>
+    section.querySelector('[data-role="statics-container"]');
+
+  const addArticle = (data = {}, container = null) => {
+    const targetContainer = container
+      || (sortableSectionsOfType('articles')[0]?.querySelector('[data-role="articles-container"]'));
+    if (!targetContainer) return null;
     const node = articleTpl.content.firstElementChild.cloneNode(true);
     node.dataset.articleId = newArticleId();
     Object.entries(data).forEach(([k, v]) => {
@@ -188,7 +227,7 @@
       });
     }
     wireArticleDragHandle(node);
-    articlesContainer.appendChild(node);
+    targetContainer.appendChild(node);
     renumber();
     return node;
   };
@@ -204,7 +243,7 @@
   let draggingEl = null;
 
   const getDragAfterElement = (container, y) => {
-    const els = [...container.querySelectorAll('.article-card:not(.dragging)')];
+    const els = [...container.querySelectorAll(':scope > .article-card:not(.dragging)')];
     let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
     els.forEach((child) => {
       const box = child.getBoundingClientRect();
@@ -212,6 +251,22 @@
       if (offset < 0 && offset > closest.offset) closest = { offset, element: child };
     });
     return closest.element;
+  };
+
+  // Find the .articles-container under the cursor — used for cross-section
+  // article moves (drag from Articles A into Articles B). We resolve via
+  // the parent section's bounding rect so an empty Articles section
+  // (zero-height container) is still a valid drop target.
+  const articlesContainerAtPoint = (x, y) => {
+    const sections = [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="articles"]')];
+    for (const sec of sections) {
+      if (!sec.open) continue;
+      const box = sec.getBoundingClientRect();
+      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) {
+        return sec.querySelector('.articles-container');
+      }
+    }
+    return null;
   };
 
   const wireArticleDragHandle = (card) => {
@@ -237,14 +292,17 @@
     });
   };
 
-  // Container-level dragover — moves the dragged card to its new slot
-  // continuously so the user sees the target position update live.
-  articlesContainer.addEventListener('dragover', (e) => {
+  // Document-level dragover — chooses the .articles-container under the
+  // cursor and reflows the dragged card live. Delegated rather than per-
+  // container so newly-added Articles sections work without rewiring.
+  document.addEventListener('dragover', (e) => {
     if (!draggingEl) return;
+    const container = articlesContainerAtPoint(e.clientX, e.clientY);
+    if (!container) return;
     e.preventDefault();
-    const after = getDragAfterElement(articlesContainer, e.clientY);
-    if (after == null) articlesContainer.appendChild(draggingEl);
-    else if (after !== draggingEl) articlesContainer.insertBefore(draggingEl, after);
+    const after = getDragAfterElement(container, e.clientY);
+    if (after == null) container.appendChild(draggingEl);
+    else if (after !== draggingEl) container.insertBefore(draggingEl, after);
   });
 
   // ───────── Article fetch (auto-fill from URL) ──────────────────────
@@ -304,24 +362,39 @@
   };
 
   // ───────── Podcast ─────────────────────────────────────────────────
-  let podcastNode = null;
-  let timecodesContainer = null;
-  const renderPodcastFields = () => {
-    podcastFields.innerHTML = '';
-    podcastNode = podcastTpl.content.firstElementChild.cloneNode(true);
-    podcastFields.appendChild(podcastNode);
-    timecodesContainer = podcastNode.querySelector('#timecodes');
-    podcastNode.querySelector('#add-timecode').addEventListener('click', (e) => {
+  // Each Podcast section owns its own .podcast-fields container and
+  // (when "Include podcast section" is checked) a cloned podcast template
+  // node with its own timecodes list. The DOM is the source of truth;
+  // helpers below look up the cloned node and timecodes container fresh
+  // on each call so multiple Podcast sections coexist.
+  const podcastFieldsOf = (section) =>
+    section.querySelector('[data-role="podcast-fields"]');
+  const podcastEnabledInputOf = (section) =>
+    section.querySelector('[data-role="podcast-enabled"]');
+  const podcastNodeOf = (section) =>
+    section.querySelector('[data-role="podcast-fields"] > div');
+  const timecodesContainerOf = (section) => {
+    const node = podcastNodeOf(section);
+    return node ? node.querySelector('#timecodes') : null;
+  };
+
+  const renderPodcastFields = (section) => {
+    const fields = podcastFieldsOf(section);
+    fields.innerHTML = '';
+    const node = podcastTpl.content.firstElementChild.cloneNode(true);
+    fields.appendChild(node);
+    node.querySelector('#add-timecode').addEventListener('click', (e) => {
       e.preventDefault();
-      addTimecode();
+      addTimecode({}, node.querySelector('#timecodes'));
     });
-    const ytFetchBtn = podcastNode.querySelector('[data-action="fetch-youtube"]');
+    const ytFetchBtn = node.querySelector('[data-action="fetch-youtube"]');
     if (ytFetchBtn) {
       ytFetchBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        fetchYouTubeInto(podcastNode);
+        fetchYouTubeInto(node);
       });
     }
+    return node;
   };
 
   // ───────── YouTube fetch (auto-fill title / summary / timecodes) ───
@@ -364,17 +437,23 @@
         }
       });
       // Append timecodes — but don't duplicate ones already in the list.
+      // The fetch button is rendered inside the cloned podcast template
+      // node, so its sibling timecodes container is reachable via root.
       let added = 0;
-      if (Array.isArray(meta.timecodes) && timecodesContainer) {
+      const tcContainer = root.querySelector('#timecodes');
+      if (Array.isArray(meta.timecodes) && tcContainer) {
         const existing = new Set(
-          [...timecodesContainer.querySelectorAll('.row')].map((row) => {
+          [...tcContainer.querySelectorAll('.row')].map((row) => {
             const tc = row.querySelector('[data-field="timecode"]')?.value || '';
             return trim(tc);
           }).filter(Boolean),
         );
         meta.timecodes.forEach((tc) => {
           if (!tc || !tc.timecode || existing.has(tc.timecode)) return;
-          addTimecode({ timecode: tc.timecode, label: tc.label || '', url: tc.url || '' });
+          addTimecode(
+            { timecode: tc.timecode, label: tc.label || '', url: tc.url || '' },
+            tcContainer,
+          );
           existing.add(tc.timecode);
           added += 1;
         });
@@ -395,8 +474,8 @@
     }
   };
 
-  const addTimecode = (data = {}) => {
-    if (!timecodesContainer) return;
+  const addTimecode = (data = {}, container = null) => {
+    if (!container) return null;
     const node = timecodeTpl.content.firstElementChild.cloneNode(true);
     Object.entries(data).forEach(([k, v]) => {
       const el = node.querySelector(`[data-field="${k}"]`);
@@ -406,24 +485,33 @@
       node.remove();
       schedulePreview();
     });
-    timecodesContainer.appendChild(node);
+    container.appendChild(node);
     return node;
   };
 
-  podcastEnabled.addEventListener('change', () => {
-    if (podcastEnabled.checked) {
-      podcastFields.hidden = false;
-      if (!podcastNode) {
-        renderPodcastFields();
+  // Wires the "Include podcast section" checkbox of a Podcast section so
+  // toggling reveals/hides the cloned podcast-template fields. Each
+  // section stays independent of the others.
+  const wirePodcastSection = (section) => {
+    const cb = podcastEnabledInputOf(section);
+    const fields = podcastFieldsOf(section);
+    if (!cb || !fields) return;
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        fields.hidden = false;
+        if (!podcastNodeOf(section)) renderPodcastFields(section);
+      } else {
+        fields.hidden = true;
       }
-    } else {
-      podcastFields.hidden = true;
-    }
-    schedulePreview();
-  });
+      schedulePreview();
+    });
+  };
 
   // ───────── Static blocks ───────────────────────────────────────────
-  const addStatic = (data = {}) => {
+  const addStatic = (data = {}, container = null) => {
+    const targetContainer = container
+      || (sortableSectionsOfType('static_blocks')[0]?.querySelector('[data-role="statics-container"]'));
+    if (!targetContainer) return null;
     const node = staticTpl.content.firstElementChild.cloneNode(true);
     Object.entries(data).forEach(([k, v]) => {
       const el = node.querySelector(`[data-field="${k}"]`);
@@ -436,8 +524,147 @@
       renumber();
       schedulePreview();
     });
-    staticContainer.appendChild(node);
+    targetContainer.appendChild(node);
     renumber();
+    return node;
+  };
+
+  // ───────── Sortable section management ────────────────────────────
+  // Sections (Articles / Podcast / Static blocks) live in #sortable-
+  // sections. They are added via the floating "+" button or seeded as
+  // defaults at init. When more than one section exists, drag handles on
+  // each section's summary bar appear and the user can reorder them
+  // freely (across types). The fixed Issue-Details / Bottom-highlights /
+  // Footer <details> are NOT in the sortable region.
+  let draggingSectionEl = null;
+
+  const getSectionDragAfter = (y) => {
+    const els = [...sortableSections.querySelectorAll(':scope > .sortable-section:not(.dragging)')];
+    let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+    els.forEach((child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) closest = { offset, element: child };
+    });
+    return closest.element;
+  };
+
+  const wireSectionDragHandle = (section) => {
+    const handle = section.querySelector('.section-drag-handle');
+    if (!handle) return;
+    handle.addEventListener('mousedown', () => { section.draggable = true; });
+    handle.addEventListener('mouseup', () => { section.draggable = false; });
+    // The handle sits inside <summary>; clicking it would toggle the
+    // collapsed state, which is annoying when the user is reaching for
+    // the drag affordance.
+    handle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+    section.addEventListener('dragstart', (e) => {
+      if (!section.draggable) return;
+      // If an article-card drag is in flight, don't let the section
+      // start its own drag (e.dataTransfer is shared per gesture).
+      if (draggingEl) return;
+      draggingSectionEl = section;
+      section.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', section.dataset.sectionId || '');
+    });
+    section.addEventListener('dragend', () => {
+      section.classList.remove('dragging');
+      section.draggable = false;
+      if (draggingSectionEl === section) draggingSectionEl = null;
+      renumber();
+      schedulePreview();
+    });
+  };
+
+  sortableSections.addEventListener('dragover', (e) => {
+    if (!draggingSectionEl) return;
+    e.preventDefault();
+    const after = getSectionDragAfter(e.clientY);
+    if (after == null) sortableSections.appendChild(draggingSectionEl);
+    else if (after !== draggingSectionEl) sortableSections.insertBefore(draggingSectionEl, after);
+  });
+
+  // Toggle the .has-many class — its presence is what makes the per-
+  // section drag handles visible (CSS rule). One sortable section means
+  // there's nothing to reorder, so the handles stay hidden.
+  const updateSectionDragVisibility = () => {
+    const count = sortableSectionsAll().length;
+    sortableSections.classList.toggle('has-many', count > 1);
+  };
+
+  const wireSection = (section) => {
+    if (!section.dataset.sectionId) section.dataset.sectionId = newSectionId();
+    wireSectionDragHandle(section);
+
+    const removeBtn = section.querySelector('.section-remove');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const type = section.dataset.sectionType;
+        const label = type === 'articles' ? 'Articles' :
+                      type === 'podcast' ? 'Podcast' : 'Static blocks';
+        // Only prompt if the section actually has content the user
+        // would lose; an empty newly-spawned section deletes silently.
+        const hasContent =
+          section.querySelectorAll('.article-card, fieldset.card').length > 0 ||
+          (type === 'podcast' && podcastEnabledInputOf(section)?.checked);
+        if (hasContent) {
+          const ok = await confirmDelete(`Remove this ${label} section? Its contents will be discarded.`);
+          if (!ok) return;
+        }
+        section.remove();
+        updateSectionDragVisibility();
+        renumber();
+        schedulePreview();
+      });
+    }
+
+    if (section.dataset.sectionType === 'articles') {
+      const addBtn = section.querySelector('[data-action="add-article"]');
+      if (addBtn) {
+        addBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          addArticle({}, articlesContainerOf(section));
+          schedulePreview();
+        });
+      }
+    } else if (section.dataset.sectionType === 'static_blocks') {
+      const addBtn = section.querySelector('[data-action="add-static"]');
+      if (addBtn) {
+        addBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          addStatic({}, staticsContainerOf(section));
+          schedulePreview();
+        });
+      }
+    } else if (section.dataset.sectionType === 'podcast') {
+      wirePodcastSection(section);
+    }
+  };
+
+  const cloneSection = (type) => {
+    const tpl = (
+      type === 'articles' ? articlesSectionTpl :
+      type === 'podcast' ? podcastSectionTpl :
+      type === 'static_blocks' ? staticBlocksSectionTpl : null
+    );
+    if (!tpl) return null;
+    return tpl.content.firstElementChild.cloneNode(true);
+  };
+
+  // Add a new sortable section (articles / podcast / static_blocks).
+  // ``id`` allows callers (loadIssueIntoForm) to restore a section's
+  // stable id from a saved form_sections entry.
+  const addSection = (type, { id = null, append = true } = {}) => {
+    const node = cloneSection(type);
+    if (!node) return null;
+    if (id) node.dataset.sectionId = id;
+    else node.dataset.sectionId = newSectionId();
+    if (append) sortableSections.appendChild(node);
+    wireSection(node);
+    updateSectionDragVisibility();
     return node;
   };
 
@@ -454,7 +681,7 @@
       ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
 
   const refreshHighlightOptions = () => {
-    const articles = [...articlesContainer.querySelectorAll('.article-card')];
+    const articles = allArticleCards();
     const optionsHtml = articles.map((a, i) => {
       const headline = a.querySelector('[data-field="headline"]').value || `(article #${i + 1})`;
       const truncated = headline.length > 60 ? headline.slice(0, 57) + '…' : headline;
@@ -479,7 +706,7 @@
     // `data.article_index` is the saved numeric DOM position from
     // template/draft JSON. Resolve it to the corresponding card's id.
     if (data.article_index !== undefined && data.article_index !== null) {
-      const cards = [...articlesContainer.querySelectorAll('.article-card')];
+      const cards = allArticleCards();
       const card = cards[Number(data.article_index)];
       if (card && card.dataset.articleId) {
         node.querySelector('[data-field="article_index"]').value = card.dataset.articleId;
@@ -540,55 +767,90 @@
     }
     const issue = stripEmpty(root);
 
-    // Articles — drop incomplete rows so the preview keeps rendering while
-    // Alain is mid-edit (headline + url are required by the Pydantic model).
-    // Build an article-id → output-index map so highlight refs (which carry
-    // stable DOM ids) can be resolved after filtering AND after reorder.
-    const cards = [...articlesContainer.querySelectorAll('.article-card')];
+    // Walk every sortable section in DOM order, flattening articles and
+    // static_blocks across multiple sections of the same type while
+    // preserving the visual ordering. Each section contributes a
+    // `form_sections` entry so the structure round-trips through draft
+    // save / load. Pydantic ignores unknown extras, so the form_sections
+    // field is dropped harmlessly by /api/preview/html and /api/eml.
     const idToOutIdx = new Map();
     issue.articles = [];
-    cards.forEach((card) => {
-      const fields = stripEmpty(collectFields(card));
-      if (fields.headline && fields.url) {
-        idToOutIdx.set(card.dataset.articleId, issue.articles.length);
-        issue.articles.push(fields);
+    issue.static_blocks = [];
+    const formSections = [];
+    let collectedPodcast = null;
+    sortableSectionsAll().forEach((section) => {
+      const type = section.dataset.sectionType;
+      const sectionId = section.dataset.sectionId || '';
+      if (type === 'articles') {
+        const cards = [...section.querySelectorAll('.article-card')];
+        let count = 0;
+        cards.forEach((card) => {
+          const fields = stripEmpty(collectFields(card));
+          if (fields.headline && fields.url) {
+            idToOutIdx.set(card.dataset.articleId, issue.articles.length);
+            issue.articles.push(fields);
+            count += 1;
+          }
+        });
+        formSections.push({ type, id: sectionId, count });
+      } else if (type === 'static_blocks') {
+        const cards = [...section.querySelectorAll('fieldset.card')];
+        let count = 0;
+        cards.forEach((card) => {
+          const fields = collectFields(card);
+          const block = {
+            title: fields.title || '',
+            html: fields.html || '',
+            enabled: !!fields.enabled,
+          };
+          if (block.title || block.html) {
+            issue.static_blocks.push(block);
+            count += 1;
+          }
+        });
+        formSections.push({ type, id: sectionId, count });
+      } else if (type === 'podcast') {
+        const cb = podcastEnabledInputOf(section);
+        const enabled = !!(cb && cb.checked);
+        const node = podcastNodeOf(section);
+        let collected = null;
+        if (enabled && node) {
+          const podFields = {};
+          node.querySelectorAll('[data-field]').forEach((el) => {
+            if (el.closest('#timecodes')) return;
+            const key = el.dataset.field;
+            let v;
+            if (el.type === 'number') v = el.value === '' ? null : Number(el.value);
+            else v = trim(el.value);
+            podFields[key] = v;
+          });
+          const tcContainer = node.querySelector('#timecodes');
+          const timecodes = tcContainer
+            ? [...tcContainer.querySelectorAll('.row')]
+                .map((row) => stripEmpty(collectFields(row)))
+                .filter((tc) => tc.timecode && tc.label && tc.url)
+            : [];
+          const cleaned = stripEmpty(podFields);
+          cleaned.timecodes = timecodes;
+          if (cleaned.title || timecodes.length || cleaned.zoomcast_url || cleaned.podcast_url) {
+            collected = cleaned;
+          }
+        }
+        // Only the first podcast section with usable data flows into the
+        // model's single `podcast` slot — extras still appear in
+        // form_sections so the layout restores on load even if their
+        // data is empty.
+        if (collected && !collectedPodcast) collectedPodcast = collected;
+        formSections.push({ type, id: sectionId, enabled });
       }
     });
-
-    // Podcast
-    if (podcastEnabled.checked && podcastNode) {
-      const podFields = {};
-      podcastNode.querySelectorAll(':scope > .grid-2 > [data-field], :scope > .grid-2 > label > [data-field]').forEach(() => {});
-      podcastNode.querySelectorAll('[data-field]').forEach((el) => {
-        // Skip timecode inputs (they live inside #timecodes which we read below)
-        if (el.closest('#timecodes')) return;
-        const key = el.dataset.field;
-        let v;
-        if (el.type === 'number') v = el.value === '' ? null : Number(el.value);
-        else v = trim(el.value);
-        podFields[key] = v;
-      });
-      const timecodes = [...timecodesContainer.querySelectorAll('.row')]
-        .map((row) => stripEmpty(collectFields(row)))
-        .filter((tc) => tc.timecode && tc.label && tc.url);
-      const cleaned = stripEmpty(podFields);
-      cleaned.timecodes = timecodes;
-      if (cleaned.title || timecodes.length || cleaned.zoomcast_url || cleaned.podcast_url) {
-        issue.podcast = cleaned;
-      }
-    }
-
-    // Static blocks
-    issue.static_blocks = [...staticContainer.querySelectorAll('fieldset.card')]
-      .map((card) => {
-        const fields = collectFields(card);
-        return { title: fields.title || '', html: fields.html || '', enabled: !!fields.enabled };
-      })
-      .filter((b) => b.title || b.html);
+    if (collectedPodcast) issue.podcast = collectedPodcast;
+    issue.form_sections = formSections;
 
     // Highlights — selects carry the article's stable id; resolve to the
-    // post-filter article indices and drop refs whose article was removed
-    // or is still incomplete (no headline+url).
+    // post-filter article indices (numbered globally across all Articles
+    // sections) and drop refs whose article was removed or is still
+    // incomplete (no headline+url).
     issue.highlights = [...highlightsContainer.querySelectorAll('.row')]
       .map((row) => {
         const fields = collectFields(row);
@@ -747,18 +1009,57 @@
   };
 
   // ───────── Wiring ──────────────────────────────────────────────────
-  document.getElementById('add-article').addEventListener('click', () => {
-    addArticle();
-    schedulePreview();
-  });
-  document.getElementById('add-static').addEventListener('click', () => {
-    addStatic();
-    schedulePreview();
-  });
+  // Per-section "+ Add article" / "+ Add block" buttons live inside each
+  // sortable-section clone and are wired by wireSection(); the only
+  // top-level adder still living in the fixed Highlights section is
+  // "+ Add highlight" below.
   document.getElementById('add-highlight').addEventListener('click', () => {
     addHighlight();
     schedulePreview();
   });
+
+  // ───────── Floating "+" Add-section button ───────────────────────
+  const addSectionFab = document.getElementById('add-section-fab');
+  const addSectionMenu = document.getElementById('add-section-menu');
+  const closeAddSectionMenu = () => {
+    if (!addSectionMenu) return;
+    addSectionMenu.hidden = true;
+    addSectionFab?.setAttribute('aria-expanded', 'false');
+  };
+  const openAddSectionMenu = () => {
+    if (!addSectionMenu) return;
+    addSectionMenu.hidden = false;
+    addSectionFab?.setAttribute('aria-expanded', 'true');
+  };
+  if (addSectionFab && addSectionMenu) {
+    addSectionFab.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (addSectionMenu.hidden) openAddSectionMenu();
+      else closeAddSectionMenu();
+    });
+    document.addEventListener('click', (e) => {
+      if (addSectionMenu.hidden) return;
+      if (addSectionMenu.contains(e.target) || addSectionFab.contains(e.target)) return;
+      closeAddSectionMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeAddSectionMenu();
+    });
+    addSectionMenu.querySelectorAll('button[data-add-type]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const type = btn.dataset.addType;
+        const sec = addSection(type);
+        // Seed a starter card inside fresh Articles / Static-blocks
+        // sections so the user has an editable target immediately.
+        if (sec && type === 'articles') addArticle({}, articlesContainerOf(sec));
+        if (sec && type === 'static_blocks') addStatic({}, staticsContainerOf(sec));
+        closeAddSectionMenu();
+        schedulePreview();
+      });
+    });
+  }
   document.getElementById('refresh-preview').addEventListener('click', (e) => {
     e.preventDefault();
     doPreview();
@@ -1181,20 +1482,107 @@
       el.value = String(v);
     });
 
-    // Articles — clear, then re-add.
-    articlesContainer.innerHTML = '';
-    (Array.isArray(issue.articles) ? issue.articles : []).forEach((a) => {
-      addArticle(a || {});
-    });
-    if (articlesContainer.children.length === 0) {
-      addArticle({}); // keep at least one empty card so the user can start typing
+    // Wipe any existing sortable sections so the loaded issue is the
+    // single source of truth — drafts/templates fully replace, never
+    // merge, the form's sortable region.
+    sortableSections.innerHTML = '';
+
+    // Reconstruct sections from the saved `form_sections` metadata when
+    // present. Each entry slices articles[]/static_blocks[] in order,
+    // so multi-section drafts round-trip exactly. Without form_sections
+    // we fall back to one section of each type — backward compatible
+    // with drafts saved by older builds of the composer.
+    const articleList = Array.isArray(issue.articles) ? issue.articles : [];
+    const staticList = Array.isArray(issue.static_blocks) ? issue.static_blocks : [];
+    const podcast = (issue.podcast && typeof issue.podcast === 'object') ? issue.podcast : null;
+    const formSections = Array.isArray(issue.form_sections) ? issue.form_sections : null;
+
+    let articleCursor = 0;
+    let staticCursor = 0;
+    let podcastConsumed = false;
+
+    if (formSections && formSections.length) {
+      formSections.forEach((entry) => {
+        if (!entry || typeof entry !== 'object') return;
+        const type = entry.type;
+        const sec = addSection(type, { id: entry.id || null });
+        if (!sec) return;
+        if (type === 'articles') {
+          const count = Number.isInteger(entry.count) ? Math.max(0, entry.count) : articleList.length;
+          const slice = articleList.slice(articleCursor, articleCursor + count);
+          articleCursor += slice.length;
+          slice.forEach((a) => addArticle(a || {}, articlesContainerOf(sec)));
+        } else if (type === 'static_blocks') {
+          const count = Number.isInteger(entry.count) ? Math.max(0, entry.count) : staticList.length;
+          const slice = staticList.slice(staticCursor, staticCursor + count);
+          staticCursor += slice.length;
+          slice.forEach((b) => addStatic(b || {}, staticsContainerOf(sec)));
+        } else if (type === 'podcast') {
+          const cb = podcastEnabledInputOf(sec);
+          const fields = podcastFieldsOf(sec);
+          // Only the first podcast section's data exists in the model;
+          // additional podcast sections restore as empty (the user can
+          // tick "Include podcast section" to populate).
+          if (entry.enabled && podcast && !podcastConsumed) {
+            podcastConsumed = true;
+            cb.checked = true;
+            fields.hidden = false;
+            const node = renderPodcastFields(sec);
+            ['episode_number', 'guest', 'title', 'zoomcast_url', 'podcast_url', 'youtube_video_url', 'summary'].forEach((k) => {
+              const el = node.querySelector(`[data-field="${k}"]`);
+              if (el && podcast[k] != null) el.value = String(podcast[k]);
+            });
+            if (Array.isArray(podcast.timecodes)) {
+              podcast.timecodes.forEach((tc) =>
+                addTimecode(tc || {}, node.querySelector('#timecodes')));
+            }
+          } else {
+            cb.checked = false;
+            fields.hidden = true;
+          }
+        }
+      });
     }
 
-    // Static blocks — clear, then re-add.
-    staticContainer.innerHTML = '';
-    (Array.isArray(issue.static_blocks) ? issue.static_blocks : []).forEach((b) => {
-      addStatic(b || {});
-    });
+    // Tail: any leftover articles / static blocks / podcast not covered
+    // by form_sections fall through into freshly-spawned sections so
+    // nothing is silently dropped during a partial-payload load.
+    const tailArticles = articleList.slice(articleCursor);
+    if (tailArticles.length || sortableSectionsOfType('articles').length === 0) {
+      const sec = sortableSectionsOfType('articles').slice(-1)[0]
+        || addSection('articles');
+      tailArticles.forEach((a) => addArticle(a || {}, articlesContainerOf(sec)));
+      if (sec.querySelectorAll('.article-card').length === 0) {
+        addArticle({}, articlesContainerOf(sec));
+      }
+    }
+    const tailStatic = staticList.slice(staticCursor);
+    if (tailStatic.length || sortableSectionsOfType('static_blocks').length === 0) {
+      const sec = sortableSectionsOfType('static_blocks').slice(-1)[0]
+        || addSection('static_blocks');
+      tailStatic.forEach((b) => addStatic(b || {}, staticsContainerOf(sec)));
+    }
+    if (!podcastConsumed) {
+      const podSec = sortableSectionsOfType('podcast')[0] || addSection('podcast');
+      const cb = podcastEnabledInputOf(podSec);
+      const fields = podcastFieldsOf(podSec);
+      if (podcast) {
+        cb.checked = true;
+        fields.hidden = false;
+        const node = renderPodcastFields(podSec);
+        ['episode_number', 'guest', 'title', 'zoomcast_url', 'podcast_url', 'youtube_video_url', 'summary'].forEach((k) => {
+          const el = node.querySelector(`[data-field="${k}"]`);
+          if (el && podcast[k] != null) el.value = String(podcast[k]);
+        });
+        if (Array.isArray(podcast.timecodes)) {
+          podcast.timecodes.forEach((tc) => addTimecode(tc || {}, node.querySelector('#timecodes')));
+        }
+      } else {
+        cb.checked = false;
+        fields.hidden = true;
+      }
+    }
+    updateSectionDragVisibility();
 
     // Highlights — clear, then re-add. Must run after articles so the
     // refreshHighlightOptions select gets the right option list.
@@ -1202,27 +1590,6 @@
     (Array.isArray(issue.highlights) ? issue.highlights : []).forEach((h) => {
       addHighlight(h || {});
     });
-
-    // Podcast — toggle the section and fill if present.
-    if (issue.podcast && typeof issue.podcast === 'object') {
-      podcastEnabled.checked = true;
-      podcastFields.hidden = false;
-      renderPodcastFields();
-      const pod = issue.podcast;
-      ['episode_number', 'guest', 'title', 'zoomcast_url', 'podcast_url', 'youtube_video_url', 'summary'].forEach((k) => {
-        const el = podcastNode.querySelector(`[data-field="${k}"]`);
-        if (el && pod[k] != null) el.value = String(pod[k]);
-      });
-      if (Array.isArray(pod.timecodes)) {
-        pod.timecodes.forEach((tc) => addTimecode(tc || {}));
-      }
-    } else {
-      podcastEnabled.checked = false;
-      podcastFields.hidden = true;
-      podcastFields.innerHTML = '';
-      podcastNode = null;
-      timecodesContainer = null;
-    }
 
     renumber();
     updateYearDisplay();
@@ -1782,19 +2149,29 @@
   });
   settingsForm.addEventListener('submit', saveSettings);
 
-  // ───────── Initial seed: today's date + a starter article + sponsor block ──
+  // ───────── Initial seed: today's date + default sections ──────────
+  // The composer ships with one of each sortable section type so a
+  // brand-new draft has the same starting layout the user has always
+  // seen. Extra sections are added on demand via the FAB.
   const today = new Date().toISOString().slice(0, 10);
   form.elements['issue_date'].value = today;
-  addArticle({
-    headline: '',
-    url: '',
-    read_more_label: 'Read more',
-  });
-  addStatic({
-    title: 'Sponsor / book / conference',
-    html: '<p>Carry-forward block — duplicate from last issue.</p>',
-    enabled: true,
-  });
+  const seedArticlesSection = addSection('articles');
+  addSection('podcast');
+  const seedStaticsSection = addSection('static_blocks');
+  addArticle(
+    { headline: '', url: '', read_more_label: 'Read more' },
+    articlesContainerOf(seedArticlesSection),
+  );
+  addStatic(
+    {
+      title: 'Sponsor / book / conference',
+      html: '<p>Carry-forward block — duplicate from last issue.</p>',
+      enabled: true,
+    },
+    staticsContainerOf(seedStaticsSection),
+  );
+  updateSectionDragVisibility();
+
   // Pull settings before the first preview so any saved defaults
   // (from_name/from_email/etc.) end up in the rendered .eml.
   loadSettings().then((s) => {

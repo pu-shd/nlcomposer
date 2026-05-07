@@ -144,6 +144,144 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   padding: 16px;
   border-right: 1px solid var(--border);
   background: var(--bg);
+  position: relative;
+}
+
+/* Floating "+" Add-section button + menu ─────────────────────────────
+   Sticky to the form-pane's scroll bottom-right so the user can spawn
+   a new sortable section (Articles / Podcast / Static blocks) at any
+   scroll depth without hunting for the bottom of the form. */
+.fab-row {
+  position: sticky;
+  bottom: 16px;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+  margin-top: -56px;
+  z-index: 20;
+}
+.fab-stack {
+  position: relative;
+  pointer-events: auto;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+#add-section-fab {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.20);
+  padding: 0;
+}
+#add-section-fab:hover { background: #163764; border-color: #163764; }
+#add-section-fab[aria-expanded="true"] { background: #163764; border-color: #163764; }
+#add-section-fab svg { width: 22px; height: 22px; display: block; }
+.fab-menu {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.fab-menu[hidden] { display: none; }
+.fab-menu button {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 5px;
+}
+.fab-menu button:hover { background: var(--accent-soft); color: var(--accent); }
+.fab-menu .fab-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 14px;
+  flex: 0 0 auto;
+}
+
+/* Sortable section wrapper + section header ─────────────────────────
+   Hosts Articles / Podcast / Static-blocks <details>. Drag handle on
+   the summary appears only when there's more than one sortable section
+   (toggled by JS via .sortable-sections.has-many). */
+.sortable-sections { display: flex; flex-direction: column; gap: 0; }
+#composer .sortable-section { /* same chrome as #composer details */ }
+#composer .sortable-section.dragging { opacity: 0.45; }
+#composer .sortable-section[draggable="true"] > summary.section-header { cursor: grabbing; }
+#composer .sortable-section > summary.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-weight: 600;
+  list-style: none;
+  user-select: none;
+}
+#composer .sortable-section > summary.section-header::-webkit-details-marker { display: none; }
+#composer .sortable-section > summary.section-header::before {
+  content: "▸";
+  display: inline-block;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 2em;
+  line-height: 1;
+  width: 1em;
+  text-align: center;
+  transform-origin: 50% 50%;
+  transition: transform 0.15s ease;
+}
+#composer .sortable-section[open] > summary.section-header::before { transform: rotate(90deg); }
+#composer .sortable-section .section-title { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 6px; }
+#composer .sortable-section .section-drag-handle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  cursor: grab;
+  padding: 2px 4px;
+  border-radius: 4px;
+  user-select: none;
+}
+#composer .sortable-section .section-drag-handle:hover { background: rgba(26, 68, 128, 0.12); color: var(--accent); }
+#composer .sortable-section .section-drag-handle:active { cursor: grabbing; }
+#composer .sortable-section .section-drag-handle svg { width: 14px; height: 18px; display: block; }
+/* Show the section drag handles only when there's more than one
+   sortable section — single-section case stays uncluttered. */
+.sortable-sections.has-many .section-drag-handle { display: inline-flex; }
+.sortable-sections.has-many > .sortable-section { transition: transform 0.12s ease; }
+#composer .sortable-section .section-remove {
+  flex: 0 0 auto;
+  font-size: 18px;
+  line-height: 1;
+  margin-left: 0;
+  padding: 0 6px;
 }
 
 .preview-pane {
@@ -559,6 +697,20 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 #confirm-delete-dialog {
   width: min(460px, calc(100vw - 32px));
 }
+/* "Don't ask" toggle inside the action row — pushed to the lower-left
+   corner via margin-right:auto, mirroring the .status placement used
+   in the settings/compose-new dialogs. */
+#confirm-delete-dialog .dialog-actions .confirm-skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+#confirm-delete-dialog .dialog-actions .confirm-skip > input { margin: 0; }
 #settings-dialog::backdrop,
 #compose-new-dialog::backdrop,
 #confirm-delete-dialog::backdrop {

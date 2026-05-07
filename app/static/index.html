@@ -75,27 +75,7 @@
         </div>
       </details>
 
-      <details>
-        <summary>Articles <span class="count" id="articles-count">0</span></summary>
-        <div id="articles" class="repeating"></div>
-        <button type="button" class="btn add" id="add-article">+ Add article</button>
-      </details>
-
-      <details>
-        <summary>Podcast</summary>
-        <label class="checkbox">
-          <input type="checkbox" id="podcast-enabled">
-          Include podcast section
-        </label>
-        <div id="podcast-fields" class="podcast-fields" hidden></div>
-      </details>
-
-      <details>
-        <summary>Static blocks <span class="count" id="static-count">0</span></summary>
-        <p class="hint">Sponsor blurb, book promo, ATS/BTR conferences, etc. Carry these forward across issues.</p>
-        <div id="static-blocks" class="repeating"></div>
-        <button type="button" class="btn add" id="add-static">+ Add block</button>
-      </details>
+      <div id="sortable-sections" class="sortable-sections" aria-label="Reorderable form sections"></div>
 
       <details>
         <summary>Bottom highlights <span class="count" id="highlights-count">0</span></summary>
@@ -117,6 +97,31 @@
       </details>
 
     </form>
+
+    <div class="fab-row" aria-hidden="false">
+      <div class="fab-stack">
+        <div id="add-section-menu" class="fab-menu" hidden role="menu" aria-label="Add a section">
+          <button type="button" data-add-type="articles" role="menuitem">
+            <span class="fab-menu-icon" aria-hidden="true">＋</span>
+            <span>Articles section</span>
+          </button>
+          <button type="button" data-add-type="podcast" role="menuitem">
+            <span class="fab-menu-icon" aria-hidden="true">＋</span>
+            <span>Podcast section</span>
+          </button>
+          <button type="button" data-add-type="static_blocks" role="menuitem">
+            <span class="fab-menu-icon" aria-hidden="true">＋</span>
+            <span>Static blocks section</span>
+          </button>
+        </div>
+        <button type="button" id="add-section-fab" class="fab" aria-label="Add a section" aria-haspopup="menu" aria-expanded="false" title="Add a section">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
   </section>
 
   <div class="layout-resizer" role="separator" aria-orientation="vertical" aria-label="Resize form / preview split" tabindex="0"></div>
@@ -257,6 +262,64 @@
       </label>
     </div>
   </fieldset>
+</template>
+
+<template id="articles-section-template">
+  <details class="sortable-section" data-section-type="articles" open>
+    <summary class="section-header">
+      <span class="section-drag-handle" aria-label="Drag to reorder section" title="Drag to reorder section">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="6" cy="3.5" r="1.1" fill="currentColor"/><circle cx="10" cy="3.5" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="8" r="1.1" fill="currentColor"/><circle cx="10" cy="8" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="12.5" r="1.1" fill="currentColor"/><circle cx="10" cy="12.5" r="1.1" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="section-title">Articles <span class="count" data-role="articles-count">0</span></span>
+      <button type="button" class="btn-remove section-remove" aria-label="Remove Articles section" title="Remove Articles section">&times;</button>
+    </summary>
+    <div class="articles-container repeating" data-role="articles-container"></div>
+    <button type="button" class="btn add" data-action="add-article">+ Add article</button>
+  </details>
+</template>
+
+<template id="podcast-section-template">
+  <details class="sortable-section" data-section-type="podcast" open>
+    <summary class="section-header">
+      <span class="section-drag-handle" aria-label="Drag to reorder section" title="Drag to reorder section">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="6" cy="3.5" r="1.1" fill="currentColor"/><circle cx="10" cy="3.5" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="8" r="1.1" fill="currentColor"/><circle cx="10" cy="8" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="12.5" r="1.1" fill="currentColor"/><circle cx="10" cy="12.5" r="1.1" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="section-title">Podcast</span>
+      <button type="button" class="btn-remove section-remove" aria-label="Remove Podcast section" title="Remove Podcast section">&times;</button>
+    </summary>
+    <label class="checkbox">
+      <input type="checkbox" data-role="podcast-enabled">
+      Include podcast section
+    </label>
+    <div class="podcast-fields" data-role="podcast-fields" hidden></div>
+  </details>
+</template>
+
+<template id="static-blocks-section-template">
+  <details class="sortable-section" data-section-type="static_blocks" open>
+    <summary class="section-header">
+      <span class="section-drag-handle" aria-label="Drag to reorder section" title="Drag to reorder section">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="6" cy="3.5" r="1.1" fill="currentColor"/><circle cx="10" cy="3.5" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="8" r="1.1" fill="currentColor"/><circle cx="10" cy="8" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="12.5" r="1.1" fill="currentColor"/><circle cx="10" cy="12.5" r="1.1" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="section-title">Static blocks <span class="count" data-role="static-count">0</span></span>
+      <button type="button" class="btn-remove section-remove" aria-label="Remove Static blocks section" title="Remove Static blocks section">&times;</button>
+    </summary>
+    <p class="hint">Sponsor blurb, book promo, ATS/BTR conferences, etc. Carry these forward across issues.</p>
+    <div class="statics-container repeating" data-role="statics-container"></div>
+    <button type="button" class="btn add" data-action="add-static">+ Add block</button>
+  </details>
 </template>
 
 <template id="highlight-template">
@@ -446,16 +509,11 @@
       <button type="button" class="btn-remove dialog-close" id="confirm-delete-close" aria-label="Close">&times;</button>
     </header>
     <p class="hint" id="confirm-delete-message">This cannot be undone.</p>
-    <div class="settings-fields">
-      <label class="settings-row settings-row-checkbox">
-        <span class="lbl">Skip in future</span>
-        <span class="settings-checkbox-field">
-          <input type="checkbox" id="confirm-delete-skip">
-          <span>Don't ask before deleting again (can be re-enabled in Settings)</span>
-        </span>
-      </label>
-    </div>
     <footer class="dialog-actions">
+      <label class="confirm-skip">
+        <input type="checkbox" id="confirm-delete-skip">
+        <span>Don't ask</span>
+      </label>
       <button type="button" class="btn ghost" id="confirm-delete-cancel">Cancel</button>
       <button type="button" class="btn danger btn-with-icon" id="confirm-delete-confirm">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
