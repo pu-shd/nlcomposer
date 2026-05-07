@@ -69,6 +69,13 @@ html, body {
 .btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
 .btn.primary:hover { background: #163764; }
 .btn.ghost { background: transparent; }
+/* Button that bundles an icon with a text label (e.g. Compose New). */
+.btn.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn.btn-with-icon svg { width: 14px; height: 14px; flex: 0 0 auto; }
 
 .btn.add {
   display: block;
@@ -200,6 +207,43 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 .btn-icon:hover { background: var(--accent-soft); color: var(--accent); }
 .btn-icon svg { width: 14px; height: 14px; display: block; }
+/* Topbar icons (hamburger, compose-new, settings gear) get a slightly
+   roomier hit area than the dense preview-pane controls (refresh,
+   toggle), which intentionally keep the tighter 4px 6px padding to
+   stay flush with the inline #preview-meta byte counter. */
+.topbar .btn-icon { padding: 6px 6px; }
+
+/* Hamburger menu + dropdown ────────────────────────────────────── */
+.menu-trigger { position: relative; display: inline-flex; }
+.menu-trigger .dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
+  min-width: 160px;
+  padding: 4px;
+  z-index: 50;
+}
+.menu-trigger .dropdown[hidden] { display: none; }
+.menu-trigger .dropdown button {
+  appearance: none;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 6px 12px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  border-radius: 4px;
+}
+.menu-trigger .dropdown button:hover { background: var(--accent-soft); color: var(--accent); }
+.menu-trigger #open-menu[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); }
 
 .preview-frame {
   flex: 1;
@@ -497,8 +541,13 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   .preview-pane { min-height: 60vh; }
 }
 
-/* Settings dialog ───────────────────────────────────────────────── */
-#settings-dialog {
+/* Settings / compose-new / confirm-delete dialogs ───────────────────
+   These three dialogs share the same chrome (rounded panel, accented
+   header, settings-row grid). Keeping the selectors grouped means a
+   tweak to one shape applies uniformly. */
+#settings-dialog,
+#compose-new-dialog,
+#confirm-delete-dialog {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0;
@@ -507,16 +556,25 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   background: var(--panel);
   color: var(--text);
 }
-#settings-dialog::backdrop {
+#confirm-delete-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+#settings-dialog::backdrop,
+#compose-new-dialog::backdrop,
+#confirm-delete-dialog::backdrop {
   background: rgba(31, 36, 48, 0.45);
 }
-#settings-dialog form {
+#settings-dialog form,
+#compose-new-dialog form,
+#confirm-delete-dialog form {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 18px 20px 16px;
 }
-#settings-dialog .dialog-header {
+#settings-dialog .dialog-header,
+#compose-new-dialog .dialog-header,
+#confirm-delete-dialog .dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -524,18 +582,24 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   padding-bottom: 8px;
   margin: 0;
 }
-#settings-dialog .dialog-header h2 {
+#settings-dialog .dialog-header h2,
+#compose-new-dialog .dialog-header h2,
+#confirm-delete-dialog .dialog-header h2 {
   margin: 0;
   font-size: 15px;
   color: var(--accent);
   letter-spacing: 0.02em;
 }
-#settings-dialog .hint {
+#settings-dialog .hint,
+#compose-new-dialog .hint,
+#confirm-delete-dialog .hint {
   margin: 0;
   font-size: 12px;
   color: var(--muted);
 }
-#settings-dialog .dialog-actions {
+#settings-dialog .dialog-actions,
+#compose-new-dialog .dialog-actions,
+#confirm-delete-dialog .dialog-actions {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -544,7 +608,9 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   padding-top: 10px;
   margin: 4px 0 0;
 }
-#settings-dialog .dialog-actions .status {
+#settings-dialog .dialog-actions .status,
+#compose-new-dialog .dialog-actions .status,
+#confirm-delete-dialog .dialog-actions .status {
   margin-right: auto;
   text-align: left;
   min-width: 0;
@@ -552,12 +618,16 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 /* Settings dialog: each row is a [label | field] grid so the labels
    line up vertically and the fields share a left edge — easier to scan
    than a wrapped 2-column flow of stacked label/input pairs. */
-#settings-dialog .settings-fields {
+#settings-dialog .settings-fields,
+#compose-new-dialog .settings-fields,
+#confirm-delete-dialog .settings-fields {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-#settings-dialog .settings-row {
+#settings-dialog .settings-row,
+#compose-new-dialog .settings-row,
+#confirm-delete-dialog .settings-row {
   display: grid;
   grid-template-columns: 11em 1fr;
   align-items: center;
@@ -565,7 +635,9 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   font-size: 13px;
   color: var(--text);
 }
-#settings-dialog .settings-row > .lbl {
+#settings-dialog .settings-row > .lbl,
+#compose-new-dialog .settings-row > .lbl,
+#confirm-delete-dialog .settings-row > .lbl {
   text-align: right;
   font-size: 12px;
   font-weight: 500;
@@ -573,7 +645,11 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   letter-spacing: 0.02em;
 }
 #settings-dialog .settings-row > input,
-#settings-dialog .settings-row > textarea {
+#settings-dialog .settings-row > textarea,
+#compose-new-dialog .settings-row > input,
+#compose-new-dialog .settings-row > textarea,
+#confirm-delete-dialog .settings-row > input,
+#confirm-delete-dialog .settings-row > textarea {
   font: inherit;
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -582,21 +658,66 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   color: var(--text);
   min-width: 0;
 }
-#settings-dialog .settings-row > textarea {
+#settings-dialog .settings-row > textarea,
+#compose-new-dialog .settings-row > textarea,
+#confirm-delete-dialog .settings-row > textarea {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
   resize: vertical;
 }
 #settings-dialog .settings-row-tall { align-items: start; }
 #settings-dialog .settings-row-tall > .lbl { padding-top: 7px; }
-#settings-dialog .settings-row-checkbox > .settings-checkbox-field {
+#settings-dialog .settings-row-checkbox > .settings-checkbox-field,
+#compose-new-dialog .settings-row-checkbox > .settings-checkbox-field,
+#confirm-delete-dialog .settings-row-checkbox > .settings-checkbox-field {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
   color: var(--text);
 }
-#settings-dialog .settings-row-checkbox > .settings-checkbox-field > input { margin: 0; }
+#settings-dialog .settings-row-checkbox > .settings-checkbox-field > input,
+#compose-new-dialog .settings-row-checkbox > .settings-checkbox-field > input,
+#confirm-delete-dialog .settings-row-checkbox > .settings-checkbox-field > input {
+  margin: 0;
+}
+
+/* The X button in dialog headers — no margin so it hugs the upper-right corner,
+   slight padding so the click target stays comfortable. */
+.dialog-header .btn-remove.dialog-close {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 22px;
+}
+
+/* Trash-icon delete button used in templates / drafts / archive lists.
+   Keeps the hit area at button size while presenting an icon-only affordance. */
+.btn-icon-danger {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--danger);
+  cursor: pointer;
+}
+.btn-icon-danger:hover {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+}
+.btn-icon-danger svg { width: 14px; height: 14px; display: block; }
+
+/* Primary destructive button (used for the final Delete confirmation). */
+.btn.danger {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+}
+.btn.danger:hover { background: #8a1414; border-color: #8a1414; }
 
 /* Templates and Drafts dialogs ─────────────────────────────────── */
 #templates-dialog,

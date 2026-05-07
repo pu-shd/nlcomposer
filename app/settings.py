@@ -32,6 +32,17 @@ class AppSettings(BaseModel):
     front-end can copy values across with no remapping table.
     """
 
+    # Newsletter branding (printed in masthead, podcast section, subject)
+    newsletter_name: str = Field(
+        default="MyNewsletter",
+        description=(
+            "Brand name printed in the masthead, the podcast section, and "
+            "the auto-built email subject. Was hardcoded to 'SmartDrivingCars' "
+            "in early versions; now user-editable so the same composer "
+            "serves any periodical."
+        ),
+    )
+
     # Email envelope defaults
     from_name: str = "Newsletter Editor"
     from_email: str = "editor@example.edu"
@@ -80,6 +91,14 @@ class AppSettings(BaseModel):
             "Render the 'Read more' link/line under each article. Off if "
             "the editor prefers the single headline link as the only "
             "click target. Mirrored onto NewsletterIssue at build time."
+        ),
+    )
+    confirm_before_delete: bool = Field(
+        default=True,
+        description=(
+            "Show a confirmation dialog before deleting drafts, "
+            "templates, or archived issues. Users who trust their own "
+            "click can disable this from the confirm dialog itself."
         ),
     )
 

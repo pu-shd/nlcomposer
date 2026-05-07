@@ -172,6 +172,124 @@ def test_composer_js_short_circuits_preview_for_missing_required_fields(client: 
     )
 
 
+def test_topbar_uses_hamburger_menu_for_drafts_and_archive(client: TestClient):
+    """Drafts + Archive moved out of the main action cluster into a
+    dropdown reachable from a hamburger icon to the left of the title.
+    Templates is hidden but the trigger remains in DOM so its handler
+    keeps wiring (no JS changes needed to re-enable later).
+    """
+    body = client.get("/").text
+    # Hamburger trigger + dropdown markup.
+    assert 'id="open-menu"' in body
+    assert 'id="main-menu"' in body
+    assert 'class="menu-trigger"' in body
+    # Drafts and Archive triggers live INSIDE the dropdown menu, not
+    # in the topbar's own .actions cluster.
+    menu_start = body.index('id="main-menu"')
+    menu_end = body.index('</div>', menu_start)
+    menu_block = body[menu_start:menu_end]
+    assert 'id="open-drafts"' in menu_block
+    assert 'id="open-archive"' in menu_block
+    # Templates is present but hidden (no longer surfaced in the UI).
+    assert 'id="open-templates"' in body
+    assert 'id="open-templates" class="btn ghost" aria-haspopup="dialog" hidden' in body
+
+
+def test_topbar_renames_download_and_replaces_reset_with_compose_new(client: TestClient):
+    body = client.get("/").text
+    # Download .eml -> Download (the .eml extension was redundant
+    # given the icon-styling and download-attribute filename).
+    assert ">Download<" in body
+    assert "Download .eml" not in body
+    # Reset is gone; a Compose-new button takes its place and opens
+    # a custom dialog (so we don't lose work to a confirm()).
+    assert 'id="reset-form"' not in body
+    assert 'id="compose-new"' in body
+    assert 'id="compose-new-dialog"' in body
+    # Compose-new carries a visible "Compose New" text label, not just
+    # an icon — paired with the file-plus SVG via .btn-with-icon.
+    assert ">Compose New</span>" in body
+    # Order in the topbar action cluster: Compose New BEFORE Download
+    # (Download is the rightmost action, primary CTA).
+    compose_idx = body.index('id="compose-new"')
+    download_idx = body.index('id="download-eml"')
+    assert compose_idx < download_idx, (
+        "Compose New must precede Download in the topbar"
+    )
+    # The Compose-new dialog must offer the Save-as-Draft escape hatch.
+    for el in (
+        'id="compose-new-save"',
+        'id="compose-new-discard"',
+        'id="compose-new-cancel"',
+        'name="draft_name"',
+    ):
+        assert el in body, f"compose-new dialog missing element: {el}"
+
+
+def test_compose_new_js_saves_via_drafts_endpoint(client: TestClient):
+    js = client.get("/static/composer.js").text
+    # Save & start new must POST to /api/drafts (re-using the existing
+    # drafts API), not invent a new endpoint.
+    assert "openComposeNewDialog" in js
+    assert "/api/drafts" in js
+    # Discard branch reloads the page; nothing should silently nuke
+    # the form without the dialog interaction.
+    assert "startFresh" in js
+
+
+def test_compose_new_dialog_uses_settings_chrome(client: TestClient):
+    """The compose-new dialog shares the Settings dialog's chrome (rounded
+    panel, header bar with X in the upper-right) so it doesn't read like
+    a stray browser-default <dialog>."""
+    css = client.get("/static/composer.css").text
+    # The dialog selectors group settings + compose-new + confirm-delete
+    # so a single rule sheet drives all three. Spot-check a few rules.
+    assert "#compose-new-dialog" in css
+    assert "#confirm-delete-dialog" in css
+    # The X close button uses the dialog-close modifier so it hugs the
+    # upper-right corner (no left margin, larger glyph).
+    body = client.get("/").text
+    assert 'class="btn-remove dialog-close" id="compose-new-close"' in body
+    assert 'class="btn-remove dialog-close" id="confirm-delete-close"' in body
+
+
+def test_confirm_delete_dialog_present(client: TestClient):
+    """A custom confirm-delete dialog replaces window.confirm() with
+    a Settings-aligned dialog that includes a 'don't ask again' toggle.
+    """
+    body = client.get("/").text
+    assert 'id="confirm-delete-dialog"' in body
+    assert 'id="confirm-delete-message"' in body
+    assert 'id="confirm-delete-skip"' in body
+    assert 'id="confirm-delete-confirm"' in body
+    assert 'id="confirm-delete-cancel"' in body
+
+
+def test_lists_use_trash_icon_for_delete(client: TestClient):
+    """Templates / drafts / archive lists render delete actions as a
+    trash-icon button rather than a plain Delete text button."""
+    js = client.get("/static/composer.js").text
+    # The shared trash SVG constant is reused by every list renderer.
+    assert "TRASH_ICON_SVG" in js
+    # No remaining text-only Delete buttons in the list renderers — the
+    # icon class is what gets emitted now.
+    assert 'btn-icon-danger' in js
+    # And no callers still go through window.confirm().
+    assert "confirm(`Delete" not in js
+    assert "confirmDelete(" in js
+
+
+def test_confirm_delete_skipped_when_setting_off(client: TestClient):
+    """If AppSettings.confirm_before_delete is false, confirmDelete()
+    must short-circuit to true so the call site deletes immediately
+    without showing the dialog."""
+    js = client.get("/static/composer.js").text
+    # The branch reads currentSettings.confirm_before_delete and resolves
+    # true without opening the dialog when it's been turned off.
+    assert "confirm_before_delete" in js
+    assert "Promise.resolve(true)" in js
+
+
 def test_layout_includes_resizer(client: TestClient):
     """A vertical splitter sits between the composer form and the
     preview pane so Alain can retune the column widths or yank the

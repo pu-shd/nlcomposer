@@ -36,6 +36,12 @@ def test_settings_model_has_sane_defaults():
     # Read-more link is a render-toggle that defaults on so existing
     # newsletters keep their familiar layout; users can opt out.
     assert s.include_read_more_link is True
+    # Confirm-before-delete defaults on so users don't accidentally drop
+    # work; the confirm-delete dialog itself offers an opt-out.
+    assert s.confirm_before_delete is True
+    # Newsletter brand defaults to a generic name so the same composer
+    # can serve any periodical out of the box.
+    assert s.newsletter_name == "MyNewsletter"
     # Inception Date defaults to the historical SmartDrivingCars launch
     # so a brand-new install renders the right "Nth year" without first
     # making the user open Settings.
@@ -193,12 +199,13 @@ def test_index_includes_settings_button_and_dialog(client: TestClient):
     # The dialog form must expose every editable field by name so the
     # JS can read+write them with form.elements[name].
     for name in (
+        "newsletter_name",
         "from_name", "from_email", "to_email", "reply_to",
         "unsubscribe_url", "masthead_logo_url",
         "initial_publication_date",
         "default_intro_html", "default_footer_html",
         "preview_debounce_ms", "auto_archive_on_download",
-        "include_read_more_link",
+        "include_read_more_link", "confirm_before_delete",
     ):
         assert f'name="{name}"' in body, f"settings dialog missing field {name}"
 

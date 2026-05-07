@@ -526,6 +526,7 @@
     // every preview and downloaded .eml carries the configured values.
     if (currentSettings) {
       [
+        'newsletter_name',
         'from_name', 'from_email', 'to_email', 'reply_to',
         'masthead_logo_url',
       ].forEach((k) => {
@@ -766,11 +767,114 @@
     e.preventDefault();
     downloadEml();
   });
-  document.getElementById('reset-form').addEventListener('click', (e) => {
-    e.preventDefault();
-    if (!confirm('Reset the form? Unsaved entries will be lost.')) return;
+  // ───────── Compose new (replaces Reset) ───────────────────────────
+  // Reset used to be a confirm() that nuked the form. Now the user is
+  // offered a Save-as-Draft path so a half-done issue isn't lost when
+  // they want to start fresh on a new edition.
+  const composeNewDialog = document.getElementById('compose-new-dialog');
+  const composeNewForm = document.getElementById('compose-new-form');
+  const composeNewStatusEl = document.getElementById('compose-new-status');
+  const setComposeNewStatus = (msg, kind = 'info') => {
+    if (!composeNewStatusEl) return;
+    composeNewStatusEl.textContent = msg || '';
+    composeNewStatusEl.dataset.kind = kind;
+  };
+  const openComposeNewDialog = () => {
+    if (composeNewForm) composeNewForm.reset();
+    setComposeNewStatus('');
+    if (typeof composeNewDialog.showModal === 'function') composeNewDialog.showModal();
+    else composeNewDialog.setAttribute('open', '');
+  };
+  const closeComposeNewDialog = () => {
+    if (typeof composeNewDialog.close === 'function') composeNewDialog.close();
+    else composeNewDialog.removeAttribute('open');
+  };
+  const startFresh = () => {
+    closeComposeNewDialog();
     location.reload();
+  };
+
+  document.getElementById('compose-new').addEventListener('click', (e) => {
+    e.preventDefault();
+    openComposeNewDialog();
   });
+  document.getElementById('compose-new-cancel').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeComposeNewDialog();
+  });
+  document.getElementById('compose-new-close').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeComposeNewDialog();
+  });
+  document.getElementById('compose-new-discard').addEventListener('click', (e) => {
+    e.preventDefault();
+    startFresh();
+  });
+  document.getElementById('compose-new-save').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const name = trim(composeNewForm.elements['draft_name']?.value || '');
+    if (!name) {
+      setComposeNewStatus('Enter a draft name to save.', 'error');
+      composeNewForm.elements['draft_name']?.focus();
+      return;
+    }
+    let payload;
+    try { payload = buildIssue(); }
+    catch (err) { setComposeNewStatus('Build error: ' + err.message, 'error'); return; }
+    setComposeNewStatus('Saving…');
+    try {
+      const res = await fetch('/api/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, payload }),
+      });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setComposeNewStatus(`Save ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      setComposeNewStatus('Saved.', 'ok');
+      setTimeout(startFresh, 350);
+    } catch (err) {
+      setComposeNewStatus('Network error: ' + err.message, 'error');
+    }
+  });
+
+  // ───────── Hamburger menu ─────────────────────────────────────────
+  const menuTrigger = document.getElementById('open-menu');
+  const mainMenu = document.getElementById('main-menu');
+  const closeMainMenu = () => {
+    if (!mainMenu || mainMenu.hidden) return;
+    mainMenu.hidden = true;
+    menuTrigger?.setAttribute('aria-expanded', 'false');
+  };
+  const openMainMenu = () => {
+    if (!mainMenu) return;
+    mainMenu.hidden = false;
+    menuTrigger?.setAttribute('aria-expanded', 'true');
+  };
+  if (menuTrigger && mainMenu) {
+    menuTrigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (mainMenu.hidden) openMainMenu();
+      else closeMainMenu();
+    });
+    // Click outside collapses the menu; clicks on menu items also close
+    // (after their dialog-open handler runs — bindings stack).
+    document.addEventListener('click', (e) => {
+      if (mainMenu.hidden) return;
+      if (mainMenu.contains(e.target) || menuTrigger.contains(e.target)) return;
+      closeMainMenu();
+    });
+    mainMenu.querySelectorAll('button[role="menuitem"]').forEach((b) => {
+      b.addEventListener('click', () => closeMainMenu());
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeMainMenu();
+    });
+  }
 
   // ───────── Preview pane toggle + viewport switch ───────────────────
   const layout = document.querySelector('.layout');
@@ -921,12 +1025,13 @@
   const settingsForm = document.getElementById('settings-form');
   const settingsStatus = document.getElementById('settings-status');
   const SETTINGS_FIELDS = [
+    'newsletter_name',
     'from_name', 'from_email', 'to_email', 'reply_to',
     'unsubscribe_url', 'masthead_logo_url',
     'initial_publication_date',
     'default_intro_html', 'default_footer_html',
     'preview_debounce_ms', 'auto_archive_on_download',
-    'include_read_more_link',
+    'include_read_more_link', 'confirm_before_delete',
   ];
 
   const setSettingsStatus = (msg, kind = 'info') => {
@@ -1143,6 +1248,87 @@
     String(s == null ? '' : s).replace(/[<>&"']/g, (c) =>
       ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  // Trash-icon SVG markup reused by every delete affordance (templates,
+  // drafts, archive). Bundled here so tweaks happen in one place.
+  const TRASH_ICON_SVG = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<polyline points="3 6 5 6 21 6"/>'
+    + '<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>'
+    + '<path d="M10 11v6"/><path d="M14 11v6"/>'
+    + '<path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>'
+    + '</svg>'
+  );
+
+  // ───────── Confirm-delete dialog ───────────────────────────────────
+  // Replaces the old `confirm()` browser prompt for delete buttons. Returns
+  // a Promise that resolves true on Delete and false on Cancel/close. If
+  // the user has switched the setting off, we skip the dialog entirely
+  // and resolve true so the call site doesn't need to branch.
+  const confirmDeleteDialog = document.getElementById('confirm-delete-dialog');
+  const confirmDeleteMessage = document.getElementById('confirm-delete-message');
+  const confirmDeleteSkip = document.getElementById('confirm-delete-skip');
+  let confirmDeleteResolve = null;
+  const closeConfirmDeleteDialog = (result) => {
+    if (typeof confirmDeleteDialog.close === 'function') confirmDeleteDialog.close();
+    else confirmDeleteDialog.removeAttribute('open');
+    if (confirmDeleteResolve) {
+      const r = confirmDeleteResolve;
+      confirmDeleteResolve = null;
+      r(!!result);
+    }
+  };
+  const confirmDelete = (message) => {
+    if (currentSettings && currentSettings.confirm_before_delete === false) {
+      return Promise.resolve(true);
+    }
+    if (!confirmDeleteDialog || typeof confirmDeleteDialog.showModal !== 'function') {
+      // Fall back to the old confirm() if <dialog> is unsupported.
+      return Promise.resolve(window.confirm(message || 'Delete?'));
+    }
+    return new Promise((resolve) => {
+      confirmDeleteResolve = resolve;
+      if (confirmDeleteMessage) confirmDeleteMessage.textContent = message || 'This cannot be undone.';
+      if (confirmDeleteSkip) confirmDeleteSkip.checked = false;
+      confirmDeleteDialog.showModal();
+    });
+  };
+  if (confirmDeleteDialog) {
+    document.getElementById('confirm-delete-cancel').addEventListener('click', (e) => {
+      e.preventDefault();
+      closeConfirmDeleteDialog(false);
+    });
+    document.getElementById('confirm-delete-close').addEventListener('click', (e) => {
+      e.preventDefault();
+      closeConfirmDeleteDialog(false);
+    });
+    document.getElementById('confirm-delete-confirm').addEventListener('click', async (e) => {
+      e.preventDefault();
+      // Persist the "don't ask again" preference before resolving so the
+      // next delete in this session honors the new setting.
+      if (confirmDeleteSkip && confirmDeleteSkip.checked) {
+        if (currentSettings) currentSettings.confirm_before_delete = false;
+        try {
+          await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...(currentSettings || {}), confirm_before_delete: false }),
+          });
+        } catch { /* non-fatal */ }
+      }
+      closeConfirmDeleteDialog(true);
+    });
+    // Native dismissal (Escape key) should resolve as cancel, not orphan
+    // the pending Promise.
+    confirmDeleteDialog.addEventListener('close', () => {
+      if (confirmDeleteResolve) {
+        const r = confirmDeleteResolve;
+        confirmDeleteResolve = null;
+        r(false);
+      }
+    });
+  }
+
   const renderTemplatesList = (items) => {
     if (!Array.isArray(items) || items.length === 0) {
       templatesList.innerHTML = '<li class="hint">No templates yet.</li>';
@@ -1157,7 +1343,7 @@
         </div>
         <div class="template-actions">
           <button type="button" class="btn" data-action="use">Use</button>
-          ${t.builtin ? '' : '<button type="button" class="btn ghost" data-action="delete">Delete</button>'}
+          ${t.builtin ? '' : `<button type="button" class="btn-icon-danger" data-action="delete" aria-label="Delete template" title="Delete template">${TRASH_ICON_SVG}</button>`}
         </div>
       </li>
     `).join('');
@@ -1200,7 +1386,7 @@
   };
 
   const deleteTemplate = async (id, name) => {
-    if (!confirm(`Delete template "${name}"? This cannot be undone.`)) return;
+    if (!(await confirmDelete(`Delete template "${name}"? This cannot be undone.`))) return;
     setTemplatesStatus('Deleting…');
     try {
       const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' });
@@ -1322,7 +1508,7 @@
         </div>
         <div class="template-actions">
           <button type="button" class="btn" data-action="load">Load</button>
-          <button type="button" class="btn ghost" data-action="delete">Delete</button>
+          <button type="button" class="btn-icon-danger" data-action="delete" aria-label="Delete draft" title="Delete draft">${TRASH_ICON_SVG}</button>
         </div>
       </li>
     `).join('');
@@ -1364,7 +1550,7 @@
   };
 
   const deleteDraft = async (id, name) => {
-    if (!confirm(`Delete draft "${name}"? This cannot be undone.`)) return;
+    if (!(await confirmDelete(`Delete draft "${name}"? This cannot be undone.`))) return;
     setDraftsStatus('Deleting…');
     try {
       const res = await fetch(`/api/drafts/${id}`, { method: 'DELETE' });
@@ -1485,7 +1671,7 @@
         </div>
         <div class="template-actions">
           <button type="button" class="btn" data-action="download">Download</button>
-          <button type="button" class="btn ghost" data-action="delete">Delete</button>
+          <button type="button" class="btn-icon-danger" data-action="delete" aria-label="Delete archived issue" title="Delete archived issue">${TRASH_ICON_SVG}</button>
         </div>
       </li>
     `).join('');
@@ -1532,7 +1718,7 @@
   };
 
   const deleteArchive = async (id, label) => {
-    if (!confirm(`Delete archived issue "${label}"? This cannot be undone.`)) return;
+    if (!(await confirmDelete(`Delete archived issue "${label}"? This cannot be undone.`))) return;
     setArchiveStatus('Deleting…');
     try {
       const res = await fetch(`/api/archive/${id}`, { method: 'DELETE' });
