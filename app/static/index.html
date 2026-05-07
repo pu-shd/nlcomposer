@@ -92,7 +92,7 @@
             <textarea name="footer_html" rows="2" placeholder="<p>This list is maintained by …</p>"></textarea>
           </label>
           <label class="span-2">Unsubscribe URL
-            <input type="url" name="unsubscribe_url" value="https://newsletter.example.edu/newsletter">
+            <input type="url" name="unsubscribe_url" placeholder="https://… (leave empty to suppress the unsubscribe block)">
           </label>
         </div>
       </details>
@@ -177,7 +177,14 @@
         <small class="fetch-status" data-role="fetch-status"></small>
       </label>
       <label class="span-2">Logo URL
-        <input type="url" data-field="publication_logo_url">
+        <div class="row inline">
+          <input type="url" data-field="publication_logo_url">
+          <button type="button" class="btn ghost btn-fetch" data-action="register-logo" title="Register this URL in the Media Library">Fetch</button>
+          <button type="button" class="btn ghost btn-fetch" data-action="upload-logo" title="Upload a PNG/JPG and use it as this article's logo">Upload</button>
+          <button type="button" class="btn ghost btn-fetch" data-action="pick-logo" title="Pick from Media Library">Library</button>
+          <input type="file" class="logo-upload-input" data-role="logo-upload" accept="image/png,image/jpeg" hidden>
+        </div>
+        <small class="fetch-status" data-role="logo-status"></small>
       </label>
       <label class="span-2">Headline
         <input type="text" data-field="headline" required>
@@ -259,7 +266,17 @@
         Enabled
       </label>
       <label class="span-2">HTML
-        <textarea data-field="html" rows="4" placeholder='<p>Sponsor blurb…</p>'></textarea>
+        <div class="static-richtext">
+          <div class="static-toolbar" role="toolbar" aria-label="HTML formatting">
+            <button type="button" class="static-tool" data-rt-action="bold" title="Bold (wrap selection in <strong>)" aria-label="Bold"><strong>B</strong></button>
+            <button type="button" class="static-tool" data-rt-action="italic" title="Italic (wrap selection in <em>)" aria-label="Italic"><em>I</em></button>
+            <button type="button" class="static-tool" data-rt-action="heading" title="Heading (wrap selection in <h2>)" aria-label="Heading">H</button>
+            <button type="button" class="static-tool" data-rt-action="link" title="Insert a link" aria-label="Insert link">Link</button>
+            <button type="button" class="static-tool" data-rt-action="image" title="Insert an image from the Media Library" aria-label="Insert image">Image</button>
+          </div>
+          <textarea data-field="html" rows="4" placeholder='<p>Sponsor blurb…</p>'></textarea>
+        </div>
+        <small class="fetch-status" data-role="static-rt-status"></small>
       </label>
     </div>
   </fieldset>
@@ -337,23 +354,27 @@
       <h2 id="settings-title">Settings</h2>
       <button type="button" class="btn-remove" id="settings-close" aria-label="Close">&times;</button>
     </header>
-    <p class="hint">Defaults applied to every new draft. Edit once; carry across issues.</p>
+    <p class="hint" id="settings-dirty-warning" hidden role="alert">Unsaved changes — Save or Discard before closing.</p>
     <div class="settings-fields">
       <label class="settings-row">
         <span class="lbl">Newsletter name</span>
-        <input type="text" name="newsletter_name" required placeholder="MyNewsletter">
+        <input type="text" name="newsletter_name" placeholder="MyNewsletter">
       </label>
       <label class="settings-row">
+        <span class="lbl">Inception Date</span>
+        <input type="date" name="initial_publication_date">
+      </label>
+      <label class="settings-row" hidden>
         <span class="lbl">From name</span>
-        <input type="text" name="from_name" required>
+        <input type="text" name="from_name">
       </label>
       <label class="settings-row">
-        <span class="lbl">From email</span>
-        <input type="email" name="from_email" required>
+        <span class="lbl">From</span>
+        <input type="email" name="from_email" placeholder="sender@example.com">
       </label>
       <label class="settings-row">
-        <span class="lbl">To email</span>
-        <input type="email" name="to_email" required>
+        <span class="lbl">To</span>
+        <input type="email" name="to_email" placeholder="list@example.com">
       </label>
       <label class="settings-row">
         <span class="lbl">Reply-To</span>
@@ -366,10 +387,6 @@
       <label class="settings-row">
         <span class="lbl">Masthead logo URL</span>
         <input type="url" name="masthead_logo_url" placeholder="https://...">
-      </label>
-      <label class="settings-row">
-        <span class="lbl">Inception Date</span>
-        <input type="date" name="initial_publication_date">
       </label>
       <label class="settings-row settings-row-tall">
         <span class="lbl">Default intro HTML</span>
@@ -414,8 +431,8 @@
     </div>
     <footer class="dialog-actions">
       <small id="settings-status" class="status" aria-live="polite"></small>
-      <button type="button" class="btn ghost" id="settings-cancel">Cancel</button>
-      <button type="submit" class="btn primary" id="settings-save">Save</button>
+      <button type="button" class="btn ghost" id="settings-discard" hidden>Discard</button>
+      <button type="submit" class="btn primary" id="settings-save" disabled>Save</button>
     </footer>
   </form>
 </dialog>
@@ -498,8 +515,12 @@
 
     <ul class="templates-list media-list" id="media-list" aria-live="polite"></ul>
 
-    <form id="media-create-form" autocomplete="off" class="templates-create">
-      <h3>Add by URL</h3>
+    <div class="media-create-tabs" role="tablist" aria-label="Add media">
+      <button type="button" class="media-tab" data-media-tab="url" role="tab" aria-selected="true" aria-controls="media-create-form">Add by URL</button>
+      <button type="button" class="media-tab" data-media-tab="upload" role="tab" aria-selected="false" aria-controls="media-upload-form">Upload file</button>
+    </div>
+
+    <form id="media-create-form" autocomplete="off" class="templates-create" role="tabpanel">
       <div class="grid-2">
         <label class="span-2">Kind
           <select name="kind" required>
@@ -516,6 +537,39 @@
         <button type="submit" class="btn primary">Add to library</button>
       </footer>
     </form>
+
+    <form id="media-upload-form" autocomplete="off" class="templates-create" role="tabpanel" hidden>
+      <div class="grid-2">
+        <label class="span-2">Kind
+          <select name="kind" required>
+            <option value="logo">Article Logo</option>
+            <option value="image">Static-block Image</option>
+          </select>
+        </label>
+        <label class="span-2">File (PNG / JPG)
+          <input type="file" name="file" accept="image/png,image/jpeg" required>
+        </label>
+      </div>
+      <footer class="dialog-actions">
+        <small id="media-upload-status" class="status" aria-live="polite"></small>
+        <button type="submit" class="btn primary">Upload</button>
+      </footer>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="media-picker-dialog" aria-labelledby="media-picker-title">
+  <div class="dialog-body">
+    <header class="dialog-header">
+      <h2 id="media-picker-title">Pick from Media Library</h2>
+      <button type="button" class="btn-remove" id="media-picker-close" aria-label="Close">&times;</button>
+    </header>
+    <p class="hint" id="media-picker-hint">Click an item to use it. Items missing an Image description are dimmed — set one in the Media Library before referencing.</p>
+    <ul class="templates-list media-list" id="media-picker-list" aria-live="polite"></ul>
+    <footer class="dialog-actions">
+      <small id="media-picker-status" class="status" aria-live="polite"></small>
+      <button type="button" class="btn ghost" id="media-picker-cancel">Cancel</button>
+    </footer>
   </div>
 </dialog>
 

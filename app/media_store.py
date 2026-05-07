@@ -38,6 +38,37 @@ MediaStatus = Literal["pending", "ready", "failed"]
 _ALLOWED_CONTENT_TYPES = frozenset({"image/png", "image/jpeg"})
 
 
+# ── Magic-byte signatures for the formats we accept ──────────────────
+# Trusting the client's Content-Type header is not enough — a malicious
+# (or just confused) caller can mislabel arbitrary bytes as image/png.
+# We compare the first few bytes of the payload against these known
+# signatures and return the *true* MIME type, or None if no match.
+#
+# Reference: https://en.wikipedia.org/wiki/List_of_file_signatures
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"           # 8 bytes
+_JPEG_SOI = b"\xff\xd8\xff"                      # 3 bytes — JPEG start-of-image
+
+
+def sniff_image_kind(content_bytes: bytes) -> Optional[str]:
+    """Return the sniffed MIME type for ``content_bytes`` or ``None``.
+
+    Only formats listed in :data:`_ALLOWED_CONTENT_TYPES` are recognized;
+    everything else (including legitimate GIF/WebP/AVIF) returns ``None``
+    so the upload path can reject it before we persist a single byte.
+
+    The probe reads only the first 8 bytes — large enough to disambiguate
+    PNG from JPEG without touching the rest of the payload.
+    """
+    if not content_bytes:
+        return None
+    head = content_bytes[:8]
+    if head.startswith(_PNG_SIGNATURE):
+        return "image/png"
+    if head.startswith(_JPEG_SOI):
+        return "image/jpeg"
+    return None
+
+
 class MediaItem(BaseModel):
     """List/detail view of a media item — bytes are *not* serialized.
 

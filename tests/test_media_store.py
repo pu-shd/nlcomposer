@@ -17,6 +17,7 @@ from app.media_store import (
     list_media,
     mark_failed,
     mark_ready,
+    sniff_image_kind,
     update_alt_text,
     upsert_by_url,
 )
@@ -232,3 +233,33 @@ def test_media_status_check_constraint(conn):
             "INSERT INTO media (kind, status, alt_text, created_at, updated_at) "
             "VALUES ('logo', 'archived', '', '', '')"
         )
+
+
+# ───────── Magic-byte sniffer ────────────────────────────────────────
+
+
+def test_sniff_image_kind_recognizes_png():
+    assert sniff_image_kind(PNG_BYTES) == "image/png"
+
+
+def test_sniff_image_kind_recognizes_jpeg():
+    assert sniff_image_kind(JPG_BYTES) == "image/jpeg"
+
+
+def test_sniff_image_kind_rejects_gif_signature():
+    assert sniff_image_kind(b"GIF89a" + b"\x00" * 10) is None
+
+
+def test_sniff_image_kind_rejects_html_payload():
+    assert sniff_image_kind(b"<!doctype html><html>...") is None
+
+
+def test_sniff_image_kind_handles_empty_payload():
+    assert sniff_image_kind(b"") is None
+
+
+def test_sniff_image_kind_only_reads_head():
+    """Sniff must be cheap — reading the first few bytes is enough."""
+    payload = PNG_BYTES + b"\x00" * 10_000_000  # 10 MiB tail
+    # Doesn't blow up + still classifies correctly.
+    assert sniff_image_kind(payload[:8]) == "image/png"

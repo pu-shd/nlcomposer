@@ -8,10 +8,20 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.rate_limit import upload_limiter
 
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\nfake-but-non-empty-bytes"
 JPG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIFcontent"
+
+
+@pytest.fixture(autouse=True)
+def _reset_upload_limiter():
+    """Tests share the process-wide upload limiter; clear its bucket
+    between cases so an earlier test's hits don't trip later asserts."""
+    upload_limiter.reset()
+    yield
+    upload_limiter.reset()
 
 
 @pytest.fixture
@@ -204,3 +214,133 @@ def test_list_returns_recently_updated_first(client: TestClient):
     client.put(f"/api/media/{a['id']}", json={"alt_text": "touch"})
     items = client.get("/api/media").json()
     assert [i["id"] for i in items[:2]] == [a["id"], b["id"]]
+
+
+# ───────── Configurable upload gating ─────────────────────────────────
+
+
+def _put_settings(client: TestClient, **overrides) -> None:
+    """Helper: PUT current settings with overrides applied. Re-fetches
+    so we don't drop unrelated fields like newsletter_name."""
+    current = client.get("/api/settings").json()
+    current.update(overrides)
+    res = client.put("/api/settings", json=current)
+    assert res.status_code == 200, res.text
+
+
+def test_upload_rejects_payload_above_configured_max_bytes(client: TestClient):
+    _put_settings(client, media_upload_max_bytes=1024)
+    big = PNG_BYTES + b"\x00" * 2048
+    res = client.post(
+        "/api/media/upload",
+        data={"kind": "logo"},
+        files={"file": ("big.png", io.BytesIO(big), "image/png")},
+    )
+    assert res.status_code == 413
+    assert "exceeds" in res.json()["detail"]
+
+
+def test_upload_rejects_when_magic_bytes_disagree_with_content_type(
+    client: TestClient,
+):
+    """A caller claiming image/png but sending HTML must not slip through."""
+    res = client.post(
+        "/api/media/upload",
+        data={"kind": "logo"},
+        files={
+            "file": (
+                "spoof.png",
+                io.BytesIO(b"<html><body>not an image</body></html>"),
+                "image/png",
+            ),
+        },
+    )
+    assert res.status_code == 415
+    assert "match" in res.json()["detail"].lower()
+
+
+def test_upload_rejects_jpg_bytes_declared_as_png(client: TestClient):
+    """Even if the bytes ARE a real image, declared MIME mismatching the
+    sniffed format is rejected — keeps the persisted content_type honest."""
+    res = client.post(
+        "/api/media/upload",
+        data={"kind": "logo"},
+        files={"file": ("x.png", io.BytesIO(JPG_BYTES), "image/png")},
+    )
+    assert res.status_code == 415
+    assert "mismatch" in res.json()["detail"].lower()
+
+
+def test_upload_rate_limit_returns_429_with_retry_after(client: TestClient):
+    _put_settings(client, media_upload_rate_per_minute=2)
+    # First two uploads succeed.
+    for i in range(2):
+        res = client.post(
+            "/api/media/upload",
+            data={"kind": "logo"},
+            files={"file": (f"a{i}.png", io.BytesIO(PNG_BYTES), "image/png")},
+        )
+        assert res.status_code == 201, res.text
+    # Third trips the limiter.
+    res = client.post(
+        "/api/media/upload",
+        data={"kind": "logo"},
+        files={"file": ("c.png", io.BytesIO(PNG_BYTES), "image/png")},
+    )
+    assert res.status_code == 429
+    assert "Retry-After" in res.headers
+    assert int(res.headers["Retry-After"]) >= 1
+
+
+def test_upload_rate_limit_disabled_when_zero(client: TestClient):
+    _put_settings(client, media_upload_rate_per_minute=0)
+    # Hit far more than any nonzero default — none should 429.
+    for i in range(5):
+        res = client.post(
+            "/api/media/upload",
+            data={"kind": "logo"},
+            files={"file": (f"x{i}.png", io.BytesIO(PNG_BYTES), "image/png")},
+        )
+        assert res.status_code == 201
+
+
+def test_upload_respects_configured_allowed_types(client: TestClient):
+    """Removing image/jpeg from the allowlist makes JPEG uploads fail."""
+    _put_settings(client, media_upload_allowed_types=["image/png"])
+    res = client.post(
+        "/api/media/upload",
+        data={"kind": "image"},
+        files={"file": ("banner.jpg", io.BytesIO(JPG_BYTES), "image/jpeg")},
+    )
+    assert res.status_code == 415
+
+
+def test_url_imports_disabled_returns_403(client: TestClient):
+    _put_settings(client, media_url_imports_enabled=False)
+    res = client.post(
+        "/api/media",
+        json={"kind": "logo", "url": "https://example.com/x.png"},
+    )
+    assert res.status_code == 403
+    assert "disabled" in res.json()["detail"].lower()
+
+
+def test_url_imports_enabled_default_works(client: TestClient):
+    """Default-enabled case: POST /api/media still 201s without setup."""
+    res = client.post(
+        "/api/media",
+        json={"kind": "logo", "url": "https://example.com/default.png"},
+    )
+    assert res.status_code == 201
+
+
+def test_upload_persists_sniffed_type_not_declared_one(client: TestClient):
+    """When declared and sniffed agree, the persisted content_type comes
+    from the sniff — so the row's metadata reflects ground truth."""
+    res = client.post(
+        "/api/media/upload",
+        data={"kind": "logo"},
+        files={"file": ("ok.png", io.BytesIO(PNG_BYTES), "image/png")},
+    )
+    assert res.status_code == 201
+    assert res.json()["content_type"] == "image/png"

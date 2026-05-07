@@ -226,10 +226,130 @@
         fetchArticleInto(node);
       });
     }
+    wireArticleLogoActions(node);
     wireArticleDragHandle(node);
     targetContainer.appendChild(node);
     renumber();
     return node;
+  };
+
+  // ───────── Article logo affordances ───────────────────────────────
+  // The Logo URL field has three siblings: Fetch (register the URL in
+  // the Media Library), Upload (POST a file via /api/media/upload and
+  // fill the field with the resulting cid: link), and Library (open
+  // the picker dialog and pick from kind=logo). All three feed back
+  // into data-field="publication_logo_url" so the rest of the article
+  // serialization is unchanged.
+  const wireArticleLogoActions = (card) => {
+    const logoInput = card.querySelector('[data-field="publication_logo_url"]');
+    const statusEl = card.querySelector('[data-role="logo-status"]');
+    const fileInput = card.querySelector('[data-role="logo-upload"]');
+    const setLogoStatus = (msg, kind = 'info') => {
+      if (!statusEl) return;
+      statusEl.textContent = msg || '';
+      statusEl.dataset.kind = kind;
+    };
+
+    const registerBtn = card.querySelector('[data-action="register-logo"]');
+    if (registerBtn) {
+      registerBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const url = sanitizeUrlInput(logoInput);
+        if (!url) {
+          setLogoStatus('Enter a Logo URL first.', 'error');
+          logoInput?.focus();
+          return;
+        }
+        registerBtn.disabled = true;
+        setLogoStatus('Registering…');
+        try {
+          const res = await fetch('/api/media', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind: 'logo', url }),
+          });
+          if (!res.ok) {
+            let detail = '';
+            try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+            setLogoStatus(`${res.status}: ${detail || res.statusText}`, 'error');
+            return;
+          }
+          const item = await res.json();
+          setLogoStatus(
+            item.alt_text
+              ? 'Registered in Media Library.'
+              : 'Registered — set Image description in Media Library.',
+            'ok',
+          );
+          schedulePreview();
+        } catch (err) {
+          setLogoStatus('Network error: ' + err.message, 'error');
+        } finally {
+          registerBtn.disabled = false;
+        }
+      });
+    }
+
+    const uploadBtn = card.querySelector('[data-action="upload-logo"]');
+    if (uploadBtn && fileInput) {
+      uploadBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        fileInput.click();
+      });
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        uploadBtn.disabled = true;
+        setLogoStatus('Uploading…');
+        try {
+          const fd = new FormData();
+          fd.append('kind', 'logo');
+          fd.append('file', file);
+          const res = await fetch('/api/media/upload', { method: 'POST', body: fd });
+          if (!res.ok) {
+            let detail = '';
+            try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+            if (res.status === 429) {
+              const retry = res.headers.get('Retry-After') || '?';
+              setLogoStatus(`Rate limited — retry in ${retry}s.`, 'error');
+            } else {
+              setLogoStatus(`${res.status}: ${detail || res.statusText}`, 'error');
+            }
+            return;
+          }
+          const item = await res.json();
+          // Point the field at the cached bytes endpoint so the
+          // preview iframe can render it without a network call.
+          logoInput.value = `/api/media/${item.id}/content`;
+          setLogoStatus('Uploaded — set Image description in Media Library.', 'ok');
+          schedulePreview();
+        } catch (err) {
+          setLogoStatus('Network error: ' + err.message, 'error');
+        } finally {
+          uploadBtn.disabled = false;
+          fileInput.value = '';
+        }
+      });
+    }
+
+    const pickBtn = card.querySelector('[data-action="pick-logo"]');
+    if (pickBtn) {
+      pickBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        openLibraryPicker({
+          kind: 'logo',
+          title: 'Pick an article logo',
+          onPick: (item) => {
+            // Prefer the source URL when present (so saved drafts that
+            // round-trip through /api/preview keep the same URL); fall
+            // back to the cached-bytes endpoint for uploads.
+            logoInput.value = item.url || `/api/media/${item.id}/content`;
+            setLogoStatus(`Using "${item.alt_text || 'library item'}".`, 'ok');
+            schedulePreview();
+          },
+        });
+      });
+    }
   };
 
   // ───────── Article reorder (drag & drop) ───────────────────────────
@@ -350,6 +470,21 @@
         setFetchStatus('Fetched, but all fields already had values.', 'ok');
       } else {
         setFetchStatus(`Filled ${filled} field${filled === 1 ? '' : 's'}.`, 'ok');
+      }
+      // Side-channel: when the scraper produced a publication_logo_url
+      // (favicon), register it in the Media Library as kind=logo so the
+      // user gets a one-step path from "Fetch article" to a usable
+      // library entry. Failures are silent — the field is set either
+      // way; this is purely about populating the library.
+      const logoEl = card.querySelector('[data-field="publication_logo_url"]');
+      if (logoEl && logoEl.value) {
+        try {
+          await fetch('/api/media', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind: 'logo', url: sanitizeUrl(logoEl.value) }),
+          });
+        } catch { /* non-fatal */ }
       }
       schedulePreview();
     } catch (e) {
@@ -524,10 +659,99 @@
       renumber();
       schedulePreview();
     });
+    wireStaticRichtext(node);
     targetContainer.appendChild(node);
     renumber();
     return node;
   };
+
+  // ───────── Static block rich-HTML toolbar ─────────────────────────
+  // Plain selection-wrapping over the existing <textarea>. We don't
+  // promote the field to contenteditable because StaticBlock.html is a
+  // raw HTML string — round-tripping through a richer editor would
+  // either drop attributes (sponsor blurbs use hand-tuned <a>/inline
+  // styles) or require an HTML→nodes parser.
+  const wireStaticRichtext = (card) => {
+    const textarea = card.querySelector('[data-field="html"]');
+    const statusEl = card.querySelector('[data-role="static-rt-status"]');
+    const setRtStatus = (msg, kind = 'info') => {
+      if (!statusEl) return;
+      statusEl.textContent = msg || '';
+      statusEl.dataset.kind = kind;
+    };
+    if (!textarea) return;
+
+    const insertAtSelection = (before, selection, after) => {
+      const start = textarea.selectionStart ?? textarea.value.length;
+      const end = textarea.selectionEnd ?? start;
+      const value = textarea.value;
+      const inserted = `${before}${selection}${after}`;
+      textarea.value = value.slice(0, start) + inserted + value.slice(end);
+      // Place caret AFTER the inserted block so the user can keep typing.
+      const caret = start + inserted.length;
+      textarea.setSelectionRange(caret, caret);
+      textarea.focus();
+      // Emit input event so existing listeners (schedulePreview etc.)
+      // pick up the change without us coupling to them directly.
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    const wrapSelection = (open, close) => {
+      const start = textarea.selectionStart ?? textarea.value.length;
+      const end = textarea.selectionEnd ?? start;
+      const sel = textarea.value.slice(start, end);
+      insertAtSelection(open, sel, close);
+    };
+
+    card.querySelectorAll('[data-rt-action]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const action = btn.dataset.rtAction;
+        if (action === 'bold') wrapSelection('<strong>', '</strong>');
+        else if (action === 'italic') wrapSelection('<em>', '</em>');
+        else if (action === 'heading') wrapSelection('<h2>', '</h2>');
+        else if (action === 'link') {
+          const url = window.prompt('Link URL:', 'https://');
+          if (!url) return;
+          const safe = sanitizeUrl(url.trim());
+          const start = textarea.selectionStart ?? textarea.value.length;
+          const end = textarea.selectionEnd ?? start;
+          const sel = textarea.value.slice(start, end);
+          // Empty selection → use the URL as the visible link text;
+          // selection → wrap that text in the anchor.
+          const text = sel || safe;
+          insertAtSelection(
+            '',
+            `<a href="${escapeHtml(safe)}">${escapeHtml(text)}</a>`,
+            '',
+          );
+          setRtStatus('Link inserted.', 'ok');
+        } else if (action === 'image') {
+          openLibraryPicker({
+            kind: 'image',
+            title: 'Pick an image to embed',
+            onPick: (item) => {
+              if (!item.alt_text) {
+                setRtStatus(
+                  'Insert blocked — set Image description in Media Library first.',
+                  'error',
+                );
+                return;
+              }
+              const src = item.url || `/api/media/${item.id}/content`;
+              const tag = `<img src="${escapeHtml(src)}" alt="${escapeHtml(item.alt_text)}" style="max-width:100%;height:auto;">`;
+              insertAtSelection('', tag, '');
+              setRtStatus('Image embedded.', 'ok');
+            },
+          });
+        }
+      });
+    });
+  };
+
+  // (escapeHtml is defined in the dialogs section further down — at
+  // toolbar click time the IIFE has fully run, so the closure resolves
+  // it correctly. No local twin needed.)
 
   // ───────── Sortable section management ────────────────────────────
   // Sections (Articles / Podcast / Static blocks) live in #sortable-
@@ -1342,6 +1566,31 @@
     settingsStatus.dataset.kind = kind;
   };
 
+  // Dirty-state tracking — Save is enabled (and Discard surfaced) only
+  // when the form values differ from the currentSettings snapshot.
+  // Snapshot is rebuilt on every fillSettingsForm so pressing Save
+  // resets dirty without needing a separate "saved" event hop.
+  const settingsSaveBtn = document.getElementById('settings-save');
+  const settingsDiscardBtn = document.getElementById('settings-discard');
+  const settingsDirtyWarning = document.getElementById('settings-dirty-warning');
+  let _settingsBaseline = '{}';
+  const _snapshotSettingsForm = () => {
+    const out = {};
+    SETTINGS_FIELDS.forEach((k) => {
+      const el = settingsForm.elements[k];
+      if (!el) return;
+      out[k] = el.type === 'checkbox' ? !!el.checked : (el.value || '');
+    });
+    return JSON.stringify(out);
+  };
+  const refreshSettingsDirty = () => {
+    const dirty = _snapshotSettingsForm() !== _settingsBaseline;
+    if (settingsSaveBtn) settingsSaveBtn.disabled = !dirty;
+    if (settingsDiscardBtn) settingsDiscardBtn.hidden = !dirty;
+    if (settingsDirtyWarning) settingsDirtyWarning.hidden = !dirty;
+    return dirty;
+  };
+
   const fillSettingsForm = (s) => {
     SETTINGS_FIELDS.forEach((k) => {
       const el = settingsForm.elements[k];
@@ -1350,7 +1599,15 @@
       if (el.type === 'checkbox') el.checked = !!v;
       else el.value = v == null ? '' : v;
     });
+    // Re-baseline + reset Save state once the form mirrors settings.
+    _settingsBaseline = _snapshotSettingsForm();
+    refreshSettingsDirty();
   };
+
+  // Any form change re-evaluates dirty state — bound at module load
+  // since the form lives in the static markup (not cloned per-open).
+  settingsForm.addEventListener('input', refreshSettingsDirty);
+  settingsForm.addEventListener('change', refreshSettingsDirty);
 
   const collectSettings = () => {
     const out = {};
@@ -1423,6 +1680,24 @@
     }
   };
 
+  // Close-with-unsaved guard: if the X (or Esc on a native <dialog>)
+  // is pressed while the form is dirty, surface the inline warning
+  // and a Discard button instead of letting the user lose changes.
+  const tryCloseSettingsDialog = () => {
+    if (refreshSettingsDirty()) {
+      setSettingsStatus('Save or Discard your changes first.', 'error');
+      settingsForm.querySelector('input, textarea, select')?.focus();
+      return false;
+    }
+    closeSettingsDialog();
+    return true;
+  };
+
+  const discardSettingsChanges = () => {
+    if (currentSettings) fillSettingsForm(currentSettings);
+    setSettingsStatus('Discarded.', 'ok');
+  };
+
   const saveSettings = async (e) => {
     if (e) e.preventDefault();
     const payload = collectSettings();
@@ -1447,6 +1722,8 @@
       // The enumerated year may now have changed (initial publication date).
       updateYearDisplay();
       schedulePreview();
+      // Re-baseline the form so the Save/Discard pair go quiet again.
+      fillSettingsForm(currentSettings);
       setSettingsStatus('Saved', 'ok');
       setTimeout(closeSettingsDialog, 350);
     } catch (err) {
@@ -2151,13 +2428,37 @@
   const mediaDialog = document.getElementById('media-dialog');
   const mediaList = document.getElementById('media-list');
   const mediaCreateForm = document.getElementById('media-create-form');
+  const mediaUploadForm = document.getElementById('media-upload-form');
   const mediaStatus = document.getElementById('media-status');
+  const mediaUploadStatus = document.getElementById('media-upload-status');
+  const mediaTabs = document.querySelectorAll('#media-dialog .media-tab');
 
   const setMediaStatus = (msg, kind = 'info') => {
     if (!mediaStatus) return;
     mediaStatus.textContent = msg || '';
     mediaStatus.dataset.kind = kind;
   };
+  const setMediaUploadStatus = (msg, kind = 'info') => {
+    if (!mediaUploadStatus) return;
+    mediaUploadStatus.textContent = msg || '';
+    mediaUploadStatus.dataset.kind = kind;
+  };
+
+  // Tab strip — exactly one Add form is visible at a time. Hidden
+  // forms keep their state so a half-typed URL survives a tab switch.
+  const selectMediaTab = (which) => {
+    mediaTabs.forEach((t) => {
+      t.setAttribute('aria-selected', t.dataset.mediaTab === which ? 'true' : 'false');
+    });
+    if (mediaCreateForm) mediaCreateForm.hidden = which !== 'url';
+    if (mediaUploadForm) mediaUploadForm.hidden = which !== 'upload';
+  };
+  mediaTabs.forEach((t) => {
+    t.addEventListener('click', (e) => {
+      e.preventDefault();
+      selectMediaTab(t.dataset.mediaTab);
+    });
+  });
 
   const MEDIA_KIND_LABEL = { logo: 'Logo', image: 'Image' };
   const MEDIA_STATUS_LABEL = { pending: 'Pending', ready: 'Ready', failed: 'Failed' };
@@ -2278,7 +2579,10 @@
 
   const openMediaDialog = async () => {
     setMediaStatus('');
+    setMediaUploadStatus('');
     mediaCreateForm.reset();
+    if (mediaUploadForm) mediaUploadForm.reset();
+    selectMediaTab('url');
     await refreshMediaList();
     if (typeof mediaDialog.showModal === 'function') {
       mediaDialog.showModal();
@@ -2325,20 +2629,179 @@
     }
   });
 
+  if (mediaUploadForm) {
+    mediaUploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(mediaUploadForm);
+      const file = fd.get('file');
+      if (!file || !(file instanceof File) || file.size === 0) {
+        setMediaUploadStatus('Choose a PNG or JPG file first.', 'error');
+        return;
+      }
+      // Surface the configured cap inline before posting — saves a
+      // round-trip when the file is obviously oversized. We don't
+      // know the server-side cap exactly without a settings fetch,
+      // so this is a soft check; the controller is authoritative.
+      setMediaUploadStatus('Uploading…');
+      try {
+        const res = await fetch('/api/media/upload', {
+          method: 'POST',
+          body: fd,
+        });
+        if (!res.ok) {
+          let detail = '';
+          try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+          if (res.status === 429) {
+            const retry = res.headers.get('Retry-After') || '?';
+            setMediaUploadStatus(`Rate limited — retry in ${retry}s.`, 'error');
+          } else {
+            setMediaUploadStatus(`Upload ${res.status}: ${detail || res.statusText}`, 'error');
+          }
+          return;
+        }
+        mediaUploadForm.reset();
+        await refreshMediaList();
+        setMediaUploadStatus('Uploaded — fill in the Image description before use.', 'ok');
+      } catch (err) {
+        setMediaUploadStatus('Network error: ' + err.message, 'error');
+      }
+    });
+  }
+
   document.getElementById('open-media').addEventListener('click', openMediaDialog);
   document.getElementById('media-close').addEventListener('click', (e) => {
     e.preventDefault();
     closeMediaDialog();
   });
 
-  document.getElementById('open-settings').addEventListener('click', openSettingsDialog);
-  document.getElementById('settings-cancel').addEventListener('click', (e) => {
-    e.preventDefault();
-    closeSettingsDialog();
+  // ───────── Library picker ─────────────────────────────────────────
+  // Reusable mini-picker used by Article Logo (kind=logo) and the
+  // forthcoming Static-block image-embed toolbar (kind=image). The
+  // dialog filters /api/media to one kind, dims items missing an
+  // alt_text (still clickable but the calling action surfaces the
+  // missing description so the user can fix it in Media Library).
+  const mediaPickerDialog = document.getElementById('media-picker-dialog');
+  const mediaPickerList = document.getElementById('media-picker-list');
+  const mediaPickerStatus = document.getElementById('media-picker-status');
+  const mediaPickerHint = document.getElementById('media-picker-hint');
+  const mediaPickerTitle = document.getElementById('media-picker-title');
+
+  let _pickerCallback = null;
+
+  const setMediaPickerStatus = (msg, kind = 'info') => {
+    if (!mediaPickerStatus) return;
+    mediaPickerStatus.textContent = msg || '';
+    mediaPickerStatus.dataset.kind = kind;
+  };
+
+  const renderPickerList = (items, kindFilter) => {
+    const filtered = items.filter((m) => !kindFilter || m.kind === kindFilter);
+    if (filtered.length === 0) {
+      mediaPickerList.innerHTML = `<li class="hint">No ${kindFilter || 'media'} entries yet — add one in the Media Library first.</li>`;
+      return;
+    }
+    mediaPickerList.innerHTML = filtered.map((m) => {
+      const usable = !!(m.alt_text && m.alt_text.trim());
+      const source = m.url
+        ? escapeHtml(m.url)
+        : `Uploaded${m.filename ? ' · ' + escapeHtml(m.filename) : ''}`;
+      const thumb = m.has_bytes
+        ? `<img class="media-thumb" src="/api/media/${m.id}/content" alt="${escapeHtml(m.alt_text || 'Media thumbnail')}">`
+        : `<span class="media-thumb media-thumb-${m.status === 'failed' ? 'failed' : 'pending'}" aria-hidden="true">${m.status === 'failed' ? '!' : '…'}</span>`;
+      return `
+        <li data-media-id="${m.id}" class="template-row media-row${usable ? '' : ' media-row-needs-alt'}">
+          <div class="media-thumb-wrap">${thumb}</div>
+          <div class="template-meta media-meta">
+            <strong>${escapeHtml(m.alt_text || '(no description)')}</strong>
+            <small class="media-source">${source}</small>
+          </div>
+        </li>`;
+    }).join('');
+  };
+
+  const openLibraryPicker = async ({ kind, title, onPick }) => {
+    _pickerCallback = onPick;
+    if (mediaPickerTitle) mediaPickerTitle.textContent = title || 'Pick from Media Library';
+    if (mediaPickerHint) {
+      mediaPickerHint.textContent =
+        'Click an item to use it. Items missing an Image description are dimmed — set one in the Media Library before referencing.';
+    }
+    setMediaPickerStatus('Loading…');
+    try {
+      const res = await fetch('/api/media');
+      if (!res.ok) {
+        setMediaPickerStatus(`List failed: ${res.status}`, 'error');
+        renderPickerList([], kind);
+      } else {
+        renderPickerList(await res.json(), kind);
+        setMediaPickerStatus('');
+      }
+    } catch (err) {
+      setMediaPickerStatus('Network error: ' + err.message, 'error');
+      renderPickerList([], kind);
+    }
+    if (typeof mediaPickerDialog.showModal === 'function') {
+      mediaPickerDialog.showModal();
+    } else {
+      mediaPickerDialog.setAttribute('open', '');
+    }
+  };
+
+  const closeLibraryPicker = () => {
+    _pickerCallback = null;
+    if (typeof mediaPickerDialog.close === 'function') {
+      mediaPickerDialog.close();
+    } else {
+      mediaPickerDialog.removeAttribute('open');
+    }
+  };
+
+  mediaPickerList.addEventListener('click', async (e) => {
+    const row = e.target.closest('.media-row');
+    if (!row) return;
+    const id = Number(row.dataset.mediaId);
+    if (!id) return;
+    setMediaPickerStatus('Fetching…');
+    try {
+      const res = await fetch(`/api/media/${id}`);
+      if (!res.ok) {
+        setMediaPickerStatus(`Fetch ${res.status}`, 'error');
+        return;
+      }
+      const item = await res.json();
+      const cb = _pickerCallback;
+      closeLibraryPicker();
+      if (cb) cb(item);
+    } catch (err) {
+      setMediaPickerStatus('Network error: ' + err.message, 'error');
+    }
   });
+
+  document.getElementById('media-picker-close').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeLibraryPicker();
+  });
+  document.getElementById('media-picker-cancel').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeLibraryPicker();
+  });
+
+  document.getElementById('open-settings').addEventListener('click', openSettingsDialog);
   document.getElementById('settings-close').addEventListener('click', (e) => {
     e.preventDefault();
-    closeSettingsDialog();
+    tryCloseSettingsDialog();
+  });
+  if (settingsDiscardBtn) {
+    settingsDiscardBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      discardSettingsChanges();
+    });
+  }
+  // The native <dialog> Esc key fires a 'cancel' event — route it
+  // through the same guard so a dirty form can't be discarded by Esc.
+  settingsDialog.addEventListener('cancel', (e) => {
+    e.preventDefault();
+    tryCloseSettingsDialog();
   });
   settingsForm.addEventListener('submit', saveSettings);
 

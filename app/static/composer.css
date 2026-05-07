@@ -902,10 +902,18 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 .btn.danger:hover { background: #8a1414; border-color: #8a1414; }
 
-/* Templates and Drafts dialogs ─────────────────────────────────── */
+/* Templates / Drafts / Archive / Media dialogs ──────────────────────
+   All four share the same outer chrome: rounded panel, accent-colored
+   h2, list of rows with a meta column and an actions cluster. The
+   media dialog's per-row internals (thumbnail, status badge, alt-text
+   editor) layer on top of these shared rules — see "Media Library
+   row internals" below for the additions that don't apply to the
+   other three. */
 #templates-dialog,
 #drafts-dialog,
-#archive-dialog {
+#archive-dialog,
+#media-dialog,
+#media-picker-dialog {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0;
@@ -916,12 +924,16 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #templates-dialog::backdrop,
 #drafts-dialog::backdrop,
-#archive-dialog::backdrop {
+#archive-dialog::backdrop,
+#media-dialog::backdrop,
+#media-picker-dialog::backdrop {
   background: rgba(31, 36, 48, 0.45);
 }
 #templates-dialog .dialog-body,
 #drafts-dialog .dialog-body,
-#archive-dialog .dialog-body {
+#archive-dialog .dialog-body,
+#media-dialog .dialog-body,
+#media-picker-dialog .dialog-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -929,7 +941,9 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #templates-dialog .dialog-header,
 #drafts-dialog .dialog-header,
-#archive-dialog .dialog-header {
+#archive-dialog .dialog-header,
+#media-dialog .dialog-header,
+#media-picker-dialog .dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -939,7 +953,9 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #templates-dialog .dialog-header h2,
 #drafts-dialog .dialog-header h2,
-#archive-dialog .dialog-header h2 {
+#archive-dialog .dialog-header h2,
+#media-dialog .dialog-header h2,
+#media-picker-dialog .dialog-header h2 {
   margin: 0;
   font-size: 15px;
   color: var(--accent);
@@ -947,14 +963,18 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #templates-dialog .hint,
 #drafts-dialog .hint,
-#archive-dialog .hint {
+#archive-dialog .hint,
+#media-dialog .hint,
+#media-picker-dialog .hint {
   margin: 0;
   font-size: 12px;
   color: var(--muted);
 }
 #templates-dialog .templates-list,
 #drafts-dialog .templates-list,
-#archive-dialog .templates-list {
+#archive-dialog .templates-list,
+#media-dialog .templates-list,
+#media-picker-dialog .templates-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -966,7 +986,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #templates-dialog .template-row,
 #drafts-dialog .template-row,
-#archive-dialog .template-row {
+#archive-dialog .template-row,
+#media-dialog .template-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -981,7 +1002,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #templates-dialog .template-meta,
 #drafts-dialog .template-meta,
-#archive-dialog .template-meta {
+#archive-dialog .template-meta,
+#media-dialog .template-meta {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -990,7 +1012,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #templates-dialog .template-meta strong,
 #drafts-dialog .template-meta strong,
-#archive-dialog .template-meta strong {
+#archive-dialog .template-meta strong,
+#media-dialog .template-meta strong {
   font-size: 13px;
 }
 #templates-dialog .template-meta small,
@@ -1001,7 +1024,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #templates-dialog .template-actions,
 #drafts-dialog .template-actions,
-#archive-dialog .template-actions {
+#archive-dialog .template-actions,
+#media-dialog .template-actions {
   display: flex;
   gap: 6px;
   flex: 0 0 auto;
@@ -1020,7 +1044,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   vertical-align: middle;
 }
 #templates-dialog .templates-create,
-#drafts-dialog .templates-create {
+#drafts-dialog .templates-create,
+#media-dialog .templates-create {
   border-top: 1px solid var(--border);
   padding-top: 12px;
   display: flex;
@@ -1028,7 +1053,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   gap: 10px;
 }
 #templates-dialog .templates-create h3,
-#drafts-dialog .templates-create h3 {
+#drafts-dialog .templates-create h3,
+#media-dialog .templates-create h3 {
   margin: 0;
   font-size: 13px;
   color: var(--accent);
@@ -1036,7 +1062,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   letter-spacing: 0.04em;
 }
 #templates-dialog .templates-create label,
-#drafts-dialog .templates-create label {
+#drafts-dialog .templates-create label,
+#media-dialog .templates-create label {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1044,7 +1071,9 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   color: var(--muted);
 }
 #templates-dialog .templates-create input,
-#drafts-dialog .templates-create input {
+#drafts-dialog .templates-create input,
+#media-dialog .templates-create input,
+#media-dialog .templates-create select {
   font: inherit;
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -1053,16 +1082,19 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   color: var(--text);
 }
 #templates-dialog .grid-2,
-#drafts-dialog .grid-2 {
+#drafts-dialog .grid-2,
+#media-dialog .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px 10px;
 }
 #templates-dialog .span-2,
-#drafts-dialog .span-2 { grid-column: 1 / -1; }
+#drafts-dialog .span-2,
+#media-dialog .span-2 { grid-column: 1 / -1; }
 #templates-dialog .dialog-actions,
 #drafts-dialog .dialog-actions,
-#archive-dialog .dialog-actions {
+#archive-dialog .dialog-actions,
+#media-dialog .dialog-actions {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1073,7 +1105,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #templates-dialog .dialog-actions .status,
 #drafts-dialog .dialog-actions .status,
-#archive-dialog .dialog-actions .status {
+#archive-dialog .dialog-actions .status,
+#media-dialog .dialog-actions .status {
   margin-right: auto;
   text-align: left;
   min-width: 0;
@@ -1081,7 +1114,11 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 .status[data-kind="error"] { color: var(--danger); }
 .status[data-kind="ok"] { color: #166534; }
 
-#media-dialog .templates-list,
+/* Media Library row internals ────────────────────────────────────
+   Layered on top of the shared dialog chrome above. The list itself
+   is taller (50vh vs 40vh) because library entries are denser; rows
+   align to the top of their content because the alt-text editor can
+   wrap to multiple lines under a long filename. */
 #media-dialog .media-list {
   max-height: 50vh;
 }
@@ -1194,54 +1231,108 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   flex-direction: column;
   align-items: stretch;
 }
-#media-dialog .templates-create {
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-#media-dialog .templates-create h3 {
-  margin: 0;
-  font-size: 13px;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-#media-dialog .templates-create label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--muted);
-}
-#media-dialog .templates-create input,
-#media-dialog .templates-create select {
-  font: inherit;
-  padding: 6px 8px;
+/* (chrome rules for templates-create / grid-2 / dialog-actions are
+    inherited from the shared selectors near the top of this section) */
+
+/* Static-block "rich HTML" toolbar — operates on the textarea below
+   it via plain selection wrapping (no contenteditable), so the model
+   field stays a string of HTML and round-trips through draft save/
+   load unchanged. */
+#composer .static-richtext {
   border: 1px solid var(--border);
   border-radius: 5px;
   background: white;
-  color: var(--text);
+  overflow: hidden;
 }
-#media-dialog .grid-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 10px;
-}
-#media-dialog .span-2 { grid-column: 1 / -1; }
-#media-dialog .dialog-actions {
+#composer .static-toolbar {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: flex-end;
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-  margin: 4px 0 0;
+  gap: 2px;
+  padding: 4px 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
 }
-#media-dialog .dialog-actions .status {
-  margin-right: auto;
-  text-align: left;
-  min-width: 0;
+#composer .static-tool {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  min-width: 28px;
+}
+#composer .static-tool:hover {
+  background: white;
+  border-color: var(--border);
+  color: var(--accent);
+}
+#composer .static-tool:active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+#composer .static-richtext textarea {
+  border: 0;
+  border-radius: 0;
+  width: 100%;
+}
+
+/* Library picker — same row chrome as the main media list, but each
+   row is itself a button (Use) so picking is one click. The picker is
+   reused by Article Logo + Static-block image-embed flows. */
+#media-picker-dialog .media-row { cursor: pointer; }
+#media-picker-dialog .media-row:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+#media-picker-dialog .media-row.media-row-needs-alt {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+#media-picker-dialog .media-row .template-actions { pointer-events: none; }
+
+/* Tab strip switching between "Add by URL" and "Upload file" forms.
+   Both forms live in the dialog and one is hidden at a time — keeps
+   each form self-contained instead of branching submission inside a
+   single multipurpose form. */
+#media-dialog .media-create-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: -1px;
+}
+#media-dialog .media-tab {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+#media-dialog .media-tab:hover { color: var(--accent); }
+#media-dialog .media-tab[aria-selected="true"] {
+  color: var(--accent);
+  border-color: var(--border);
+  border-bottom-color: var(--panel);
+  background: var(--panel);
+}
+/* The active form sits flush with the tab strip — re-attach the top
+   border so the panel reads as a continuous surface. */
+#media-dialog .templates-create {
+  border-top: 1px solid var(--border);
+  margin-top: 0;
+}
+/* File input visual match with the other dialog text inputs. */
+#media-dialog .templates-create input[type="file"] {
+  font-size: 12px;
+  padding: 4px 6px;
 }
 

@@ -24,12 +24,6 @@ def test_settings_model_has_sane_defaults():
     from datetime import date
 
     s = AppSettings()
-    assert s.from_name
-    assert "@" in s.from_email
-    assert "@" in s.to_email
-    # Default destination matches the historical SmartDrivingCars author
-    # so a fresh install doesn't ship issues to a placeholder list.
-    assert s.to_email == "editor@example.edu"
     # Behavior toggles default to the values used by the UI.
     assert s.preview_debounce_ms == 400
     assert s.auto_archive_on_download is True
@@ -43,9 +37,19 @@ def test_settings_model_has_sane_defaults():
     # Logos and Static-block images from cached bytes; the renderer
     # falls back to the source URL when bytes are missing.
     assert s.embed_all_media is True
-    # Newsletter brand defaults to a generic name so the same composer
-    # can serve any periodical out of the box.
-    assert s.newsletter_name == "MyNewsletter"
+    # Media-upload gating defaults — kept in sync with CLAUDE.md so a
+    # change to the published contract surfaces as a test failure.
+    assert s.media_upload_max_bytes == 5 * 1024 * 1024
+    assert s.media_upload_allowed_types == ["image/png", "image/jpeg"]
+    assert s.media_upload_rate_per_minute == 20
+    assert s.media_url_imports_enabled is True
+    # Newsletter brand and email envelope ship empty so a fresh install
+    # doesn't print a placeholder identity — the user fills them in
+    # Settings before the first preview matters.
+    assert s.newsletter_name == ""
+    assert s.from_name == ""
+    assert s.from_email == ""
+    assert s.to_email == ""
     # Inception Date defaults to the historical SmartDrivingCars launch
     # so a brand-new install renders the right "Nth year" without first
     # making the user open Settings.
@@ -213,6 +217,76 @@ def test_index_includes_settings_button_and_dialog(client: TestClient):
         "embed_all_media",
     ):
         assert f'name="{name}"' in body, f"settings dialog missing field {name}"
+
+
+def test_settings_dialog_drops_cancel_and_starts_save_disabled(client: TestClient):
+    """Cancel is gone; Save renders disabled and is gated on dirty
+    state by the JS. Discard and a dirty-warning paragraph live in
+    the dialog markup but start hidden."""
+    body = client.get("/").text
+    dialog_start = body.index('id="settings-dialog"')
+    dialog_end = body.index("</dialog>", dialog_start)
+    dialog_block = body[dialog_start:dialog_end]
+    # Cancel button is removed from the markup entirely.
+    assert 'id="settings-cancel"' not in dialog_block
+    # Save renders with the disabled attribute (turned on dynamically).
+    assert 'id="settings-save"' in dialog_block
+    assert 'disabled>' in dialog_block.split('id="settings-save"', 1)[1].split('>', 1)[0] + '>' \
+        or 'disabled' in dialog_block.split('id="settings-save"', 1)[1].split('</button>', 1)[0]
+    # Discard button is present-but-hidden until dirty.
+    assert 'id="settings-discard"' in dialog_block
+    # Dirty warning paragraph is present-but-hidden by default.
+    assert 'id="settings-dirty-warning"' in dialog_block
+    # The old "Defaults applied to every new draft. Edit once…" hint is gone.
+    assert "Defaults applied to every new draft" not in dialog_block
+
+
+def test_settings_dialog_renames_from_and_to_labels(client: TestClient):
+    """The visible labels read just "From" and "To" — the long
+    "From email" / "To email" wording is gone — and From-name is
+    hidden (still in DOM so settings round-trip preserves any
+    legacy value)."""
+    body = client.get("/").text
+    dialog_start = body.index('id="settings-dialog"')
+    dialog_end = body.index("</dialog>", dialog_start)
+    dialog_block = body[dialog_start:dialog_end]
+    assert 'class="lbl">From<' in dialog_block
+    assert 'class="lbl">To<' in dialog_block
+    assert "From email" not in dialog_block
+    assert "To email" not in dialog_block
+    # From-name is hidden — its <label> wrapper carries the hidden attr.
+    assert 'name="from_name"' in dialog_block
+    fn_start = dialog_block.rindex("<label", 0, dialog_block.index('name="from_name"'))
+    fn_label_open = dialog_block[fn_start : dialog_block.index(">", fn_start) + 1]
+    assert "hidden" in fn_label_open
+
+
+def test_inception_date_immediately_follows_newsletter_name(client: TestClient):
+    body = client.get("/").text
+    dialog_start = body.index('id="settings-dialog"')
+    dialog_end = body.index("</dialog>", dialog_start)
+    dialog_block = body[dialog_start:dialog_end]
+    nn_idx = dialog_block.index('name="newsletter_name"')
+    ipd_idx = dialog_block.index('name="initial_publication_date"')
+    fn_idx = dialog_block.index('name="from_name"')
+    # newsletter_name → initial_publication_date → from_name (hidden).
+    assert nn_idx < ipd_idx < fn_idx, (
+        "Inception Date must sit between Newsletter name and the "
+        "(hidden) From name in the Settings DOM order."
+    )
+
+
+def test_composer_js_tracks_settings_dirty_state(client: TestClient):
+    js = client.get("/static/composer.js").text
+    # Save is enabled only when refreshSettingsDirty returns true.
+    assert "refreshSettingsDirty" in js
+    # Discard rolls back the form to currentSettings.
+    assert "discardSettingsChanges" in js
+    # Close-with-unsaved guard surfaces an inline warning.
+    assert "tryCloseSettingsDialog" in js
+    # Esc on the native <dialog> is intercepted via the cancel event.
+    assert "settingsDialog.addEventListener('cancel'" in js \
+        or 'settingsDialog.addEventListener("cancel"' in js
 
 
 def test_settings_endpoint_round_trips_initial_publication_date(client: TestClient):
