@@ -40,6 +40,31 @@ def test_render_html_contains_required_blocks(sample_issue):
     assert "unsubscribe" in html.lower()
 
 
+def test_render_omits_read_more_when_toggle_off(sample_issue):
+    """When NewsletterIssue.include_read_more_link is False (driven by
+    AppSettings.include_read_more_link), the per-article 'Read more'
+    anchor must disappear from both HTML and plain-text renders. The
+    article's own headline link still points at the source URL — the
+    setting only suppresses the duplicate trailing link.
+    """
+    on_html = render_html(sample_issue)
+    on_text = render_text(sample_issue)
+    # Default (on) — link is present in both renders.
+    assert ">Read more</a>" in on_html
+    assert "Read more: https://" in on_text
+
+    off = sample_issue.model_copy(update={"include_read_more_link": False})
+    off_html = render_html(off)
+    off_text = render_text(off)
+    assert ">Read more</a>" not in off_html
+    assert "Read more: https://" not in off_text
+    # Headline anchor still leads to the article URL (not removed).
+    assert (
+        "https://pandaperspectives.substack.com/p/beijing-auto-show-2026-a-field-report"
+        in off_html
+    )
+
+
 def test_render_text_strips_html_but_keeps_links(sample_issue):
     text = render_text(sample_issue)
     assert "SmartDrivingCars Newsletter" in text

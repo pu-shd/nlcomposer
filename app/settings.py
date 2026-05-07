@@ -74,6 +74,14 @@ class AppSettings(BaseModel):
         default=True,
         description="When True, every successful .eml download is also stored in the archive.",
     )
+    include_read_more_link: bool = Field(
+        default=True,
+        description=(
+            "Render the 'Read more' link/line under each article. Off if "
+            "the editor prefers the single headline link as the only "
+            "click target. Mirrored onto NewsletterIssue at build time."
+        ),
+    )
 
 
 def _now_iso() -> str:

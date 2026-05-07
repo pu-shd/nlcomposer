@@ -74,7 +74,9 @@
       {%- if article.pull_quote %}
         <span>&ldquo;{{ article.pull_quote }}&rdquo;</span>
       {%- endif %}
+      {%- if issue.include_read_more_link %}
       <a href="{{ article.effective_read_more_url() }}" style="color:#1a4480;">{{ article.read_more_label }}</a>
+      {%- endif %}
       {%- if article.alain_comment %}
         <span style="color:#b91c1c;font-style:italic;"> Hmmmm&hellip; {{ article.alain_comment }} Alain</span>
       {%- endif %}

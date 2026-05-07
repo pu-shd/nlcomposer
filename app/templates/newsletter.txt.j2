@@ -14,7 +14,8 @@ SmartDrivingCars Newsletter
 {{ article.url }}
 {% if article.byline %}{{ article.byline }}{% if article.date_text %}, {{ article.date_text }}{% endif %}{% endif %}
 {% if article.pull_quote %}"{{ article.pull_quote }}"{% endif %}
-{{ article.read_more_label }}: {{ article.effective_read_more_url() }}
+{% if issue.include_read_more_link %}{{ article.read_more_label }}: {{ article.effective_read_more_url() }}
+{% endif -%}
 {% if article.alain_comment %}Hmmmm... {{ article.alain_comment }} -Alain{% endif %}
 
 {% endfor -%}

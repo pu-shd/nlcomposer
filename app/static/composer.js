@@ -532,6 +532,10 @@
         const v = currentSettings[k];
         if (v) root[k] = v;
       });
+      // Boolean toggle: don't gate on truthiness — `false` is meaningful.
+      if (typeof currentSettings.include_read_more_link === 'boolean') {
+        root.include_read_more_link = currentSettings.include_read_more_link;
+      }
     }
     const issue = stripEmpty(root);
 
@@ -612,8 +616,32 @@
     }, previewDebounceMs);
   };
 
+  // Friendly placeholder shown in the iframe when required fields are
+  // missing. Saves the user from seeing the raw 422 / pydantic dump
+  // mid-edit; the inline field errors (under each input) tell them
+  // exactly which value to provide.
+  const renderRequiredFieldsPlaceholder = () => {
+    preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:48px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f2430;background:#fafbfc;line-height:1.55;">
+      <div style="max-width:480px;">
+        <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;margin-bottom:6px;">Preview paused</div>
+        <h2 style="color:#1a4480;margin:0 0 12px;font-size:18px;font-weight:600;">A couple of details are needed first</h2>
+        <p style="margin:0 0 8px;font-size:13px;color:#1f2430;">Fill in <strong>Issue Number</strong> and <strong>Issue Title</strong> in the <em>Issue Details</em> section to render the newsletter preview.</p>
+        <p style="margin:8px 0 0;font-size:12px;color:#6b7280;">The Download button is disabled until both are set.</p>
+      </div>
+    </body></html>`;
+    previewMeta.textContent = '';
+  };
+
   const doPreview = async () => {
     setStatus('Rendering…');
+    // Intercept missing required fields before POSTing — without this,
+    // pydantic returns a 422 and the iframe would surface the raw
+    // validation dump, which is hostile to a user mid-edit.
+    if (!validateRequired()) {
+      renderRequiredFieldsPlaceholder();
+      setStatus('Issue Number and Issue Title are required.', 'error');
+      return;
+    }
     let issue;
     try {
       issue = buildIssue();
@@ -898,6 +926,7 @@
     'initial_publication_date',
     'default_intro_html', 'default_footer_html',
     'preview_debounce_ms', 'auto_archive_on_download',
+    'include_read_more_link',
   ];
 
   const setSettingsStatus = (msg, kind = 'info') => {

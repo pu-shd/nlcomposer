@@ -149,6 +149,12 @@ class NewsletterIssue(BaseModel):
     footer_html: Optional[str] = None
     unsubscribe_url: Optional[SanitizedHttpUrl] = None
 
+    # Render-time toggle propagated from AppSettings.include_read_more_link
+    # so the same payload renders consistently whether served via /api/preview
+    # or /api/eml. Default True preserves the historical behavior; the
+    # composer client injects the configured value at build time.
+    include_read_more_link: bool = True
+
     def effective_subject(self) -> str:
         if self.subject:
             return self.subject

@@ -156,6 +156,22 @@ def test_composer_js_gates_download_on_required_fields(client: TestClient):
     assert "REQUIRED_FIELDS" in js
 
 
+def test_composer_js_short_circuits_preview_for_missing_required_fields(client: TestClient):
+    """When Issue Number / Issue Title are missing, the preview pane
+    must render a friendly placeholder instead of forwarding to the
+    server (which would respond 422 with a raw pydantic dump).
+    """
+    js = client.get("/static/composer.js").text
+    assert "renderRequiredFieldsPlaceholder" in js
+    # The placeholder must be rendered BEFORE the preview POST, so the
+    # validation gate appears earlier in doPreview than the fetch call.
+    placeholder_idx = js.index("renderRequiredFieldsPlaceholder()")
+    fetch_idx = js.index("fetch('/api/preview/html'")
+    assert placeholder_idx < fetch_idx, (
+        "validation placeholder must short-circuit before the preview POST"
+    )
+
+
 def test_layout_includes_resizer(client: TestClient):
     """A vertical splitter sits between the composer form and the
     preview pane so Alain can retune the column widths or yank the

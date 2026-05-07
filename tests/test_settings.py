@@ -33,6 +33,9 @@ def test_settings_model_has_sane_defaults():
     # Behavior toggles default to the values used by the UI.
     assert s.preview_debounce_ms == 400
     assert s.auto_archive_on_download is True
+    # Read-more link is a render-toggle that defaults on so existing
+    # newsletters keep their familiar layout; users can opt out.
+    assert s.include_read_more_link is True
     # Inception Date defaults to the historical SmartDrivingCars launch
     # so a brand-new install renders the right "Nth year" without first
     # making the user open Settings.
@@ -195,6 +198,7 @@ def test_index_includes_settings_button_and_dialog(client: TestClient):
         "initial_publication_date",
         "default_intro_html", "default_footer_html",
         "preview_debounce_ms", "auto_archive_on_download",
+        "include_read_more_link",
     ):
         assert f'name="{name}"' in body, f"settings dialog missing field {name}"
 

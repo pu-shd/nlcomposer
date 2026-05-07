@@ -163,10 +163,10 @@
       <label class="span-2">Pull quote
         <textarea data-field="pull_quote" rows="2"></textarea>
       </label>
-      <label>Read-more label
+      <label hidden>Read-more label
         <input type="text" data-field="read_more_label" placeholder="Read more">
       </label>
-      <label>Read-more URL (defaults to URL)
+      <label hidden>Read-more URL (defaults to URL)
         <input type="url" data-field="read_more_url">
       </label>
       <label class="span-2">Publication logo URL (favicon)
@@ -301,6 +301,13 @@
         <span class="settings-checkbox-field">
           <input type="checkbox" name="auto_archive_on_download">
           <span>On .eml download</span>
+        </span>
+      </label>
+      <label class="settings-row settings-row-checkbox">
+        <span class="lbl">Read more link</span>
+        <span class="settings-checkbox-field">
+          <input type="checkbox" name="include_read_more_link">
+          <span>Render "Read more" link below each article</span>
         </span>
       </label>
     </div>
