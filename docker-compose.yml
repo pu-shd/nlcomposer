@@ -8,9 +8,11 @@ services:
       - ./app:/app/app
       - ./tests:/app/tests
       - ./assets:/app/assets
+      - sdc-data:/app/data
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
+      - SDC_DATA_DIR=/app/data
 
   tests:
     build: .
@@ -20,3 +22,6 @@ services:
       - ./app:/app/app
       - ./tests:/app/tests
     profiles: ["test"]
+
+volumes:
+  sdc-data:
