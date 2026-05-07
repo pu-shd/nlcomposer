@@ -19,6 +19,7 @@
     <div id="main-menu" class="dropdown" hidden role="menu" aria-label="Main menu">
       <button type="button" id="open-drafts" role="menuitem" aria-haspopup="dialog">Drafts</button>
       <button type="button" id="open-archive" role="menuitem" aria-haspopup="dialog">Archive</button>
+      <button type="button" id="open-media" role="menuitem" aria-haspopup="dialog">Media Library</button>
     </div>
   </div>
   <h1>Newsletter Composer</h1>
@@ -484,6 +485,37 @@
     <footer class="dialog-actions">
       <small id="archive-status" class="status" aria-live="polite"></small>
     </footer>
+  </div>
+</dialog>
+
+<dialog id="media-dialog" aria-labelledby="media-title">
+  <div class="dialog-body">
+    <header class="dialog-header">
+      <h2 id="media-title">Media Library</h2>
+      <button type="button" class="btn-remove" id="media-close" aria-label="Close">&times;</button>
+    </header>
+    <p class="hint">Article Logos and Static-block Images. Fill the Image description before referencing an item in a newsletter. PNG and JPG only.</p>
+
+    <ul class="templates-list media-list" id="media-list" aria-live="polite"></ul>
+
+    <form id="media-create-form" autocomplete="off" class="templates-create">
+      <h3>Add by URL</h3>
+      <div class="grid-2">
+        <label class="span-2">Kind
+          <select name="kind" required>
+            <option value="logo">Article Logo</option>
+            <option value="image">Static-block Image</option>
+          </select>
+        </label>
+        <label class="span-2">URL
+          <input type="url" name="url" required placeholder="https://example.com/logo.png">
+        </label>
+      </div>
+      <footer class="dialog-actions">
+        <small id="media-status" class="status" aria-live="polite"></small>
+        <button type="submit" class="btn primary">Add to library</button>
+      </footer>
+    </form>
   </div>
 </dialog>
 

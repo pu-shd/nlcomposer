@@ -2139,6 +2139,198 @@
     closeArchiveDialog();
   });
 
+  // ───────── Media Library dialog ───────────────────────────────────
+  // Cached PNG/JPG library — Article logos + Static-block images. The
+  // dialog lists every entry with a thumbnail (or placeholder for
+  // pending/failed items), the source URL or filename, the kind +
+  // status badge, and an inline editor for the required Image
+  // description. Save persists via PUT /api/media/{id}; Delete removes
+  // the entry. The Add-by-URL form below the list does an idempotent
+  // POST /api/media — re-providing the same URL returns the existing
+  // row rather than duplicating it.
+  const mediaDialog = document.getElementById('media-dialog');
+  const mediaList = document.getElementById('media-list');
+  const mediaCreateForm = document.getElementById('media-create-form');
+  const mediaStatus = document.getElementById('media-status');
+
+  const setMediaStatus = (msg, kind = 'info') => {
+    if (!mediaStatus) return;
+    mediaStatus.textContent = msg || '';
+    mediaStatus.dataset.kind = kind;
+  };
+
+  const MEDIA_KIND_LABEL = { logo: 'Logo', image: 'Image' };
+  const MEDIA_STATUS_LABEL = { pending: 'Pending', ready: 'Ready', failed: 'Failed' };
+
+  const mediaThumbHtml = (item) => {
+    if (item.has_bytes) {
+      return `<img class="media-thumb" src="/api/media/${item.id}/content" alt="${escapeHtml(item.alt_text || 'Media thumbnail')}">`;
+    }
+    const label = item.status === 'failed' ? '!' : '…';
+    const cls = item.status === 'failed' ? 'media-thumb media-thumb-failed' : 'media-thumb media-thumb-pending';
+    return `<span class="${cls}" aria-hidden="true">${label}</span>`;
+  };
+
+  const mediaSourceHtml = (item) => {
+    if (item.url) {
+      return `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.url)}</a>`;
+    }
+    return `<span class="media-source-upload">Uploaded${item.filename ? ` · ${escapeHtml(item.filename)}` : ''}</span>`;
+  };
+
+  const renderMediaList = (items) => {
+    if (!Array.isArray(items) || items.length === 0) {
+      mediaList.innerHTML = '<li class="hint">No media yet. Add by URL below or upload from an Article logo / Static block.</li>';
+      return;
+    }
+    mediaList.innerHTML = items.map((m) => {
+      const usable = !!(m.alt_text && m.alt_text.trim());
+      return `
+      <li data-media-id="${m.id}" class="template-row media-row${usable ? '' : ' media-row-needs-alt'}">
+        <div class="media-thumb-wrap">${mediaThumbHtml(m)}</div>
+        <div class="template-meta media-meta">
+          <strong>${escapeHtml(MEDIA_KIND_LABEL[m.kind] || m.kind)}<span class="badge media-badge media-badge-${m.status}">${escapeHtml(MEDIA_STATUS_LABEL[m.status] || m.status)}</span></strong>
+          <small class="media-source">${mediaSourceHtml(m)}</small>
+          ${m.error ? `<small class="media-error">${escapeHtml(m.error)}</small>` : ''}
+          <label class="media-alt-label">
+            <span>Image description</span>
+            <input type="text" class="media-alt-input" data-field="alt_text" value="${escapeHtml(m.alt_text || '')}" placeholder="Required before this item can be used" maxlength="500">
+          </label>
+        </div>
+        <div class="template-actions media-actions">
+          <button type="button" class="btn" data-action="save-alt">Save</button>
+          <button type="button" class="btn-icon-danger" data-action="delete" aria-label="Delete media item" title="Delete media item">${TRASH_ICON_SVG}</button>
+        </div>
+      </li>
+    `;
+    }).join('');
+  };
+
+  const refreshMediaList = async () => {
+    setMediaStatus('');
+    try {
+      const res = await fetch('/api/media');
+      if (!res.ok) {
+        setMediaStatus(`List failed: ${res.status}`, 'error');
+        return;
+      }
+      renderMediaList(await res.json());
+    } catch (e) {
+      setMediaStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  const saveMediaAlt = async (id, altText) => {
+    setMediaStatus('Saving…');
+    try {
+      const res = await fetch(`/api/media/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alt_text: altText }),
+      });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setMediaStatus(`Save ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      await refreshMediaList();
+      setMediaStatus('Saved.', 'ok');
+    } catch (e) {
+      setMediaStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  const deleteMediaItem = async (id, label) => {
+    if (!(await confirmDelete(`Delete media item "${label}"? This cannot be undone.`))) return;
+    setMediaStatus('Deleting…');
+    try {
+      const res = await fetch(`/api/media/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setMediaStatus(`Delete ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      await refreshMediaList();
+      setMediaStatus('Deleted.', 'ok');
+    } catch (e) {
+      setMediaStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  mediaList.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const row = btn.closest('[data-media-id]');
+    if (!row) return;
+    const id = Number(row.dataset.mediaId);
+    if (btn.dataset.action === 'save-alt') {
+      const input = row.querySelector('input[data-field="alt_text"]');
+      saveMediaAlt(id, input ? input.value : '');
+    } else if (btn.dataset.action === 'delete') {
+      const label = row.querySelector('.media-source')?.textContent
+        || row.querySelector('strong')?.textContent
+        || `#${id}`;
+      deleteMediaItem(id, label);
+    }
+  });
+
+  const openMediaDialog = async () => {
+    setMediaStatus('');
+    mediaCreateForm.reset();
+    await refreshMediaList();
+    if (typeof mediaDialog.showModal === 'function') {
+      mediaDialog.showModal();
+    } else {
+      mediaDialog.setAttribute('open', '');
+    }
+  };
+
+  const closeMediaDialog = () => {
+    if (typeof mediaDialog.close === 'function') {
+      mediaDialog.close();
+    } else {
+      mediaDialog.removeAttribute('open');
+    }
+  };
+
+  mediaCreateForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(mediaCreateForm);
+    const kind = trim(fd.get('kind') || 'logo');
+    const url = trim(fd.get('url') || '');
+    if (!url) {
+      setMediaStatus('URL required.', 'error');
+      return;
+    }
+    setMediaStatus('Adding…');
+    try {
+      const res = await fetch('/api/media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, url: sanitizeUrl(url) }),
+      });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setMediaStatus(`Add ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      mediaCreateForm.reset();
+      await refreshMediaList();
+      setMediaStatus('Added — fill in the Image description before use.', 'ok');
+    } catch (err) {
+      setMediaStatus('Network error: ' + err.message, 'error');
+    }
+  });
+
+  document.getElementById('open-media').addEventListener('click', openMediaDialog);
+  document.getElementById('media-close').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeMediaDialog();
+  });
+
   document.getElementById('open-settings').addEventListener('click', openSettingsDialog);
   document.getElementById('settings-cancel').addEventListener('click', (e) => {
     e.preventDefault();
