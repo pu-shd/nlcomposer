@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SDC Composer</title>
+<title>Newsletter Composer</title>
 <link rel="stylesheet" href="/static/composer.css">
 </head>
 <body>
 <header class="topbar">
-  <h1>SDC Composer</h1>
+  <h1>Newsletter Composer</h1>
   <div class="status" id="status" aria-live="polite"></div>
   <div class="actions">
     <button type="button" id="open-templates" class="btn ghost" aria-haspopup="dialog">Templates</button>
@@ -29,19 +29,19 @@
       <details>
         <summary>Issue Details</summary>
         <div class="grid-2">
+          <label class="span-2">Issue Title
+            <input type="text" name="issue_title" required placeholder="BeijingAutoShow" value="BeijingAutoShow">
+            <small class="field-error" data-error-for="issue_title" hidden>Issue Title is required.</small>
+          </label>
           <label>Issue Number
             <input type="number" name="issue_number" required min="1" value="9">
             <small class="field-error" data-error-for="issue_number" hidden>Issue Number is required.</small>
           </label>
+          <label>Issue Date
+            <input type="date" name="issue_date" required>
+          </label>
           <label hidden>Year (computed)
             <output id="issue-year-display" name="issue_year_display" for="issue_date">—</output>
-          </label>
-          <label>Issue Title
-            <input type="text" name="issue_title" required placeholder="BeijingAutoShow" value="BeijingAutoShow">
-            <small class="field-error" data-error-for="issue_title" hidden>Issue Title is required.</small>
-          </label>
-          <label>Issue date
-            <input type="date" name="issue_date" required>
           </label>
           <label class="span-2" hidden>Display date (optional override)
             <input type="text" name="display_date" placeholder='Sunday, May 3, 2026'>

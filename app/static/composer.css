@@ -309,6 +309,10 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   font-size: 12px;
   color: var(--muted);
 }
+/* The `display: flex` above wins over the UA `[hidden] { display: none }`
+   rule, so an author-side override is required to actually hide labels
+   marked with the `hidden` attribute (e.g. Year/Display date/Subject). */
+#composer label[hidden] { display: none; }
 
 #composer label.checkbox {
   flex-direction: row;

@@ -771,9 +771,12 @@
   // familiar collapsed layout with the toggle still reachable.
   const resizer = document.querySelector('.layout-resizer');
   if (resizer) {
-    const COLLAPSE_THRESHOLD_PX = 80; // distance from right edge
+    // Below ~312px, the preview iframe is too narrow to render a faithful
+    // newsletter view (the email content's narrowest @media breakpoint),
+    // so we snap the pane closed once the user drags into that zone.
+    const COLLAPSE_THRESHOLD_PX = 312; // distance from right edge
     const MIN_FORM_WIDTH = 280;
-    const MIN_PREVIEW_WIDTH = 280;
+    const MIN_PREVIEW_WIDTH = 312;
     let dragPointerId = null;
 
     const setFormPaneWidth = (px) => {

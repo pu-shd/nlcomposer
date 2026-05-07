@@ -27,7 +27,7 @@ def test_index_serves_composer_page(client: TestClient):
     body = res.text
     # Page must contain the form skeleton with all top-level sections so
     # Alain can drive the whole pipeline through the UI without curl.
-    assert "<title>SDC Composer</title>" in body
+    assert "<title>Newsletter Composer</title>" in body
     for legend in (
         "Issue Details",
         "Articles",
