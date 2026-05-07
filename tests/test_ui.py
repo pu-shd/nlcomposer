@@ -290,6 +290,21 @@ def test_confirm_delete_skipped_when_setting_off(client: TestClient):
     assert "Promise.resolve(true)" in js
 
 
+def test_layout_starts_with_preview_pane_collapsed(client: TestClient):
+    """The form pane should claim full width on first load — surfacing
+    a usable preview only when the editor explicitly asks for it. The
+    toggle button mirrors the collapsed state so screen readers see
+    aria-pressed=true / "Show preview" up front."""
+    body = client.get("/").text
+    # The <main class="layout"> ships with preview-hidden engaged.
+    assert 'class="layout preview-hidden"' in body
+    # And the toggle reflects "currently hidden".
+    toggle_idx = body.index('id="toggle-preview"')
+    toggle_block = body[toggle_idx : body.index('>', toggle_idx) + 1]
+    assert 'aria-pressed="true"' in toggle_block
+    assert 'aria-label="Show preview"' in toggle_block
+
+
 def test_layout_includes_resizer(client: TestClient):
     """A vertical splitter sits between the composer form and the
     preview pane so Alain can retune the column widths or yank the

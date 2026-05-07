@@ -60,14 +60,43 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
       the same connection across threads when used as a dependency yield.
     """
     target = Path(path) if path is not None else get_db_path()
-    conn = sqlite3.connect(
-        str(target),
-        check_same_thread=False,
-        detect_types=sqlite3.PARSE_DECLTYPES,
-    )
+    # Networked filesystems (Azure Files SMB, NFSv2/3) report
+    # "database is locked" for SQLite's default POSIX advisory locks,
+    # because their lock semantics are unreliable. SQLite ships an
+    # alternate VFS, ``unix-dotfile``, that coordinates writers via a
+    # sentinel ``<db>-journal`` dotfile in the same directory — any
+    # filesystem that supports atomic create/delete works. It is safe
+    # for single-writer workloads (we run min/max replicas = 1) and
+    # is what SQLite's docs recommend for shared network volumes.
+    #
+    # Honor an ``SDC_SQLITE_VFS`` env var so deployments that mount
+    # an Azure Files share at SDC_DATA_DIR set this to ``unix-dotfile``,
+    # while local-dev / tests stay on the platform default and keep
+    # the standard pytest fixtures working.
+    vfs = os.environ.get("SDC_SQLITE_VFS", "").strip()
+    if vfs:
+        conn = sqlite3.connect(
+            f"file:{target.as_posix()}?vfs={vfs}",
+            uri=True,
+            check_same_thread=False,
+            detect_types=sqlite3.PARSE_DECLTYPES,
+        )
+    else:
+        conn = sqlite3.connect(
+            str(target),
+            check_same_thread=False,
+            detect_types=sqlite3.PARSE_DECLTYPES,
+        )
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
+    # WAL would also need shared-memory + locking that SMB lacks, and
+    # the unix-dotfile VFS doesn't support it. Stay on the default
+    # rollback journal. ``try/except`` so a misconfigured filesystem
+    # still degrades gracefully instead of crashing the lifespan.
+    try:
+        conn.execute("PRAGMA journal_mode = DELETE")
+    except sqlite3.OperationalError:
+        pass
     return conn
 
 

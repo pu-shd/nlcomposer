@@ -18,7 +18,10 @@ setopt PIPE_FAIL ERR_RETURN 2>/dev/null || true
 
 SCRIPT_DIR="${0:A:h}"
 REPO_ROOT="${SCRIPT_DIR:h}"
-ENV_FILE="${REPO_ROOT}/.deploy.env"
+# DEPLOY_ENV_FILE override exists for tests + power users who want to
+# keep multiple stage configs side-by-side. Defaults to .deploy.env in
+# the repo root for the normal one-environment-per-checkout case.
+ENV_FILE="${DEPLOY_ENV_FILE:-${REPO_ROOT}/.deploy.env}"
 SUBSCRIPTION=""
 ASSUME_YES=0
 DRY_RUN=0
@@ -126,13 +129,22 @@ AZ_ACA_ENV="${AZ_ACA_ENV}"
 AZ_ACA_APP="${AZ_ACA_APP}"
 AZ_IMAGE_TAG="${AZ_IMAGE_TAG}"
 AZ_ENTRA_APP="${AZ_ENTRA_APP}"
+AZ_ENTRA_PRINCIPALS="${AZ_ENTRA_PRINCIPALS}"
 GH_REPO="${GH_REPO}"
 EOF
   ok "Saved configuration to ${ENV_FILE}"
 }
 
 prompt_with_default() {
-  local var="$1" prompt="$2" default="$3" current="${(P)var:-}"
+  local var="$1" prompt="$2" default="$3"
+  # NOTE: keep the (P)var indirection on its own line. When combined with
+  # `local var="$1" ... current="${(P)var:-}"` on a single line, zsh
+  # resolves (P)var BEFORE the new value of $var lands in the local
+  # scope — so $current came back empty even though the global was set
+  # from .deploy.env, and `--yes` happily overwrote the saved config
+  # with the built-in defaults. Splitting the assignments keeps the
+  # existing-value path working.
+  local current="${(P)var:-}"
   local effective="${current:-$default}"
   if (( ASSUME_YES )); then
     typeset -g "$var"="$effective"
@@ -151,6 +163,16 @@ ensure_config() {
     info "Loading existing config from ${ENV_FILE}"
     # shellcheck disable=SC1090
     source "$ENV_FILE"
+  elif (( ASSUME_YES )); then
+    # Defense-in-depth: --yes is intended for unattended re-runs of an
+    # already-saved configuration. Without a .deploy.env, prompt_with_default
+    # falls back to BUILT-IN defaults (e.g. rg-newsletter-composer in
+    # eastus), which is almost never what an unattended caller wants —
+    # and historically led to a second, accidental resource set being
+    # provisioned. Refuse rather than guess.
+    err "--yes requires an existing ${ENV_FILE}."
+    err "Run \`scripts/deploy.sh setup\` interactively first to seed the file."
+    exit 2
   fi
 
   local default_repo=""
@@ -171,6 +193,9 @@ ensure_config() {
   prompt_with_default AZ_ACA_APP        "Container App name"                  "newsletter-composer"
   prompt_with_default AZ_IMAGE_TAG      "Image tag"                           "v1"
   prompt_with_default AZ_ENTRA_APP      "Entra ID app display name"           "Newsletter Composer (auth)"
+  prompt_with_default AZ_ENTRA_PRINCIPALS \
+                      "Allowed principals (comma-separated UPNs / group names / object IDs; empty = tenant-wide)" \
+                      ""
   prompt_with_default GH_REPO           "GitHub repo (owner/name) for CI"     "${default_repo}"
 
   # Lower-case the storage and ACR names to satisfy Azure naming rules.
@@ -187,6 +212,7 @@ ensure_config() {
   info "ACA env / app: ${AZ_ACA_ENV} / ${AZ_ACA_APP}"
   info "Image tag    : ${AZ_IMAGE_TAG}"
   info "Entra app    : ${AZ_ENTRA_APP}"
+  info "Allowed      : ${AZ_ENTRA_PRINCIPALS:-<tenant-wide>}"
   info "GitHub repo  : ${GH_REPO:-<not set>}"
 
   confirm "Save and continue with these values?" || { err "Aborted by user."; exit 1; }
@@ -371,7 +397,8 @@ ensure_container_app() {
     info "Updating existing container app to image ${image}"
     run az containerapp update \
       -n "$AZ_ACA_APP" -g "$AZ_RG" \
-      --image "$image" >/dev/null
+      --image "$image" \
+      --set-env-vars "SDC_DATA_DIR=/app/data" "SDC_SQLITE_VFS=unix-dotfile" >/dev/null
     ok "Updated"
   else
     run az containerapp create \
@@ -382,45 +409,78 @@ ensure_container_app() {
       --registry-server "${AZ_ACR}.azurecr.io" \
       --registry-identity system \
       --system-assigned \
-      --env-vars "SDC_DATA_DIR=/app/data" \
+      --env-vars "SDC_DATA_DIR=/app/data" "SDC_SQLITE_VFS=unix-dotfile" \
       --min-replicas 1 --max-replicas 1 \
       --cpu 0.5 --memory 1.0Gi >/dev/null
     ok "Created"
   fi
+  # SDC_SQLITE_VFS=unix-dotfile is required when SDC_DATA_DIR points
+  # at an Azure Files SMB mount: SQLite's default POSIX advisory locks
+  # fail on this filesystem ("database is locked" on every PRAGMA).
+  # The dotfile VFS coordinates writers via a sentinel <db>-journal
+  # dotfile, which any filesystem can create/delete atomically. WAL is
+  # also incompatible — the app's connect() falls back to the default
+  # rollback journal automatically. See app/db.py.
 
   step "Bind file-share volume to /app/data"
   if (( DRY_RUN )); then
-    info "(dry-run) would export YAML, inject sdc-data-mount volume + mount, re-apply"
+    info "(dry-run) would export JSON, inject sdc-data-mount volume + mount, re-apply"
   else
-    # ACA's "yaml-bound" volume binding has no convenient CLI patch; export, edit, re-apply.
-    local tmpyaml; tmpyaml=$(mktemp -t aca-XXXX.yaml)
-    az containerapp show -n "$AZ_ACA_APP" -g "$AZ_RG" -o yaml > "$tmpyaml"
-    if grep -q "name: sdc-data-mount" "$tmpyaml" 2>/dev/null; then
+    # ACA has no convenient CLI patch for binding a file-share volume,
+    # so we export the app definition, mutate it, and re-apply via
+    # `containerapp update --yaml`. The flag accepts both YAML and JSON
+    # — JSON is what `az ... show -o json` emits and what Python's
+    # stdlib can parse without PyYAML, keeping this step dependency-free.
+    local tmpjson; tmpjson=$(mktemp -t aca-XXXX.json)
+    az containerapp show -n "$AZ_ACA_APP" -g "$AZ_RG" -o json > "$tmpjson"
+    if grep -q '"sdc-data-mount"' "$tmpjson" 2>/dev/null; then
       ok "Volume already bound"
     else
-      python3 - "$tmpyaml" <<'PY'
-import sys, yaml, pathlib
+      local py_bin
+      if [[ -x "${REPO_ROOT}/.venv/bin/python" ]]; then
+        py_bin="${REPO_ROOT}/.venv/bin/python"
+      else
+        py_bin="$(command -v python3 || true)"
+      fi
+      if [[ -z "$py_bin" ]]; then
+        err "Need python3 (with stdlib json) to mutate the ACA definition; not found in PATH."
+        rm -f "$tmpjson"
+        return 1
+      fi
+      "$py_bin" - "$tmpjson" <<'PY'
+import json, pathlib, sys
+
+# ACA's JSON serializes empty / unset arrays as `null`, not as missing
+# keys — so dict.setdefault is the wrong tool (it preserves None). We
+# coalesce with `or []` and then explicitly write the result back.
 p = pathlib.Path(sys.argv[1])
-doc = yaml.safe_load(p.read_text())
-tmpl = doc.setdefault("properties", {}).setdefault("template", {})
-containers = tmpl.setdefault("containers", [])
+doc = json.loads(p.read_text())
+props = doc.setdefault("properties", {})
+tmpl = props.get("template") or {}
+props["template"] = tmpl
+
+containers = tmpl.get("containers") or []
 if containers:
-    mounts = containers[0].setdefault("volumeMounts", [])
+    mounts = containers[0].get("volumeMounts") or []
     if not any(m.get("volumeName") == "sdc-data-mount" for m in mounts):
         mounts.append({"volumeName": "sdc-data-mount", "mountPath": "/app/data"})
-volumes = tmpl.setdefault("volumes", [])
+    containers[0]["volumeMounts"] = mounts
+
+volumes = tmpl.get("volumes") or []
 if not any(v.get("name") == "sdc-data-mount" for v in volumes):
     volumes.append({
         "name": "sdc-data-mount",
         "storageType": "AzureFile",
         "storageName": "sdc-data",
     })
-p.write_text(yaml.safe_dump(doc, sort_keys=False))
+tmpl["volumes"] = volumes
+
+p.write_text(json.dumps(doc, indent=2))
 PY
-      run az containerapp update -n "$AZ_ACA_APP" -g "$AZ_RG" --yaml "$tmpyaml" >/dev/null
+      run az containerapp update -n "$AZ_ACA_APP" -g "$AZ_RG" --yaml "$tmpjson" >/dev/null
       ok "Volume bound"
     fi
-    rm -f "$tmpyaml"
+    rm -f "$tmpjson"
   fi
 
   step "Grant Container App pull rights on ACR"
@@ -461,6 +521,61 @@ ensure_entra_app() {
   fi
   ENTRA_APP_ID="$app_id"
 
+  # Enable id_token issuance. The Container Apps auth proxy uses the
+  # OIDC hybrid flow (`response_type=code+id_token`); without
+  # `web.implicitGrantSettings.enableIdTokenIssuance=true` Microsoft
+  # rejects sign-in with AADSTS700054. The CLI's
+  # `az ad app update --set web.implicitGrantSettings.*` is broken
+  # for nested Graph properties, so we PATCH directly. Idempotent.
+  if (( ! DRY_RUN )); then
+    local _obj_id
+    _obj_id=$(az ad app show --id "$app_id" --query id -o tsv 2>/dev/null || echo "")
+    if [[ -n "$_obj_id" ]]; then
+      az rest --method PATCH \
+        --uri "https://graph.microsoft.com/v1.0/applications/${_obj_id}" \
+        --headers "Content-Type=application/json" \
+        --body '{"web":{"implicitGrantSettings":{"enableIdTokenIssuance":true,"enableAccessTokenIssuance":false}}}' \
+        >/dev/null 2>&1 \
+        || warn "Failed to enable id_token issuance — sign-in may fail with AADSTS700054 until this is set."
+    fi
+  fi
+
+  # Repair / extend the redirect URI list. Historically the create-new
+  # branch baked in whatever APP_FQDN was at create-time — if the
+  # Container App hadn't been provisioned yet (e.g. a failed first
+  # run), the URI was malformed and silently broke the auth callback
+  # until someone went to the portal. Make every setup re-verify the
+  # callback is registered, preserving any other URIs the operator
+  # may have added manually.
+  if [[ -n "${APP_FQDN:-}" ]] && (( ! DRY_RUN )); then
+    local want="https://${APP_FQDN}/.auth/login/aad/callback"
+    local have_uris
+    have_uris=$(az ad app show --id "$app_id" --query "web.redirectUris" -o tsv 2>/dev/null || echo "")
+    if print -- "$have_uris" | grep -Fxq "$want"; then
+      info "Redirect URI already registered: ${want}"
+    else
+      # Drop any malformed http(s)://.auth/... entries from a botched
+      # earlier run; keep everything else and add the canonical URI.
+      local merged
+      merged=$(print -- "$have_uris" | awk -v WANT="$want" '
+        $0 ~ /^https?:\/\/\/?\.auth\// { next }   # discard malformed
+        $0 != ""                       { print }
+        END                            { print WANT }
+      ' | tr '\n' ' ')
+      info "Updating redirect URIs on app reg"
+      run az ad app update --id "$app_id" --web-redirect-uris ${=merged} >/dev/null
+      ok "Redirect URI registered: ${want}"
+    fi
+  fi
+
+  # The Application object alone can't host App Role Assignments — that
+  # surface lives on the ServicePrincipal in the tenant. Create one if
+  # the auth flow hasn't already (idempotent: --id is the appId, not
+  # the SP id, so a re-run is a no-op when the SP already exists).
+  if (( ! DRY_RUN )); then
+    az ad sp create --id "$ENTRA_APP_ID" >/dev/null 2>&1 || true
+  fi
+
   pause_for_manual "Generate Entra app client secret" \
     "Open https://portal.azure.com → Entra ID → App registrations → ${AZ_ENTRA_APP}" \
     "Certificates & secrets → New client secret (1-year recommended)" \
@@ -475,20 +590,209 @@ ensure_entra_app() {
     print
     if [[ -n "$client_secret" ]]; then
       step "Bind Entra auth to Container App"
-      run az containerapp auth microsoft update \
-        -n "$AZ_ACA_APP" -g "$AZ_RG" \
-        --client-id "$ENTRA_APP_ID" \
-        --client-secret "$client_secret" \
-        --tenant-id "$(az account show --query tenantId -o tsv)" >/dev/null
-      run az containerapp auth update \
-        -n "$AZ_ACA_APP" -g "$AZ_RG" \
-        --enabled true \
-        --action RedirectToLoginPage \
-        --redirect-provider azureactivedirectory >/dev/null || true
+      # We cannot use `az containerapp auth microsoft update` here.
+      # That command's update_aad_settings() function calls
+      # prompt_y_n() with default="n" before doing the bind, and the
+      # underlying knack.prompting.verify_is_a_tty() raises a hard
+      # NoTTYException whenever stdin isn't a TTY — which is true the
+      # moment we either pipe input in or run the script under any
+      # non-interactive harness. Piping `y\n` doesn't help (the TTY
+      # check fires before the read); there is no global --yes that
+      # silences this one. Instead, write the secret via
+      # `az containerapp secret set` (no prompt) and then PUT the
+      # authConfig directly through the management API via `az rest`
+      # (also no prompt), bypassing the CLI subcommand entirely.
+      if (( DRY_RUN )); then
+        info "(dry-run) would store secret + PUT authConfig on $AZ_ACA_APP"
+      else
+        local tenant_id
+        tenant_id=$(az account show --query tenantId -o tsv)
+        local sub_id
+        sub_id=$(az account show --query id -o tsv)
+
+        # Stash the client secret on the Container App as a named
+        # secret. The authConfig references it by name (not by value)
+        # so secret rotation later means only re-running this step.
+        az containerapp secret set \
+          -n "$AZ_ACA_APP" -g "$AZ_RG" \
+          --secrets "microsoft-provider-authentication-secret=${client_secret}" >/dev/null
+
+        # Build + send the authConfig payload. Using a tempfile keeps
+        # the secret off the command line (which would show up in
+        # `ps`) — though here only the *name* is in the payload, the
+        # tempfile pattern is also less brittle for any quoting fun
+        # with the JSON.
+        local auth_uri="https://management.azure.com/subscriptions/${sub_id}/resourceGroups/${AZ_RG}/providers/Microsoft.App/containerApps/${AZ_ACA_APP}/authConfigs/current?api-version=2024-03-01"
+        local body
+        body=$(cat <<EOF
+{
+  "properties": {
+    "platform": {"enabled": true},
+    "globalValidation": {
+      "unauthenticatedClientAction": "RedirectToLoginPage",
+      "redirectToProvider": "azureactivedirectory"
+    },
+    "identityProviders": {
+      "azureActiveDirectory": {
+        "registration": {
+          "openIdIssuer": "https://login.microsoftonline.com/${tenant_id}/v2.0",
+          "clientId": "${ENTRA_APP_ID}",
+          "clientSecretSettingName": "microsoft-provider-authentication-secret"
+        }
+      }
+    }
+  }
+}
+EOF
+)
+        az rest --method PUT \
+          --uri "$auth_uri" \
+          --headers "Content-Type=application/json" \
+          --body "$body" >/dev/null
+
+        # The running revision was launched before the auth secret
+        # existed — its embedded auth sidecar can't materialize the
+        # clientSecretSettingName value, so the post-login callback
+        # silently fails with a blank page. Force a new revision so
+        # the secret gets baked into the next pod.
+        local active_rev
+        active_rev=$(az containerapp revision list \
+          -n "$AZ_ACA_APP" -g "$AZ_RG" \
+          --query "[?properties.active].name | [0]" -o tsv 2>/dev/null || echo "")
+        if [[ -n "$active_rev" ]]; then
+          az containerapp revision restart \
+            -n "$AZ_ACA_APP" -g "$AZ_RG" \
+            --revision "$active_rev" >/dev/null \
+            || warn "Revision restart failed; new auth secret may not load until next deploy."
+        fi
+      fi
       ok "Auth enabled (redirect-to-login)"
     else
       warn "No secret provided — auth left in current state."
     fi
+  fi
+}
+
+# Resolve a single principal token (UPN, group name, or object ID) to
+# {object_id, type}. Echoes "<id>|<type>" on stdout where type is one
+# of User / Group; empty echo + non-zero return when unresolvable.
+# Logs (via warn) so the caller can keep going on partial failures.
+resolve_principal() {
+  local token="$1"
+  local out=""
+  # UUID — assume it's already an object ID, sniff for type.
+  if [[ "$token" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+    if az ad user show --id "$token" --query id -o tsv >/dev/null 2>&1; then
+      print -n -- "${token}|User"
+      return 0
+    fi
+    if az ad group show --group "$token" --query id -o tsv >/dev/null 2>&1; then
+      print -n -- "${token}|Group"
+      return 0
+    fi
+    warn "Object ID ${token} is neither a user nor a group in this tenant — skipping."
+    return 1
+  fi
+  # UPN-style — looks like an email.
+  if [[ "$token" == *@* ]]; then
+    out=$(az ad user show --id "$token" --query id -o tsv 2>/dev/null || echo "")
+    if [[ -n "$out" ]]; then
+      print -n -- "${out}|User"
+      return 0
+    fi
+    warn "User ${token} not found — skipping."
+    return 1
+  fi
+  # Otherwise: group display name.
+  out=$(az ad group show --group "$token" --query id -o tsv 2>/dev/null || echo "")
+  if [[ -n "$out" ]]; then
+    print -n -- "${out}|Group"
+    return 0
+  fi
+  warn "Group ${token} not found — skipping."
+  return 1
+}
+
+ensure_entra_principal_assignments() {
+  step "Restrict access to allowed Entra principals"
+  if [[ -z "${ENTRA_APP_ID:-}" ]]; then
+    warn "Entra app id missing — run ensure_entra_app first."
+    return 0
+  fi
+  if [[ -z "${AZ_ENTRA_PRINCIPALS:-}" ]]; then
+    info "AZ_ENTRA_PRINCIPALS empty — leaving the app open to any tenant member."
+    info "Set this in .deploy.env (comma-separated) and rerun to lock down access."
+    return 0
+  fi
+
+  if (( DRY_RUN )); then
+    info "(dry-run) would set appRoleAssignmentRequired=true on the Entra SP and assign:"
+    print -- "$AZ_ENTRA_PRINCIPALS" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | while read -r p; do
+      info "  · ${p}"
+    done
+    return 0
+  fi
+
+  local sp_id
+  sp_id=$(az ad sp show --id "$ENTRA_APP_ID" --query id -o tsv 2>/dev/null || echo "")
+  if [[ -z "$sp_id" ]]; then
+    warn "Entra service principal not found for appId ${ENTRA_APP_ID} — try rerunning setup."
+    return 0
+  fi
+
+  # Flip appRoleAssignmentRequired=true so unassigned users get a
+  # consent/access-denied page instead of silently signing in.
+  info "Setting appRoleAssignmentRequired=true on the Entra SP"
+  az rest \
+    --method PATCH \
+    --uri "https://graph.microsoft.com/v1.0/servicePrincipals/${sp_id}" \
+    --headers "Content-Type=application/json" \
+    --body '{"appRoleAssignmentRequired": true}' >/dev/null 2>&1 \
+    || warn "Failed to set appRoleAssignmentRequired (insufficient Graph perms?)."
+
+  # Snapshot existing assignments so we don't double-add on rerun. The
+  # "default access" appRole id (00000000-...) is what gets used when
+  # an assignment is created without specifying a custom role.
+  local existing_ids
+  existing_ids=$(az rest \
+    --method GET \
+    --uri "https://graph.microsoft.com/v1.0/servicePrincipals/${sp_id}/appRoleAssignedTo?\$select=principalId" \
+    --query 'value[].principalId' -o tsv 2>/dev/null || echo "")
+
+  local resolved="" tok pid_type pid ptype assigned_count=0 skipped_count=0
+  print -- "$AZ_ENTRA_PRINCIPALS" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | while read -r tok; do
+    pid_type=$(resolve_principal "$tok" 2>/dev/null) || { skipped_count=$((skipped_count+1)); continue; }
+    pid="${pid_type%|*}"
+    ptype="${pid_type#*|}"
+    if print -- "$existing_ids" | grep -q "^${pid}$"; then
+      info "Already assigned: ${tok} (${ptype})"
+      continue
+    fi
+    info "Assigning ${tok} (${ptype})"
+    az rest \
+      --method POST \
+      --uri "https://graph.microsoft.com/v1.0/servicePrincipals/${sp_id}/appRoleAssignedTo" \
+      --headers "Content-Type=application/json" \
+      --body "{\"principalId\":\"${pid}\",\"resourceId\":\"${sp_id}\",\"appRoleId\":\"00000000-0000-0000-0000-000000000000\"}" \
+      >/dev/null 2>&1 \
+      && assigned_count=$((assigned_count+1)) \
+      || warn "Failed to assign ${tok} — may need elevated Graph permissions."
+  done
+
+  # Pretty summary — list everyone currently assigned (post-update),
+  # so the operator can sanity-check who has access.
+  ok "Allowed principals on ${AZ_ENTRA_APP}:"
+  local rows
+  rows=$(az rest \
+    --method GET \
+    --uri "https://graph.microsoft.com/v1.0/servicePrincipals/${sp_id}/appRoleAssignedTo?\$select=principalDisplayName,principalType" \
+    --query 'value[].[principalDisplayName,principalType]' -o tsv 2>/dev/null || echo "")
+  if [[ -z "$rows" ]]; then
+    warn "  (none — sign-in will be blocked until at least one assignment lands)"
+  else
+    print -- "$rows" | while IFS=$'\t' read -r name type; do
+      info "  · ${name} (${type})"
+    done
   fi
 }
 
@@ -650,6 +954,7 @@ do_setup() {
   ensure_container_app
   heading "Identity & auth"
   ensure_entra_app
+  ensure_entra_principal_assignments
   heading "CI/CD"
   ensure_github_oidc
   heading "Done"
