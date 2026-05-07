@@ -23,6 +23,7 @@ from .controllers import (
     drafts as drafts_ctrl,
     eml as eml_ctrl,
     fetch as fetch_ctrl,
+    media as media_ctrl,
     pages as pages_ctrl,
     preview as preview_ctrl,
     settings as settings_ctrl,
@@ -69,5 +70,6 @@ for _ctrl in (
     drafts_ctrl,
     archive_ctrl,
     fetch_ctrl,
+    media_ctrl,
 ):
     app.include_router(_ctrl.router)
