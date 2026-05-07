@@ -28,6 +28,19 @@ def test_settings_model_has_sane_defaults():
     # Behavior toggles default to the values used by the UI.
     assert s.preview_debounce_ms == 400
     assert s.auto_archive_on_download is True
+    # Initial publication date is opt-in; without it the composer can't
+    # derive the printed "Nth year" and falls back to a placeholder.
+    assert s.initial_publication_date is None
+
+
+def test_settings_model_accepts_initial_publication_date():
+    from datetime import date
+
+    s = AppSettings(initial_publication_date=date(2012, 9, 17))
+    assert s.initial_publication_date == date(2012, 9, 17)
+    # JSON round-trip preserves it as an ISO string the JS can parse.
+    data = s.model_dump(mode="json")
+    assert data["initial_publication_date"] == "2012-09-17"
 
 
 def test_settings_validates_safelink_in_unsubscribe_url():
@@ -173,10 +186,22 @@ def test_index_includes_settings_button_and_dialog(client: TestClient):
     for name in (
         "from_name", "from_email", "to_email", "reply_to",
         "unsubscribe_url", "masthead_logo_url",
+        "initial_publication_date",
         "default_intro_html", "default_footer_html",
         "preview_debounce_ms", "auto_archive_on_download",
     ):
         assert f'name="{name}"' in body, f"settings dialog missing field {name}"
+
+
+def test_settings_endpoint_round_trips_initial_publication_date(client: TestClient):
+    res = client.put(
+        "/api/settings",
+        json={"initial_publication_date": "2012-09-17"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["initial_publication_date"] == "2012-09-17"
+    again = client.get("/api/settings").json()
+    assert again["initial_publication_date"] == "2012-09-17"
 
 
 def test_composer_js_calls_settings_endpoint(client: TestClient):

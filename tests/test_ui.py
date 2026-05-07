@@ -77,6 +77,75 @@ def test_article_template_includes_fetch_button(client: TestClient):
     assert 'data-role="fetch-status"' in body
 
 
+def test_article_template_uses_collapsible_card_with_drag_handle(client: TestClient):
+    """Article cards are <details> with a prominent header bar, a drag
+    handle, and a live headline preview — so the user can collapse,
+    reorder, and scan the article list at a glance.
+    """
+    body = client.get("/").text
+
+    # The cloned card must be a collapsible <details> (open by default)
+    # with the prominent header bar as its <summary>.
+    article_tpl_start = body.index('id="article-template"')
+    article_tpl_end = body.index("</template>", article_tpl_start)
+    tpl = body[article_tpl_start:article_tpl_end]
+
+    assert "<details" in tpl, "article card should be a <details> element"
+    assert "article-card" in tpl, "article card needs the .article-card class"
+    assert "<summary" in tpl, "article card needs a <summary> header bar"
+    assert "card-header" in tpl, "summary should carry the .card-header class"
+    assert "drag-handle" in tpl, "article card needs a drag handle for reordering"
+    assert "card-headline-preview" in tpl, (
+        "header bar needs a live headline preview slot"
+    )
+    # Remove button must still exist inside the new header bar.
+    assert "btn-remove" in tpl
+
+
+def test_form_replaces_year_input_with_computed_display(client: TestClient):
+    """The Year input has been replaced by a read-only computed display
+    backed by AppSettings.initial_publication_date — Alain stops typing
+    a year that's auto-derivable from the issue date.
+    """
+    body = client.get("/").text
+    # Old required input must be gone (no name="issue_year" on a form input).
+    assert 'name="issue_year"' not in body
+    # The replacement: an <output> element with a stable id that the JS
+    # writes the computed "Nth year" string into.
+    assert 'id="issue-year-display"' in body
+
+
+def test_composer_js_computes_issue_year_from_settings(client: TestClient):
+    js = client.get("/static/composer.js").text
+    # Year is computed client-side, mirroring app/models.compute_issue_year.
+    assert "computeIssueYear" in js
+    # The setting that drives the math must be wired into the dialog's
+    # field list so it round-trips on save.
+    assert "initial_publication_date" in js
+
+
+def test_composer_js_handles_article_reordering(client: TestClient):
+    """Drag-and-drop wiring + stable per-card ids must be present so
+    reordering articles does not break highlight references. Highlight
+    selects bind to a card's id (not its index) and only convert to a
+    numeric ``article_index`` at buildIssue() time.
+    """
+    js = client.get("/static/composer.js").text
+
+    # HTML5 drag-and-drop wiring for the article reorder UX.
+    for hook in ("dragstart", "dragover", "dragend"):
+        assert hook in js, f"composer.js missing drag-and-drop hook: {hook}"
+
+    # Articles must carry stable ids so highlight refs survive reorder.
+    assert "data-article-id" in js or "articleId" in js, (
+        "composer.js should assign a stable id per article card"
+    )
+    # Highlights must look up by id, not just by numeric index.
+    assert "idToOutIdx" in js or "articleId" in js, (
+        "buildIssue should resolve highlights via the article id map"
+    )
+
+
 def test_preview_endpoint_renders_for_minimal_issue(client: TestClient):
     """The UI's first auto-render fires before the user types anything;
     the preview endpoint must still cope with a minimal valid issue."""
@@ -99,6 +168,40 @@ def test_preview_endpoint_round_trips_full_issue(sample_issue, client: TestClien
     assert "Beijing Auto Show 2026" in body
     assert "Camille Kamga" in body
     assert "Highlights" in body
+
+
+def test_preview_endpoint_round_trips_reordered_articles_with_highlights(
+    sample_issue, client: TestClient,
+):
+    """Simulates what the client POSTs after the user drags an article
+    into a new position: highlights still point to their original
+    referenced article, but the index has been remapped on save.
+
+    Protects against regression of the id↔index translation in
+    composer.js's buildIssue().
+    """
+    payload = sample_issue.model_dump(mode="json")
+    # Pre-condition: fixture has a highlight pointing at the first article
+    # ("Beijing Auto Show…") and one at the second ("Why Are We Still…").
+    assert payload["articles"][0]["headline"].startswith("Beijing Auto Show")
+    assert payload["highlights"][0]["article_index"] == 0
+    assert payload["highlights"][1]["article_index"] == 1
+
+    # Reverse article order; remap highlights (the JS does this when
+    # serializing — the model only ever sees post-remap indices).
+    payload["articles"] = list(reversed(payload["articles"]))
+    n = len(payload["articles"])
+    for h in payload["highlights"]:
+        h["article_index"] = (n - 1) - h["article_index"]
+
+    res = client.post("/api/preview/html", json=payload)
+    assert res.status_code == 200, res.text
+    body = res.text
+    # Both articles still render and the override label still attaches
+    # to the right article (the second highlight ref).
+    assert "Beijing Auto Show 2026" in body
+    assert "Why Are We Still Driving?" in body
+    assert "NYT: Why Are We Still Driving?" in body
 
 
 def test_eml_endpoint_returns_attachment_for_full_issue(sample_issue, client: TestClient):

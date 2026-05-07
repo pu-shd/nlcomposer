@@ -10,30 +10,30 @@
 <header class="topbar">
   <h1>SDC Composer</h1>
   <div class="actions">
-    <button type="button" id="open-settings" class="btn ghost" aria-haspopup="dialog">Settings</button>
     <button type="button" id="open-templates" class="btn ghost" aria-haspopup="dialog">Templates</button>
     <button type="button" id="open-drafts" class="btn ghost" aria-haspopup="dialog">Drafts</button>
     <button type="button" id="open-archive" class="btn ghost" aria-haspopup="dialog">Archive</button>
-    <button type="button" id="toggle-preview" class="btn" aria-pressed="false">Hide preview</button>
-    <button type="button" id="refresh-preview" class="btn">Refresh preview</button>
     <button type="button" id="download-eml" class="btn primary">Download .eml</button>
     <button type="button" id="reset-form" class="btn ghost">Reset</button>
   </div>
   <div class="status" id="status" aria-live="polite"></div>
+  <button type="button" id="open-settings" class="btn-icon" aria-haspopup="dialog" aria-label="Settings" title="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/><circle cx="12" cy="12" r="3"/></svg>
+  </button>
 </header>
 
 <main class="layout">
   <section class="form-pane" aria-label="Composer form">
     <form id="composer" autocomplete="off">
 
-      <details open>
+      <details>
         <summary>Issue header</summary>
         <div class="grid-2">
-          <label>Year (e.g. 14)
-            <input type="number" name="issue_year" required min="1" value="14">
-          </label>
           <label>Number (e.g. 9)
             <input type="number" name="issue_number" required min="1" value="9">
+          </label>
+          <label>Year (computed)
+            <output id="issue-year-display" name="issue_year_display" for="issue_date">—</output>
           </label>
           <label>Title slug
             <input type="text" name="issue_title" required placeholder="BeijingAutoShow" value="BeijingAutoShow">
@@ -74,7 +74,7 @@
         </div>
       </details>
 
-      <details open>
+      <details>
         <summary>Articles <span class="count" id="articles-count">0</span></summary>
         <div id="articles" class="repeating"></div>
         <button type="button" class="btn add" id="add-article">+ Add article</button>
@@ -132,7 +132,13 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.2"/><line x1="5.5" y1="14" x2="10.5" y2="14"/><line x1="8" y1="11.5" x2="8" y2="14"/></svg>
         </button>
       </div>
+      <button type="button" id="refresh-preview" class="btn-icon" aria-label="Refresh preview" title="Refresh preview">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9L13.5 5.5"/><polyline points="13.5 2.5 13.5 5.5 10.5 5.5"/></svg>
+      </button>
       <small id="preview-meta"></small>
+      <button type="button" id="toggle-preview" class="btn-icon toggle-preview" aria-pressed="false" aria-label="Hide preview" title="Hide preview">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="1.5"/><line x1="10" y1="3" x2="10" y2="13"/></svg>
+      </button>
     </div>
     <div class="preview-frame">
       <iframe id="preview" title="Newsletter preview"></iframe>
@@ -141,8 +147,18 @@
 </main>
 
 <template id="article-template">
-  <fieldset class="card">
-    <legend>Article <span class="idx"></span> <button type="button" class="btn-remove" aria-label="Remove">×</button></legend>
+  <details class="card article-card" open>
+    <summary class="card-header">
+      <span class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="6" cy="3.5" r="1.1" fill="currentColor"/><circle cx="10" cy="3.5" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="8" r="1.1" fill="currentColor"/><circle cx="10" cy="8" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="12.5" r="1.1" fill="currentColor"/><circle cx="10" cy="12.5" r="1.1" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="card-title">Article <span class="idx"></span><span class="card-headline-preview"></span></span>
+      <button type="button" class="btn-remove" aria-label="Remove">×</button>
+    </summary>
     <div class="grid-2">
       <label class="span-2">Headline
         <input type="text" data-field="headline" required>
@@ -176,7 +192,7 @@
         <textarea data-field="alain_comment" rows="2"></textarea>
       </label>
     </div>
-  </fieldset>
+  </details>
 </template>
 
 <template id="podcast-template">
@@ -251,41 +267,57 @@
 <dialog id="settings-dialog" aria-labelledby="settings-title">
   <form id="settings-form" method="dialog" autocomplete="off">
     <header class="dialog-header">
-      <h2 id="settings-title">App settings</h2>
+      <h2 id="settings-title">Settings</h2>
       <button type="button" class="btn-remove" id="settings-close" aria-label="Close">&times;</button>
     </header>
     <p class="hint">Defaults applied to every new draft. Edit once; carry across issues.</p>
-    <div class="grid-2">
-      <label>From name
+    <div class="settings-fields">
+      <label class="settings-row">
+        <span class="lbl">From name</span>
         <input type="text" name="from_name" required>
       </label>
-      <label>From email
+      <label class="settings-row">
+        <span class="lbl">From email</span>
         <input type="email" name="from_email" required>
       </label>
-      <label>To email
+      <label class="settings-row">
+        <span class="lbl">To email</span>
         <input type="email" name="to_email" required>
       </label>
-      <label>Reply-To
+      <label class="settings-row">
+        <span class="lbl">Reply-To</span>
         <input type="email" name="reply_to" placeholder="optional">
       </label>
-      <label class="span-2">Unsubscribe URL
+      <label class="settings-row">
+        <span class="lbl">Unsubscribe URL</span>
         <input type="url" name="unsubscribe_url" placeholder="https://...">
       </label>
-      <label class="span-2">Masthead logo URL
+      <label class="settings-row">
+        <span class="lbl">Masthead logo URL</span>
         <input type="url" name="masthead_logo_url" placeholder="https://...">
       </label>
-      <label class="span-2">Default intro HTML
+      <label class="settings-row">
+        <span class="lbl">Initial publication date</span>
+        <input type="date" name="initial_publication_date">
+      </label>
+      <label class="settings-row settings-row-tall">
+        <span class="lbl">Default intro HTML</span>
         <textarea name="default_intro_html" rows="2" placeholder="<p>Greetings…</p>"></textarea>
       </label>
-      <label class="span-2">Default footer HTML
+      <label class="settings-row settings-row-tall">
+        <span class="lbl">Default footer HTML</span>
         <textarea name="default_footer_html" rows="2" placeholder="<p>This list is maintained by …</p>"></textarea>
       </label>
-      <label>Preview debounce (ms)
+      <label class="settings-row">
+        <span class="lbl">Preview debounce (ms)</span>
         <input type="number" name="preview_debounce_ms" min="0" max="5000" step="50">
       </label>
-      <label class="checkbox">
-        <input type="checkbox" name="auto_archive_on_download">
-        Auto-archive on .eml download
+      <label class="settings-row settings-row-checkbox">
+        <span class="lbl">Auto-archive</span>
+        <span class="settings-checkbox-field">
+          <input type="checkbox" name="auto_archive_on_download">
+          <span>On .eml download</span>
+        </span>
       </label>
     </div>
     <footer class="dialog-actions">

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date as _date, datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -48,6 +48,17 @@ class AppSettings(BaseModel):
     default_footer_html: Optional[str] = Field(
         default=None,
         description="Carry-forward footer for new drafts. Raw HTML.",
+    )
+
+    # Issue numbering
+    initial_publication_date: Optional[_date] = Field(
+        default=None,
+        description=(
+            "Date the newsletter first launched. The composer derives "
+            "an issue's enumerated year (e.g. '14th year') from "
+            "(issue_date − initial_publication_date), so the user no "
+            "longer enters a Year value per issue."
+        ),
     )
 
     # Behavior toggles

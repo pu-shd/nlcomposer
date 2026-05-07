@@ -63,6 +63,51 @@
     status.dataset.kind = kind;
   };
 
+  // Hoisted up so updateYearDisplay (defined just below) can read the
+  // initial_publication_date without hitting the temporal dead zone.
+  let currentSettings = null;
+
+  // Mirror of app/models.compute_issue_year — same anniversary-based math
+  // so the printed "Nth year" matches whether the issue is rendered via
+  // the live preview (client-only) or assembled server-side. Returns null
+  // when either input is missing/invalid; the form shows '—' in that
+  // case and buildIssue omits issue_year (server validation will surface
+  // the missing setting to the user via a 422).
+  const computeIssueYear = (issueDateStr, initialDateStr) => {
+    if (!issueDateStr || !initialDateStr) return null;
+    const id = new Date(`${issueDateStr}T00:00:00`);
+    const ip = new Date(`${initialDateStr}T00:00:00`);
+    if (Number.isNaN(id.getTime()) || Number.isNaN(ip.getTime())) return null;
+    let years = id.getFullYear() - ip.getFullYear();
+    const idMD = id.getMonth() * 100 + id.getDate();
+    const ipMD = ip.getMonth() * 100 + ip.getDate();
+    if (idMD < ipMD) years -= 1;
+    return Math.max(1, years + 1);
+  };
+
+  const _ordinalSuffix = (n) => {
+    if (n >= 10 && n <= 20) return 'th';
+    return ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10]) || 'th';
+  };
+
+  const yearDisplay = document.getElementById('issue-year-display');
+  const updateYearDisplay = () => {
+    if (!yearDisplay) return;
+    const issueDate = form.elements['issue_date']?.value || '';
+    const initial = currentSettings?.initial_publication_date || '';
+    const y = computeIssueYear(issueDate, initial);
+    if (y === null) {
+      yearDisplay.textContent = '—';
+      yearDisplay.title = (
+        initial ? 'Set the issue date.' :
+        'Set Initial publication date in Settings.'
+      );
+    } else {
+      yearDisplay.textContent = `${y}${_ordinalSuffix(y)} year`;
+      yearDisplay.title = '';
+    }
+  };
+
   const collectFields = (root) => {
     const out = {};
     root.querySelectorAll('[data-field]').forEach((el) => {
@@ -87,16 +132,33 @@
   };
 
   // ───────── Articles ────────────────────────────────────────────────
+  // Each article card carries a stable `data-article-id` so reordering
+  // by drag-and-drop doesn't break highlight references — highlights
+  // store the article id in the DOM and resolve to a numeric position
+  // index only at buildIssue() time. Without this, dragging articles
+  // would leave highlight selects pointing at the wrong row.
+  let nextArticleId = 0;
+  const newArticleId = () => `a-${++nextArticleId}`;
+
+  const updateArticleHeaderPreview = (card) => {
+    const preview = card.querySelector('.card-headline-preview');
+    const input = card.querySelector('[data-field="headline"]');
+    if (!preview || !input) return;
+    const h = (input.value || '').trim();
+    preview.textContent = h ? ` — ${h.length > 60 ? h.slice(0, 57) + '…' : h}` : '';
+  };
+
   const renumber = () => {
-    [...articlesContainer.querySelectorAll('fieldset.card')].forEach((card, i) => {
+    [...articlesContainer.querySelectorAll('.article-card')].forEach((card, i) => {
       const idx = card.querySelector('.idx');
       if (idx) idx.textContent = `#${i + 1}`;
+      updateArticleHeaderPreview(card);
     });
     [...staticContainer.querySelectorAll('fieldset.card')].forEach((card, i) => {
       const idx = card.querySelector('.idx');
       if (idx) idx.textContent = `#${i + 1}`;
     });
-    articlesCount.textContent = articlesContainer.querySelectorAll('fieldset.card').length;
+    articlesCount.textContent = articlesContainer.querySelectorAll('.article-card').length;
     staticCount.textContent = staticContainer.querySelectorAll('fieldset.card').length;
     highlightsCount.textContent = highlightsContainer.querySelectorAll('.row').length;
     refreshHighlightOptions();
@@ -104,11 +166,16 @@
 
   const addArticle = (data = {}) => {
     const node = articleTpl.content.firstElementChild.cloneNode(true);
+    node.dataset.articleId = newArticleId();
     Object.entries(data).forEach(([k, v]) => {
       const el = node.querySelector(`[data-field="${k}"]`);
       if (el && v !== null && v !== undefined) el.value = v;
     });
-    node.querySelector('.btn-remove').addEventListener('click', () => {
+    const removeBtn = node.querySelector('.btn-remove');
+    removeBtn.addEventListener('click', (e) => {
+      // Inside a <summary>, a button click would also toggle the <details>.
+      e.preventDefault();
+      e.stopPropagation();
       node.remove();
       renumber();
       schedulePreview();
@@ -120,10 +187,65 @@
         fetchArticleInto(node);
       });
     }
+    wireArticleDragHandle(node);
     articlesContainer.appendChild(node);
     renumber();
     return node;
   };
+
+  // ───────── Article reorder (drag & drop) ───────────────────────────
+  // Native HTML5 DnD scoped to the drag handle: draggable is toggled on
+  // mousedown of the handle (and reset on dragend / mouseup) so clicks
+  // inside form inputs don't accidentally start a drag of the whole card.
+  // Reorder is done live during dragover (insertBefore the nearest sibling
+  // whose vertical midpoint is below the cursor); on dragend we renumber
+  // and re-render. Highlight selects keep their values because they store
+  // the stable `article-id`, not a positional index.
+  let draggingEl = null;
+
+  const getDragAfterElement = (container, y) => {
+    const els = [...container.querySelectorAll('.article-card:not(.dragging)')];
+    let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+    els.forEach((child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) closest = { offset, element: child };
+    });
+    return closest.element;
+  };
+
+  const wireArticleDragHandle = (card) => {
+    const handle = card.querySelector('.drag-handle');
+    if (!handle) return;
+    handle.addEventListener('mousedown', () => { card.draggable = true; });
+    handle.addEventListener('mouseup', () => { card.draggable = false; });
+    // Click on the handle (no drag) would otherwise toggle <details>.
+    handle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+    card.addEventListener('dragstart', (e) => {
+      if (!card.draggable) return;
+      draggingEl = card;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.dataset.articleId || '');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      card.draggable = false;
+      if (draggingEl === card) draggingEl = null;
+      renumber();
+      schedulePreview();
+    });
+  };
+
+  // Container-level dragover — moves the dragged card to its new slot
+  // continuously so the user sees the target position update live.
+  articlesContainer.addEventListener('dragover', (e) => {
+    if (!draggingEl) return;
+    e.preventDefault();
+    const after = getDragAfterElement(articlesContainer, e.clientY);
+    if (after == null) articlesContainer.appendChild(draggingEl);
+    else if (after !== draggingEl) articlesContainer.insertBefore(draggingEl, after);
+  });
 
   // ───────── Article fetch (auto-fill from URL) ──────────────────────
   const fetchArticleInto = async (card) => {
@@ -320,18 +442,33 @@
   };
 
   // ───────── Highlights ──────────────────────────────────────────────
+  // Highlight <select> options carry the article's stable `data-article-id`
+  // as the option value; the printed label still shows "#N — headline" with
+  // N being the article's *current* DOM position. This keeps a highlight
+  // bound to its referenced article through reorder/insert/remove without
+  // numeric-index drift. The saved-issue JSON still uses numeric
+  // `article_index` (model contract); we map IDs <-> indices at the
+  // load/build boundaries (loadIssueIntoForm + buildIssue).
+  const _escAttr = (s) =>
+    String(s == null ? '' : s).replace(/[<>&"']/g, (c) =>
+      ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
+
   const refreshHighlightOptions = () => {
-    const articles = [...articlesContainer.querySelectorAll('fieldset.card')];
+    const articles = [...articlesContainer.querySelectorAll('.article-card')];
     const optionsHtml = articles.map((a, i) => {
       const headline = a.querySelector('[data-field="headline"]').value || `(article #${i + 1})`;
       const truncated = headline.length > 60 ? headline.slice(0, 57) + '…' : headline;
-      return `<option value="${i}">#${i + 1} — ${truncated.replace(/[<>&"']/g, (c) =>
-        ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]))}</option>`;
+      const id = a.dataset.articleId || '';
+      return `<option value="${_escAttr(id)}">#${i + 1} — ${_escAttr(truncated)}</option>`;
     }).join('');
     highlightsContainer.querySelectorAll('select[data-field="article_index"]').forEach((sel) => {
       const prev = sel.value;
       sel.innerHTML = optionsHtml;
-      if (prev !== '' && articles[Number(prev)]) sel.value = prev;
+      // Preserve selection by article id; if the referenced article was
+      // removed, the select falls through to the first option.
+      if (prev && [...sel.options].some((o) => o.value === prev)) {
+        sel.value = prev;
+      }
     });
   };
 
@@ -339,8 +476,14 @@
     const node = highlightTpl.content.firstElementChild.cloneNode(true);
     highlightsContainer.appendChild(node);
     refreshHighlightOptions();
+    // `data.article_index` is the saved numeric DOM position from
+    // template/draft JSON. Resolve it to the corresponding card's id.
     if (data.article_index !== undefined && data.article_index !== null) {
-      node.querySelector('[data-field="article_index"]').value = String(data.article_index);
+      const cards = [...articlesContainer.querySelectorAll('.article-card')];
+      const card = cards[Number(data.article_index)];
+      if (card && card.dataset.articleId) {
+        node.querySelector('[data-field="article_index"]').value = card.dataset.articleId;
+      }
     }
     if (data.override_label) {
       node.querySelector('[data-field="override_label"]').value = data.override_label;
@@ -360,26 +503,37 @@
     const root = {};
     for (const [k, v] of fd.entries()) {
       const trimmed = trim(v);
-      if (k === 'issue_year' || k === 'issue_number') {
+      if (k === 'issue_number') {
         root[k] = trimmed === '' ? null : Number(trimmed);
       } else {
         root[k] = trimmed;
       }
     }
+    // issue_year is no longer a form field — derive it from the issue
+    // date and the configured initial publication date so the masthead
+    // line ("Nth year of SmartDrivingCars eLetter") stays accurate as
+    // the publication ages. If the setting is unset (fresh install) we
+    // fall back to "1st year" so the preview keeps rendering; the
+    // user-facing display flags this with a tooltip pointing at Settings.
+    const computedYear = computeIssueYear(
+      form.elements['issue_date']?.value || '',
+      currentSettings?.initial_publication_date || '',
+    );
+    root.issue_year = computedYear ?? 1;
     const issue = stripEmpty(root);
 
     // Articles — drop incomplete rows so the preview keeps rendering while
     // Alain is mid-edit (headline + url are required by the Pydantic model).
-    // Keep a card-index → output-index map so highlight refs (which carry
-    // DOM card indices) can be remapped after filtering.
-    const cardArticles = [...articlesContainer.querySelectorAll('fieldset.card')]
-      .map((card) => stripEmpty(collectFields(card)));
-    const cardIdxToOutIdx = new Map();
+    // Build an article-id → output-index map so highlight refs (which carry
+    // stable DOM ids) can be resolved after filtering AND after reorder.
+    const cards = [...articlesContainer.querySelectorAll('.article-card')];
+    const idToOutIdx = new Map();
     issue.articles = [];
-    cardArticles.forEach((a, i) => {
-      if (a.headline && a.url) {
-        cardIdxToOutIdx.set(i, issue.articles.length);
-        issue.articles.push(a);
+    cards.forEach((card) => {
+      const fields = stripEmpty(collectFields(card));
+      if (fields.headline && fields.url) {
+        idToOutIdx.set(card.dataset.articleId, issue.articles.length);
+        issue.articles.push(fields);
       }
     });
 
@@ -414,14 +568,15 @@
       })
       .filter((b) => b.title || b.html);
 
-    // Highlights — refs carry DOM card indices; remap to the post-filter
-    // article indices and drop refs whose article was incomplete.
+    // Highlights — selects carry the article's stable id; resolve to the
+    // post-filter article indices and drop refs whose article was removed
+    // or is still incomplete (no headline+url).
     issue.highlights = [...highlightsContainer.querySelectorAll('.row')]
       .map((row) => {
         const fields = collectFields(row);
-        const idx = fields.article_index;
-        if (idx === '' || idx === null || idx === undefined) return null;
-        const remapped = cardIdxToOutIdx.get(Number(idx));
+        const id = fields.article_index;
+        if (id === '' || id === null || id === undefined) return null;
+        const remapped = idToOutIdx.get(String(id));
         if (remapped === undefined) return null;
         const out = { article_index: remapped };
         if (fields.override_label) out.override_label = fields.override_label;
@@ -542,8 +697,10 @@
   const togglePreview = document.getElementById('toggle-preview');
   togglePreview.addEventListener('click', () => {
     const hidden = layout.classList.toggle('preview-hidden');
-    togglePreview.textContent = hidden ? 'Show preview' : 'Hide preview';
+    const label = hidden ? 'Show preview' : 'Hide preview';
     togglePreview.setAttribute('aria-pressed', hidden ? 'true' : 'false');
+    togglePreview.setAttribute('aria-label', label);
+    togglePreview.setAttribute('title', label);
   });
 
   const viewportButtons = document.querySelectorAll(
@@ -578,6 +735,23 @@
   form.addEventListener('change', maybeSanitizeUrlEvent);
   form.addEventListener('input', schedulePreview);
   form.addEventListener('change', schedulePreview);
+  // Live-update the article header bar's headline preview while typing.
+  form.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t && t.matches && t.matches('[data-field="headline"]')) {
+      const card = t.closest('.article-card');
+      if (card) updateArticleHeaderPreview(card);
+    }
+  });
+  // Recompute the displayed enumerated year whenever the issue date
+  // changes; the dependency on initial_publication_date is refreshed
+  // on settings load/save (see loadSettings / saveSettings below).
+  form.addEventListener('input', (e) => {
+    if (e.target && e.target.name === 'issue_date') updateYearDisplay();
+  });
+  form.addEventListener('change', (e) => {
+    if (e.target && e.target.name === 'issue_date') updateYearDisplay();
+  });
 
   // ───────── Settings dialog ─────────────────────────────────────────
   // App-wide defaults loaded from /api/settings. Used to seed the form on
@@ -589,11 +763,10 @@
   const SETTINGS_FIELDS = [
     'from_name', 'from_email', 'to_email', 'reply_to',
     'unsubscribe_url', 'masthead_logo_url',
+    'initial_publication_date',
     'default_intro_html', 'default_footer_html',
     'preview_debounce_ms', 'auto_archive_on_download',
   ];
-
-  let currentSettings = null;
 
   const setSettingsStatus = (msg, kind = 'info') => {
     if (!settingsStatus) return;
@@ -659,6 +832,7 @@
       if (!res.ok) return null;
       const data = await res.json();
       currentSettings = data;
+      updateYearDisplay();
       return data;
     } catch (e) {
       return null;
@@ -705,6 +879,9 @@
       if (typeof currentSettings.preview_debounce_ms === 'number') {
         previewDebounceMs = currentSettings.preview_debounce_ms;
       }
+      // The enumerated year may now have changed (initial publication date).
+      updateYearDisplay();
+      schedulePreview();
       setSettingsStatus('Saved', 'ok');
       setTimeout(closeSettingsDialog, 350);
     } catch (err) {
@@ -719,8 +896,11 @@
   // repeating sections — they are fully replaced (no merge).
   const loadIssueIntoForm = (issue) => {
     if (!issue || typeof issue !== 'object') return;
+    // Note: `issue_year` is intentionally absent — it is now derived from
+    // the issue date + AppSettings.initial_publication_date and shown via
+    // the read-only #issue-year-display output, not edited in the form.
     const SCALAR_FIELDS = [
-      'issue_year', 'issue_number', 'issue_title', 'issue_date',
+      'issue_number', 'issue_title', 'issue_date',
       'display_date', 'masthead_logo_url', 'intro_html',
       'from_name', 'from_email', 'to_email', 'reply_to', 'subject',
       'footer_html', 'unsubscribe_url',
@@ -780,6 +960,7 @@
     }
 
     renumber();
+    updateYearDisplay();
     schedulePreview();
   };
 

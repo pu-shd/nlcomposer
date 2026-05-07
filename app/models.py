@@ -188,3 +188,27 @@ def _ordinal_suffix(n: int) -> str:
     if 10 <= (n % 100) <= 20:
         return "th"
     return {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+
+
+def compute_issue_year(issue_date: _date, initial_publication_date: _date) -> int:
+    """Return the 1-based "Nth year" for ``issue_date``.
+
+    The newsletter rolls over to a new "year of publication" each time the
+    issue date crosses the anniversary of ``initial_publication_date``.
+    Year 1 starts the day the newsletter launched, year 2 begins the day
+    after the first anniversary, etc. Issues dated before the launch fall
+    back to 1 (the field can never be 0 in the printed masthead).
+
+    The composer UI computes this client-side from the configured
+    ``AppSettings.initial_publication_date`` and the form's issue date,
+    replacing the legacy "Year" input — so it lives here in the model
+    layer where both client (mirrored in JS) and server-side tests can
+    exercise the same arithmetic.
+    """
+    years = issue_date.year - initial_publication_date.year
+    if (issue_date.month, issue_date.day) < (
+        initial_publication_date.month,
+        initial_publication_date.day,
+    ):
+        years -= 1
+    return max(1, years + 1)
