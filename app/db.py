@@ -2,12 +2,16 @@
 
 The composer stores everything beyond the live edit session in a single
 SQLite database under ``SDC_DATA_DIR/app.db`` (default ``./data/app.db``).
-Four tables back the four UI surfaces:
+Five tables back the UI surfaces:
 
 * ``settings``   — single-row JSON blob of app-wide defaults.
 * ``drafts``     — saved-but-incomplete issues the user is still editing.
 * ``templates``  — preset starting points for new issues.
 * ``archive``    — finalized issues with their rendered ``.eml`` bytes.
+* ``media``      — Media Library: cached PNG/JPG bytes plus alt text used
+  by Article logos and Static-block images. Items have either a source
+  ``url`` (URL ingest) or only ``content_bytes`` (uploaded). ``status``
+  tracks the fetch lifecycle (pending → ready/failed).
 
 Each table stores the issue/payload as JSON text so the schema stays stable
 as ``NewsletterIssue`` evolves; the application is responsible for the JSON
@@ -103,6 +107,22 @@ CREATE TABLE IF NOT EXISTS archive (
     created_at  TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_archive_created ON archive(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS media (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind          TEXT    NOT NULL CHECK (kind IN ('logo', 'image')),
+    url           TEXT    UNIQUE,
+    filename      TEXT,
+    content_type  TEXT,
+    content_bytes BLOB,
+    alt_text      TEXT    NOT NULL DEFAULT '',
+    status        TEXT    NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending', 'ready', 'failed')),
+    error         TEXT,
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_media_updated ON media(updated_at DESC);
 """
 
 

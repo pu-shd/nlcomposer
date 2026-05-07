@@ -38,7 +38,7 @@ def test_init_db_creates_all_tables():
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     ).fetchall()
     names = {r["name"] for r in rows}
-    assert {"settings", "drafts", "templates", "archive"}.issubset(names)
+    assert {"settings", "drafts", "templates", "archive", "media"}.issubset(names)
     conn.close()
 
 
@@ -51,7 +51,7 @@ def test_init_db_is_idempotent():
         "SELECT name FROM sqlite_master WHERE type='table'"
     ).fetchall()
     conn.close()
-    assert len([r for r in rows if r["name"] in {"settings", "drafts", "templates", "archive"}]) == 4
+    assert len([r for r in rows if r["name"] in {"settings", "drafts", "templates", "archive", "media"}]) == 5
 
 
 def test_settings_enforces_single_row():
@@ -162,4 +162,4 @@ def test_lifespan_creates_db_file_on_startup(tmp_path, monkeypatch):
         }
     finally:
         conn.close()
-    assert {"settings", "drafts", "templates", "archive"}.issubset(names)
+    assert {"settings", "drafts", "templates", "archive", "media"}.issubset(names)
