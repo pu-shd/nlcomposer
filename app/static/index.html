@@ -13,6 +13,7 @@
     <button type="button" id="open-settings" class="btn ghost" aria-haspopup="dialog">Settings</button>
     <button type="button" id="open-templates" class="btn ghost" aria-haspopup="dialog">Templates</button>
     <button type="button" id="open-drafts" class="btn ghost" aria-haspopup="dialog">Drafts</button>
+    <button type="button" id="open-archive" class="btn ghost" aria-haspopup="dialog">Archive</button>
     <button type="button" id="toggle-preview" class="btn" aria-pressed="false">Hide preview</button>
     <button type="button" id="refresh-preview" class="btn">Refresh preview</button>
     <button type="button" id="download-eml" class="btn primary">Download .eml</button>
@@ -345,6 +346,21 @@
         <button type="submit" class="btn primary">Save draft</button>
       </footer>
     </form>
+  </div>
+</dialog>
+
+<dialog id="archive-dialog" aria-labelledby="archive-title">
+  <div class="dialog-body">
+    <header class="dialog-header">
+      <h2 id="archive-title">Archive</h2>
+      <button type="button" class="btn-remove" id="archive-close" aria-label="Close">&times;</button>
+    </header>
+    <p class="hint">Issues you have downloaded as .eml. Auto-archive can be toggled in Settings.</p>
+
+    <ul class="templates-list" id="archive-list" aria-live="polite"></ul>
+    <footer class="dialog-actions">
+      <small id="archive-status" class="status" aria-live="polite"></small>
+    </footer>
   </div>
 </dialog>
 

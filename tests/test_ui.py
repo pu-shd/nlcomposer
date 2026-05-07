@@ -8,15 +8,20 @@ assets, and that those assets are reachable through the FastAPI app.
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 
 
-client = TestClient(app)
+@pytest.fixture
+def client() -> TestClient:
+    """Use the lifespan context manager so init_db runs on startup."""
+    with TestClient(app) as c:
+        yield c
 
 
-def test_index_serves_composer_page():
+def test_index_serves_composer_page(client: TestClient):
     res = client.get("/")
     assert res.status_code == 200
     body = res.text
@@ -47,7 +52,7 @@ def test_index_serves_composer_page():
         assert f'id="{tpl_id}"' in body
 
 
-def test_static_assets_are_served():
+def test_static_assets_are_served(client: TestClient):
     css = client.get("/static/composer.css")
     assert css.status_code == 200
     assert "text/css" in css.headers["content-type"]
@@ -64,7 +69,7 @@ def test_static_assets_are_served():
     assert "fetchArticleInto" in js.text
 
 
-def test_article_template_includes_fetch_button():
+def test_article_template_includes_fetch_button(client: TestClient):
     body = client.get("/").text
     # Each cloned article card carries a Fetch button so the user can
     # auto-populate headline/byline/excerpt/favicon from the URL.
@@ -72,7 +77,7 @@ def test_article_template_includes_fetch_button():
     assert 'data-role="fetch-status"' in body
 
 
-def test_preview_endpoint_renders_for_minimal_issue():
+def test_preview_endpoint_renders_for_minimal_issue(client: TestClient):
     """The UI's first auto-render fires before the user types anything;
     the preview endpoint must still cope with a minimal valid issue."""
     payload = {
@@ -86,7 +91,7 @@ def test_preview_endpoint_renders_for_minimal_issue():
     assert "9th edition of the 14th year" in res.text
 
 
-def test_preview_endpoint_round_trips_full_issue(sample_issue):
+def test_preview_endpoint_round_trips_full_issue(sample_issue, client: TestClient):
     payload = sample_issue.model_dump(mode="json")
     res = client.post("/api/preview/html", json=payload)
     assert res.status_code == 200, res.text
@@ -96,7 +101,7 @@ def test_preview_endpoint_round_trips_full_issue(sample_issue):
     assert "Highlights" in body
 
 
-def test_eml_endpoint_returns_attachment_for_full_issue(sample_issue):
+def test_eml_endpoint_returns_attachment_for_full_issue(sample_issue, client: TestClient):
     payload = sample_issue.model_dump(mode="json")
     res = client.post("/api/eml", json=payload)
     assert res.status_code == 200
@@ -108,7 +113,7 @@ def test_eml_endpoint_returns_attachment_for_full_issue(sample_issue):
     assert b"multipart/alternative" in res.content
 
 
-def test_preview_endpoint_rejects_invalid_issue():
+def test_preview_endpoint_rejects_invalid_issue(client: TestClient):
     """The UI relies on a 422 to surface validation errors when required
     fields are missing — confirm that round trip works."""
     res = client.post("/api/preview/html", json={})

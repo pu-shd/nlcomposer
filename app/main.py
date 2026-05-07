@@ -20,6 +20,16 @@ from pathlib import Path
 
 import httpx
 
+from .archive_store import (
+    ArchiveCreate,
+    ArchiveEntry,
+    ArchiveSummary,
+    create_archive,
+    delete_archive,
+    get_archive,
+    get_archive_eml,
+    list_archive,
+)
 from .db import connect, get_db, init_db
 from .draft_store import (
     Draft,
@@ -108,9 +118,23 @@ def preview_text(issue: NewsletterIssue) -> str:
 
 
 @app.post("/api/eml")
-def download_eml(issue: NewsletterIssue) -> Response:
+def download_eml(
+    issue: NewsletterIssue,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Response:
     eml_bytes = build_eml(issue)
     filename = build_eml_filename(issue)
+    if load_settings(conn).auto_archive_on_download:
+        create_archive(
+            conn,
+            ArchiveCreate(
+                slug=issue.header_slug(),
+                subject=issue.effective_subject(),
+                filename=filename,
+                payload=issue.model_dump(mode="json"),
+                eml_bytes=eml_bytes,
+            ),
+        )
     return Response(
         content=eml_bytes,
         media_type="message/rfc822",
@@ -239,6 +263,53 @@ def api_delete_draft(
     deleted = delete_draft(conn, draft_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Draft not found")
+    return Response(status_code=204)
+
+
+@app.get("/api/archive", response_model=list[ArchiveSummary])
+def api_list_archive(
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[ArchiveSummary]:
+    """Return archived issues, most-recently-saved first, without payloads."""
+    return list_archive(conn)
+
+
+@app.get("/api/archive/{archive_id}", response_model=ArchiveEntry)
+def api_get_archive(
+    archive_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> ArchiveEntry:
+    entry = get_archive(conn, archive_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Archive entry not found")
+    return entry
+
+
+@app.get("/api/archive/{archive_id}/download")
+def api_download_archive(
+    archive_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Response:
+    """Stream the stored ``.eml`` bytes back to the user as a download."""
+    found = get_archive_eml(conn, archive_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Archive entry not found")
+    filename, eml_bytes = found
+    return Response(
+        content=eml_bytes,
+        media_type="message/rfc822",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.delete("/api/archive/{archive_id}", status_code=204)
+def api_delete_archive(
+    archive_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Response:
+    deleted = delete_archive(conn, archive_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Archive entry not found")
     return Response(status_code=204)
 
 

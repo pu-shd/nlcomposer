@@ -1110,6 +1110,140 @@
     closeDraftsDialog();
   });
 
+  // ───────── Archive dialog ─────────────────────────────────────────
+  // Read-only list of finalized issues. Auto-archive happens server-side
+  // on POST /api/eml when settings.auto_archive_on_download is on.
+  // Each row offers Download (re-fetch the stored .eml) + Delete.
+  const archiveDialog = document.getElementById('archive-dialog');
+  const archiveList = document.getElementById('archive-list');
+  const archiveStatus = document.getElementById('archive-status');
+
+  const setArchiveStatus = (msg, kind = 'info') => {
+    if (!archiveStatus) return;
+    archiveStatus.textContent = msg || '';
+    archiveStatus.dataset.kind = kind;
+  };
+
+  const formatBytes = (n) => {
+    if (typeof n !== 'number' || !Number.isFinite(n)) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const renderArchiveList = (items) => {
+    if (!Array.isArray(items) || items.length === 0) {
+      archiveList.innerHTML = '<li class="hint">No archived issues yet. Download a .eml with auto-archive on to populate.</li>';
+      return;
+    }
+    archiveList.innerHTML = items.map((a) => `
+      <li data-archive-id="${a.id}" class="template-row">
+        <div class="template-meta">
+          <strong>${escapeHtml(a.subject || a.slug)}</strong>
+          <small>${escapeHtml(a.filename)} · ${formatBytes(a.size_bytes)} · ${escapeHtml(formatDraftTimestamp(a.created_at))}</small>
+        </div>
+        <div class="template-actions">
+          <button type="button" class="btn" data-action="download">Download</button>
+          <button type="button" class="btn ghost" data-action="delete">Delete</button>
+        </div>
+      </li>
+    `).join('');
+  };
+
+  const refreshArchiveList = async () => {
+    setArchiveStatus('');
+    try {
+      const res = await fetch('/api/archive');
+      if (!res.ok) {
+        setArchiveStatus(`List failed: ${res.status}`, 'error');
+        return;
+      }
+      renderArchiveList(await res.json());
+    } catch (e) {
+      setArchiveStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  const downloadArchive = async (id, filename) => {
+    setArchiveStatus('Downloading…');
+    try {
+      const res = await fetch(`/api/archive/${id}/download`);
+      if (!res.ok) {
+        setArchiveStatus(`Download ${res.status}`, 'error');
+        return;
+      }
+      const disp = res.headers.get('Content-Disposition') || '';
+      const m = disp.match(/filename="([^"]+)"/);
+      const name = m ? m[1] : (filename || 'newsletter.eml');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setArchiveStatus(`Saved ${name}`, 'ok');
+    } catch (e) {
+      setArchiveStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  const deleteArchive = async (id, label) => {
+    if (!confirm(`Delete archived issue "${label}"? This cannot be undone.`)) return;
+    setArchiveStatus('Deleting…');
+    try {
+      const res = await fetch(`/api/archive/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setArchiveStatus(`Delete ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      await refreshArchiveList();
+      setArchiveStatus('Deleted.', 'ok');
+    } catch (e) {
+      setArchiveStatus('Network error: ' + e.message, 'error');
+    }
+  };
+
+  archiveList.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const row = btn.closest('[data-archive-id]');
+    if (!row) return;
+    const id = Number(row.dataset.archiveId);
+    const label = row.querySelector('strong')?.textContent || '';
+    const filename = row.querySelector('small')?.textContent?.split(' · ')[0] || '';
+    if (btn.dataset.action === 'download') downloadArchive(id, filename);
+    else if (btn.dataset.action === 'delete') deleteArchive(id, label);
+  });
+
+  const openArchiveDialog = async () => {
+    setArchiveStatus('');
+    await refreshArchiveList();
+    if (typeof archiveDialog.showModal === 'function') {
+      archiveDialog.showModal();
+    } else {
+      archiveDialog.setAttribute('open', '');
+    }
+  };
+
+  const closeArchiveDialog = () => {
+    if (typeof archiveDialog.close === 'function') {
+      archiveDialog.close();
+    } else {
+      archiveDialog.removeAttribute('open');
+    }
+  };
+
+  document.getElementById('open-archive').addEventListener('click', openArchiveDialog);
+  document.getElementById('archive-close').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeArchiveDialog();
+  });
+
   document.getElementById('open-settings').addEventListener('click', openSettingsDialog);
   document.getElementById('settings-cancel').addEventListener('click', (e) => {
     e.preventDefault();
