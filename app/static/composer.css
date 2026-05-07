@@ -48,8 +48,11 @@ html, body {
 .topbar .status {
   font-size: 12px;
   color: var(--muted);
-  min-width: 120px;
-  text-align: right;
+  text-align: left;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .btn {
@@ -106,10 +109,28 @@ html, body {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(380px, 1fr) minmax(420px, 1fr);
+  grid-template-columns: var(--form-pane-width, 1fr) 6px 1fr;
   gap: 0;
   height: calc(100vh - 50px);
 }
+
+.layout-resizer {
+  background: var(--border);
+  cursor: col-resize;
+  position: relative;
+  z-index: 5;
+  transition: background 0.15s;
+}
+.layout-resizer:hover,
+.layout-resizer.dragging,
+.layout-resizer:focus-visible { background: var(--accent); outline: none; }
+/* Expand the hit area without growing the visible track. */
+.layout-resizer::before {
+  content: '';
+  position: absolute;
+  inset: 0 -4px;
+}
+body.layout-resizing { cursor: col-resize; user-select: none; }
 
 .form-pane {
   overflow-y: auto;
@@ -202,7 +223,7 @@ html, body {
 .preview-pane.vp-tablet  #preview { max-width: 768px; }
 .preview-pane.vp-desktop #preview { max-width: none; box-shadow: none; }
 
-.layout.preview-hidden { grid-template-columns: 1fr auto; }
+.layout.preview-hidden { grid-template-columns: 1fr 6px auto; }
 .layout.preview-hidden .preview-frame { display: none; }
 .layout.preview-hidden .preview-header > :not(.toggle-preview) { display: none; }
 .layout.preview-hidden .preview-header { border-bottom: 0; padding: 8px; gap: 0; }
@@ -225,11 +246,10 @@ html, body {
   align-items: center;
   gap: 6px;
 }
-#composer details > summary::after {
+#composer details > summary::before {
   content: "▸";
   display: inline-block;
   flex: 0 0 auto;
-  margin-left: auto;
   color: var(--muted);
   font-size: 2em;
   line-height: 1;
@@ -238,10 +258,10 @@ html, body {
   transform-origin: 50% 50%;
   transition: transform 0.15s ease;
 }
-#composer details[open] > summary::after { transform: rotate(90deg); }
+#composer details[open] > summary::before { transform: rotate(90deg); }
 
 #composer details > *:not(summary) {
-  padding: 0 12px 12px 12px;
+  padding: 12px;
 }
 
 #composer .count {
@@ -259,6 +279,27 @@ html, body {
   margin: 0 0 8px 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+#composer .field-hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+#composer .field-error {
+  font-size: 11px;
+  color: var(--danger);
+  font-weight: 500;
+}
+#composer label:has(.field-error:not([hidden])) > input,
+#composer label:has(.field-error:not([hidden])) > select {
+  border-color: var(--danger);
+}
+.btn:disabled,
+.btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 #composer label {

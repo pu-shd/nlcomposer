@@ -21,16 +21,22 @@ def client() -> TestClient:
 
 
 def test_settings_model_has_sane_defaults():
+    from datetime import date
+
     s = AppSettings()
     assert s.from_name
     assert "@" in s.from_email
     assert "@" in s.to_email
+    # Default destination matches the historical SmartDrivingCars author
+    # so a fresh install doesn't ship issues to a placeholder list.
+    assert s.to_email == "editor@example.edu"
     # Behavior toggles default to the values used by the UI.
     assert s.preview_debounce_ms == 400
     assert s.auto_archive_on_download is True
-    # Initial publication date is opt-in; without it the composer can't
-    # derive the printed "Nth year" and falls back to a placeholder.
-    assert s.initial_publication_date is None
+    # Inception Date defaults to the historical SmartDrivingCars launch
+    # so a brand-new install renders the right "Nth year" without first
+    # making the user open Settings.
+    assert s.initial_publication_date == date(2013, 1, 1)
 
 
 def test_settings_model_accepts_initial_publication_date():

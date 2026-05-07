@@ -9,6 +9,7 @@
 <body>
 <header class="topbar">
   <h1>SDC Composer</h1>
+  <div class="status" id="status" aria-live="polite"></div>
   <div class="actions">
     <button type="button" id="open-templates" class="btn ghost" aria-haspopup="dialog">Templates</button>
     <button type="button" id="open-drafts" class="btn ghost" aria-haspopup="dialog">Drafts</button>
@@ -16,7 +17,6 @@
     <button type="button" id="download-eml" class="btn primary">Download .eml</button>
     <button type="button" id="reset-form" class="btn ghost">Reset</button>
   </div>
-  <div class="status" id="status" aria-live="polite"></div>
   <button type="button" id="open-settings" class="btn-icon" aria-haspopup="dialog" aria-label="Settings" title="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/><circle cx="12" cy="12" r="3"/></svg>
   </button>
@@ -27,49 +27,31 @@
     <form id="composer" autocomplete="off">
 
       <details>
-        <summary>Issue header</summary>
+        <summary>Issue Details</summary>
         <div class="grid-2">
-          <label>Number (e.g. 9)
+          <label>Issue Number
             <input type="number" name="issue_number" required min="1" value="9">
+            <small class="field-error" data-error-for="issue_number" hidden>Issue Number is required.</small>
           </label>
-          <label>Year (computed)
+          <label hidden>Year (computed)
             <output id="issue-year-display" name="issue_year_display" for="issue_date">—</output>
           </label>
-          <label>Title slug
+          <label>Issue Title
             <input type="text" name="issue_title" required placeholder="BeijingAutoShow" value="BeijingAutoShow">
+            <small class="field-error" data-error-for="issue_title" hidden>Issue Title is required.</small>
           </label>
           <label>Issue date
             <input type="date" name="issue_date" required>
           </label>
-          <label class="span-2">Display date (optional override)
+          <label class="span-2" hidden>Display date (optional override)
             <input type="text" name="display_date" placeholder='Sunday, May 3, 2026'>
+            <small class="field-hint">Auto-built from the Issue date when blank (e.g. "Sunday, May 3, 2026"). Override only to change the format or wording printed in the masthead.</small>
           </label>
-          <label class="span-2">Masthead logo URL
-            <input type="url" name="masthead_logo_url" placeholder="https://...">
-          </label>
-          <label class="span-2">Intro HTML (optional)
-            <textarea name="intro_html" rows="3" placeholder="<p>Greetings…</p>"></textarea>
-          </label>
-        </div>
-      </details>
-
-      <details>
-        <summary>From / To / Subject</summary>
-        <div class="grid-2">
-          <label>From name
-            <input type="text" name="from_name" value="Newsletter Editor">
-          </label>
-          <label>From email
-            <input type="email" name="from_email" value="editor@example.edu">
-          </label>
-          <label>To email
-            <input type="email" name="to_email" value="subscribers@example.edu">
-          </label>
-          <label>Reply-To
-            <input type="email" name="reply_to" placeholder="optional">
-          </label>
-          <label class="span-2">Subject (auto-generated if blank)
+          <label class="span-2" hidden>Subject (auto-generated if blank)
             <input type="text" name="subject" placeholder="auto: SmartDrivingCars 14.09 — BeijingAutoShow">
+          </label>
+          <label class="span-2">Intro Message
+            <textarea name="intro_html" rows="3" placeholder="<p>Greetings…</p>"></textarea>
           </label>
         </div>
       </details>
@@ -117,6 +99,8 @@
 
     </form>
   </section>
+
+  <div class="layout-resizer" role="separator" aria-orientation="vertical" aria-label="Resize form / preview split" tabindex="0"></div>
 
   <section class="preview-pane vp-desktop" aria-label="Live preview">
     <div class="preview-header">
@@ -297,7 +281,7 @@
         <input type="url" name="masthead_logo_url" placeholder="https://...">
       </label>
       <label class="settings-row">
-        <span class="lbl">Initial publication date</span>
+        <span class="lbl">Inception Date</span>
         <input type="date" name="initial_publication_date">
       </label>
       <label class="settings-row settings-row-tall">

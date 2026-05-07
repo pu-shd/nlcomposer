@@ -100,7 +100,7 @@
       yearDisplay.textContent = '—';
       yearDisplay.title = (
         initial ? 'Set the issue date.' :
-        'Set Initial publication date in Settings.'
+        'Set Inception Date in Settings.'
       );
     } else {
       yearDisplay.textContent = `${y}${_ordinalSuffix(y)} year`;
@@ -520,6 +520,19 @@
       currentSettings?.initial_publication_date || '',
     );
     root.issue_year = computedYear ?? 1;
+
+    // Email envelope + masthead logo are app-wide only (no per-issue
+    // form fields). Inject them straight from the loaded settings so
+    // every preview and downloaded .eml carries the configured values.
+    if (currentSettings) {
+      [
+        'from_name', 'from_email', 'to_email', 'reply_to',
+        'masthead_logo_url',
+      ].forEach((k) => {
+        const v = currentSettings[k];
+        if (v) root[k] = v;
+      });
+    }
     const issue = stripEmpty(root);
 
     // Articles — drop incomplete rows so the preview keeps rendering while
@@ -630,8 +643,48 @@
     }
   };
 
+  // ───────── Required-field validation ───────────────────────────────
+  // Issue Number and Issue Title gate the Download button: an issue
+  // missing either of those is a half-built draft and would render with
+  // a placeholder header in the .eml. Inline error messages appear under
+  // each empty field; the button stays disabled until both are filled.
+  const REQUIRED_FIELDS = [
+    ['issue_number', 'Issue Number is required.'],
+    ['issue_title', 'Issue Title is required.'],
+  ];
+  const validateRequired = () => {
+    const errors = [];
+    REQUIRED_FIELDS.forEach(([name, msg]) => {
+      const el = form.elements[name];
+      const v = (el?.value ?? '').toString().trim();
+      const errEl = document.querySelector(`[data-error-for="${name}"]`);
+      if (!v) {
+        errors.push(name);
+        if (errEl) {
+          errEl.textContent = msg;
+          errEl.hidden = false;
+        }
+      } else if (errEl) {
+        errEl.hidden = true;
+      }
+    });
+    const dlBtn = document.getElementById('download-eml');
+    if (dlBtn) {
+      const blocked = errors.length > 0;
+      dlBtn.disabled = blocked;
+      dlBtn.title = blocked
+        ? 'Fill Issue Number and Issue Title before downloading.'
+        : '';
+    }
+    return errors.length === 0;
+  };
+
   // ───────── Download .eml ───────────────────────────────────────────
   const downloadEml = async () => {
+    if (!validateRequired()) {
+      setStatus('Issue Number and Issue Title are required.', 'error');
+      return;
+    }
     setStatus('Building .eml…');
     let issue;
     try { issue = buildIssue(); } catch (e) { setStatus('Build error: ' + e.message, 'error'); return; }
@@ -695,13 +748,81 @@
   const layout = document.querySelector('.layout');
   const previewPane = document.querySelector('.preview-pane');
   const togglePreview = document.getElementById('toggle-preview');
-  togglePreview.addEventListener('click', () => {
-    const hidden = layout.classList.toggle('preview-hidden');
+
+  const syncToggleState = () => {
+    if (!togglePreview) return;
+    const hidden = layout.classList.contains('preview-hidden');
     const label = hidden ? 'Show preview' : 'Hide preview';
     togglePreview.setAttribute('aria-pressed', hidden ? 'true' : 'false');
     togglePreview.setAttribute('aria-label', label);
     togglePreview.setAttribute('title', label);
+  };
+
+  togglePreview.addEventListener('click', () => {
+    layout.classList.toggle('preview-hidden');
+    syncToggleState();
   });
+
+  // ───────── Form / preview pane resizer ─────────────────────────────
+  // The user can drag the vertical splitter to retune how much room the
+  // composer form gets vs. the preview iframe. Dragging close to the
+  // right edge collapses the preview the same way clicking the
+  // hide-preview icon does — so a "yank all the way over" produces the
+  // familiar collapsed layout with the toggle still reachable.
+  const resizer = document.querySelector('.layout-resizer');
+  if (resizer) {
+    const COLLAPSE_THRESHOLD_PX = 80; // distance from right edge
+    const MIN_FORM_WIDTH = 280;
+    const MIN_PREVIEW_WIDTH = 280;
+    let dragPointerId = null;
+
+    const setFormPaneWidth = (px) => {
+      layout.style.setProperty('--form-pane-width', `${Math.round(px)}px`);
+    };
+
+    const onPointerMove = (e) => {
+      if (dragPointerId !== e.pointerId) return;
+      const rect = layout.getBoundingClientRect();
+      const fromLeft = e.clientX - rect.left;
+      const collapseAt = rect.width - COLLAPSE_THRESHOLD_PX;
+      if (fromLeft >= collapseAt) {
+        // Past the snap zone → behave like the hide-preview toggle.
+        layout.classList.add('preview-hidden');
+      } else {
+        layout.classList.remove('preview-hidden');
+        const clamped = Math.max(
+          MIN_FORM_WIDTH,
+          Math.min(rect.width - MIN_PREVIEW_WIDTH, fromLeft),
+        );
+        setFormPaneWidth(clamped);
+      }
+    };
+
+    const endDrag = (e) => {
+      if (dragPointerId === null) return;
+      try { resizer.releasePointerCapture(dragPointerId); } catch (_) { /* ignore */ }
+      dragPointerId = null;
+      resizer.classList.remove('dragging');
+      document.body.classList.remove('layout-resizing');
+      syncToggleState();
+      // Force a re-render so the iframe's @media queries re-evaluate
+      // against the new pane width (preview width may have changed).
+      doPreview();
+    };
+
+    resizer.addEventListener('pointerdown', (e) => {
+      // Only the primary button (or any touch/pen contact) starts a drag.
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      dragPointerId = e.pointerId;
+      try { resizer.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+      resizer.classList.add('dragging');
+      document.body.classList.add('layout-resizing');
+    });
+    resizer.addEventListener('pointermove', onPointerMove);
+    resizer.addEventListener('pointerup', endDrag);
+    resizer.addEventListener('pointercancel', endDrag);
+  }
 
   const viewportButtons = document.querySelectorAll(
     '.viewport-switch button[data-viewport]',
@@ -751,6 +872,14 @@
   });
   form.addEventListener('change', (e) => {
     if (e.target && e.target.name === 'issue_date') updateYearDisplay();
+  });
+  // Re-validate required fields on every keystroke so the inline error
+  // hides the moment the user types something and the Download button
+  // re-enables in lockstep.
+  form.addEventListener('input', (e) => {
+    if (e.target && (e.target.name === 'issue_number' || e.target.name === 'issue_title')) {
+      validateRequired();
+    }
   });
 
   // ───────── Settings dialog ─────────────────────────────────────────
@@ -802,23 +931,20 @@
     return out;
   };
 
-  // Apply settings to the main composer form. Called once on initial load
-  // (before the user can have edited anything) so saved settings win over
-  // the HTML's value="…" attributes after a page refresh. Required fields
-  // (from_name/from_email/to_email) are always overwritten; optional ones
-  // only when the setting is non-empty so they don't clobber HTML defaults.
+  // Seed the main composer form from saved settings. The email envelope
+  // (from_*/to_email/reply_to) and masthead logo are app-wide only —
+  // they are NOT set into form fields here because the form no longer
+  // collects them; buildIssue() pulls them straight from currentSettings
+  // when assembling the payload. We still seed the per-issue fields that
+  // do exist on the form (intro_html, footer_html, unsubscribe_url) so
+  // saved defaults appear as starting values for a new draft.
   const applySettingsToForm = (s) => {
     if (!s) return;
     const set = (name, val) => {
       const el = form.elements[name];
       if (el && val !== null && val !== undefined) el.value = String(val);
     };
-    set('from_name', s.from_name);
-    set('from_email', s.from_email);
-    set('to_email', s.to_email);
-    if (s.reply_to) set('reply_to', s.reply_to);
     if (s.unsubscribe_url) set('unsubscribe_url', s.unsubscribe_url);
-    if (s.masthead_logo_url) set('masthead_logo_url', s.masthead_logo_url);
     if (s.default_intro_html) set('intro_html', s.default_intro_html);
     if (s.default_footer_html) set('footer_html', s.default_footer_html);
     if (typeof s.preview_debounce_ms === 'number' && s.preview_debounce_ms >= 0) {
@@ -899,10 +1025,12 @@
     // Note: `issue_year` is intentionally absent — it is now derived from
     // the issue date + AppSettings.initial_publication_date and shown via
     // the read-only #issue-year-display output, not edited in the form.
+    // Email envelope (from_*/to_email/reply_to) and masthead_logo_url are
+    // app-wide settings only, so they are not loaded into form fields
+    // either; buildIssue() picks them up from currentSettings each time.
     const SCALAR_FIELDS = [
       'issue_number', 'issue_title', 'issue_date',
-      'display_date', 'masthead_logo_url', 'intro_html',
-      'from_name', 'from_email', 'to_email', 'reply_to', 'subject',
+      'display_date', 'intro_html', 'subject',
       'footer_html', 'unsubscribe_url',
     ];
     SCALAR_FIELDS.forEach((name) => {
@@ -1453,6 +1581,7 @@
   // (from_name/from_email/etc.) end up in the rendered .eml.
   loadSettings().then((s) => {
     if (s) applySettingsToForm(s);
+    validateRequired();
     doPreview();
   });
 })();

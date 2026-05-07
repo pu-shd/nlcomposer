@@ -35,7 +35,7 @@ class AppSettings(BaseModel):
     # Email envelope defaults
     from_name: str = "Newsletter Editor"
     from_email: str = "editor@example.edu"
-    to_email: str = "subscribers@example.edu"
+    to_email: str = "editor@example.edu"
     reply_to: Optional[str] = None
 
     # Reusable issue chrome
@@ -52,12 +52,14 @@ class AppSettings(BaseModel):
 
     # Issue numbering
     initial_publication_date: Optional[_date] = Field(
-        default=None,
+        default=_date(2013, 1, 1),
         description=(
-            "Date the newsletter first launched. The composer derives "
-            "an issue's enumerated year (e.g. '14th year') from "
+            "Date the newsletter first launched ('Inception Date' in the "
+            "settings UI). The composer derives an issue's enumerated "
+            "year (e.g. '14th year') from "
             "(issue_date − initial_publication_date), so the user no "
-            "longer enters a Year value per issue."
+            "longer enters a Year value per issue. Default of 2013-01-01 "
+            "matches the historical SmartDrivingCars launch."
         ),
     )
 

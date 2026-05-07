@@ -29,8 +29,7 @@ def test_index_serves_composer_page(client: TestClient):
     # Alain can drive the whole pipeline through the UI without curl.
     assert "<title>SDC Composer</title>" in body
     for legend in (
-        "Issue header",
-        "From / To / Subject",
+        "Issue Details",
         "Articles",
         "Podcast",
         "Static blocks",
@@ -38,6 +37,23 @@ def test_index_serves_composer_page(client: TestClient):
         "Footer",
     ):
         assert legend in body, f"composer page missing section: {legend}"
+    # The old "From / To / Subject" section has been retired — its
+    # fields are now app-wide-only (in Settings) and Subject moved into
+    # the Issue Details section.
+    assert "From / To / Subject" not in body
+    # Inside the main composer <form>, the email envelope and masthead
+    # logo must NOT be collected per-issue — they live only in the
+    # Settings dialog (which is outside the composer form).
+    form_start = body.index('<form id="composer"')
+    form_end = body.index("</form>", form_start)
+    form_body = body[form_start:form_end]
+    for name in (
+        "from_name", "from_email", "to_email", "reply_to",
+        "masthead_logo_url",
+    ):
+        assert f'name="{name}"' not in form_body, (
+            f"composer form should not collect {name} per-issue anymore"
+        )
     # And it must reference the JS + CSS the UI depends on.
     assert "/static/composer.js" in body
     assert "/static/composer.css" in body
@@ -100,6 +116,58 @@ def test_article_template_uses_collapsible_card_with_drag_handle(client: TestCli
     )
     # Remove button must still exist inside the new header bar.
     assert "btn-remove" in tpl
+
+
+def test_issue_details_renames_and_hides_legacy_fields(client: TestClient):
+    """The Issue Details section uses friendly labels and hides the
+    fields we don't want the user to think about anymore. Display date
+    and Subject are kept in the markup (so the JS can still surface
+    them later) but rendered hidden so they don't clutter the form.
+    """
+    body = client.get("/").text
+    # Friendlier labels.
+    assert "Issue Number" in body
+    assert "Issue Title" in body
+    assert "Intro Message" in body
+    # Old wording is gone.
+    assert "Title slug" not in body
+    assert "Intro HTML (optional)" not in body
+    # Display date and Subject labels are present but hidden via the
+    # ``hidden`` boolean attribute on the wrapping <label class="span-2">.
+    assert 'hidden>Display date' in body
+    assert 'hidden>Subject (auto-generated' in body
+
+
+def test_required_fields_have_inline_error_slots(client: TestClient):
+    """Issue Number and Issue Title each carry a hidden <small> slot
+    that the JS toggles on when the value goes blank, so the user gets
+    inline messaging instead of a silent form."""
+    body = client.get("/").text
+    assert 'data-error-for="issue_number"' in body
+    assert 'data-error-for="issue_title"' in body
+
+
+def test_composer_js_gates_download_on_required_fields(client: TestClient):
+    js = client.get("/static/composer.js").text
+    assert "validateRequired" in js
+    # The Download button is the gated entry point — must be referenced
+    # by the validator wiring so it can flip disabled.
+    assert "download-eml" in js
+    assert "REQUIRED_FIELDS" in js
+
+
+def test_layout_includes_resizer(client: TestClient):
+    """A vertical splitter sits between the composer form and the
+    preview pane so Alain can retune the column widths or yank the
+    splitter all the way over to collapse the preview."""
+    body = client.get("/").text
+    assert 'class="layout-resizer"' in body
+    assert 'role="separator"' in body
+    js = client.get("/static/composer.js").text
+    # Pointer-based drag wiring + the snap-collapse path must be present.
+    assert "layout-resizer" in js
+    assert "pointerdown" in js
+    assert "preview-hidden" in js
 
 
 def test_form_replaces_year_input_with_computed_display(client: TestClient):
