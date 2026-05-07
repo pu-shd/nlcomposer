@@ -17,10 +17,34 @@ def test_ordinal_suffix_handles_teens_and_units():
 
 
 def test_edition_line_matches_corpus_pattern():
+    # Model's default newsletter_name kicks in when not specified.
     issue = NewsletterIssue(
         issue_year=14, issue_number=9, issue_title="x", issue_date=date(2026, 5, 3)
     )
+    assert issue.edition_line() == "9th edition of the 14th year of MyNewsletter eLetter"
+
+
+def test_edition_line_uses_configured_newsletter_name():
+    """When newsletter_name is set (mirrored from AppSettings at build
+    time), it surfaces in the masthead "Nth year of …" line so the
+    composer can serve any periodical, not just SmartDrivingCars."""
+    issue = NewsletterIssue(
+        newsletter_name="SmartDrivingCars",
+        issue_year=14,
+        issue_number=9,
+        issue_title="x",
+        issue_date=date(2026, 5, 3),
+    )
     assert issue.edition_line() == "9th edition of the 14th year of SmartDrivingCars eLetter"
+
+
+def test_effective_subject_uses_configured_newsletter_name():
+    issue = NewsletterIssue(
+        newsletter_name="MyNewsletter",
+        issue_year=14, issue_number=9, issue_title="BeijingAutoShow",
+        issue_date=date(2026, 5, 3),
+    )
+    assert issue.effective_subject().startswith("MyNewsletter ")
 
 
 def test_effective_subject_falls_back_to_year_number_title():

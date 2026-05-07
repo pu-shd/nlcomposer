@@ -1,4 +1,4 @@
-SmartDrivingCars Newsletter
+{{ issue.newsletter_name }} Newsletter
 {{ issue.effective_display_date() }}
 
 {{ issue.header_slug() }}
@@ -20,7 +20,7 @@ SmartDrivingCars Newsletter
 
 {% endfor -%}
 {% if issue.podcast -%}
---- SmartDrivingCars Podcast ---
+--- {{ issue.newsletter_name }} Podcast ---
 {% set p = issue.podcast -%}
 {% if p.title %}{{ p.title }}{% endif %}
 {% if p.zoomcast_url %}ZoomCast: {{ p.zoomcast_url }}{% endif %}

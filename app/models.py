@@ -111,6 +111,11 @@ class HighlightRef(BaseModel):
 class NewsletterIssue(BaseModel):
     """One full newsletter issue ready for rendering."""
 
+    # Branding (mirrored from AppSettings.newsletter_name at build time
+    # so renders are self-contained and round-trip safely without the
+    # template needing access to the settings store).
+    newsletter_name: str = "MyNewsletter"
+
     # Header / frontmatter
     issue_year: int = Field(description='e.g. 14 for "14th year"')
     issue_number: int = Field(description='e.g. 9 for "9th edition"')
@@ -159,7 +164,7 @@ class NewsletterIssue(BaseModel):
         if self.subject:
             return self.subject
         return (
-            f"SmartDrivingCars {self.issue_year}.{self.issue_number:02d} — "
+            f"{self.newsletter_name} {self.issue_year}.{self.issue_number:02d} — "
             f"{self.issue_title}"
         )
 
@@ -173,7 +178,7 @@ class NewsletterIssue(BaseModel):
         year_suffix = _ordinal_suffix(self.issue_year)
         return (
             f"{self.issue_number}{suffix} edition of the "
-            f"{self.issue_year}{year_suffix} year of SmartDrivingCars eLetter"
+            f"{self.issue_year}{year_suffix} year of {self.newsletter_name} eLetter"
         )
 
     def header_slug(self) -> str:

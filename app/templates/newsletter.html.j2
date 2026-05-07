@@ -35,11 +35,11 @@
   {# ── MASTHEAD ─────────────────────────────────────────────────────── #}
   <tr><td style="padding:18px 16px 6px 16px;text-align:center;">
     {%- if issue.masthead_logo_cid %}
-      <img src="cid:{{ issue.masthead_logo_cid }}" alt="SmartDrivingCars" style="max-width:100%;height:auto;display:inline-block;border:0;">
+      <img src="cid:{{ issue.masthead_logo_cid }}" alt="{{ issue.newsletter_name }}" style="max-width:100%;height:auto;display:inline-block;border:0;">
     {%- elif issue.masthead_logo_url %}
-      <img src="{{ issue.masthead_logo_url }}" alt="SmartDrivingCars" style="max-width:100%;height:auto;display:inline-block;border:0;">
+      <img src="{{ issue.masthead_logo_url }}" alt="{{ issue.newsletter_name }}" style="max-width:100%;height:auto;display:inline-block;border:0;">
     {%- else %}
-      <h1 class="masthead-h1" style="font-family:'Times New Roman',Times,Georgia,serif;color:#1a4480;margin:0;font-size:24px;">SmartDrivingCars</h1>
+      <h1 class="masthead-h1" style="font-family:'Times New Roman',Times,Georgia,serif;color:#1a4480;margin:0;font-size:24px;">{{ issue.newsletter_name }}</h1>
     {%- endif %}
   </td></tr>
 
@@ -89,7 +89,7 @@
   {%- set p = issue.podcast %}
   <tr><td class="podcast-pad" style="padding:24px 16px 0 16px;">
     <h3 class="podcast-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:18px;margin:0 0 6px 0;">
-      SmartDrivingCars
+      {{ issue.newsletter_name }}
       {%- if p.zoomcast_url %} <a href="{{ p.zoomcast_url }}" style="color:#1a4480;">ZoomCast{% if p.episode_number %} {{ p.episode_number }}{% endif %}</a> /{% endif %}
       {%- if p.podcast_url %} <a href="{{ p.podcast_url }}" style="color:#1a4480;">Podcasts{% if p.episode_number %} {{ p.episode_number }}{% endif %}</a>{% endif %}
       {%- if p.guest %} - w/{{ p.guest }}{% endif %}

@@ -28,8 +28,15 @@ def _isolate_data_dir(tmp_path, monkeypatch):
 
 @pytest.fixture
 def sample_issue() -> NewsletterIssue:
-    """An issue patterned after `14.9-BeijingAutoShow-5.03.26` with stripped-down content."""
+    """An issue patterned after `14.9-BeijingAutoShow-5.03.26` with stripped-down content.
+
+    Carries an explicit ``newsletter_name="SmartDrivingCars"`` so the
+    rendered HTML/text (and existing assertions like
+    ``"SmartDrivingCars Newsletter" in text``) reflect the historical
+    branding rather than the model's generic ``"MyNewsletter"`` default.
+    """
     return NewsletterIssue(
+        newsletter_name="SmartDrivingCars",
         issue_year=14,
         issue_number=9,
         issue_title="BeijingAutoShow",
