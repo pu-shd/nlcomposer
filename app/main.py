@@ -1,73 +1,38 @@
-"""FastAPI entrypoint for the sdc-composer web app.
+"""FastAPI composition root for the sdc-composer web app.
 
-Serves the single-page composer UI at ``/`` (from ``app/static/index.html``)
-and the JSON-driven endpoints used by the front-end:
+This module is intentionally thin — it wires the pieces together but
+contains no route logic of its own. The MVC split lives here:
 
-* ``POST /api/preview/html`` — render a NewsletterIssue to HTML for the
-  live preview pane.
-* ``POST /api/preview/text`` — plain-text alternative.
-* ``POST /api/eml`` — assemble and stream a downloadable ``.eml`` file.
+* **Models** — ``app/models.py``, ``app/settings.py``, ``app/*_store.py``.
+* **Views**  — ``app/templates/`` (Jinja), ``app/static/`` (SPA), and
+  ``app/eml.py`` (HTML / text / .eml renderers).
+* **Controllers** — one ``APIRouter`` per resource under
+  ``app/controllers/``; this module mounts each of them.
 """
 
 from __future__ import annotations
 
-import sqlite3
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI, HTTPException, Query, Response
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
-from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-import httpx
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
-from .archive_store import (
-    ArchiveCreate,
-    ArchiveEntry,
-    ArchiveSummary,
-    create_archive,
-    delete_archive,
-    get_archive,
-    get_archive_eml,
-    list_archive,
+from .controllers import (
+    archive as archive_ctrl,
+    drafts as drafts_ctrl,
+    eml as eml_ctrl,
+    fetch as fetch_ctrl,
+    pages as pages_ctrl,
+    preview as preview_ctrl,
+    settings as settings_ctrl,
+    templates as templates_ctrl,
 )
-from .db import connect, get_db, init_db
-from .draft_store import (
-    Draft,
-    DraftCreate,
-    DraftSummary,
-    DraftUpdate,
-    create_draft,
-    delete_draft,
-    get_draft,
-    list_drafts,
-    update_draft,
-)
-from .eml import build_eml, build_eml_filename, render_html, render_text
-from .fetch import ArticleMetadata, fetch_article_metadata, validate_fetch_url
-from .models import NewsletterIssue
-from .podcast import (
-    YoutubeMetadata,
-    fetch_youtube_metadata,
-    validate_youtube_url,
-)
-from .settings import AppSettings, load_settings, save_settings
-from .template_store import (
-    BuiltinDeleteError,
-    Template,
-    TemplateCreate,
-    TemplateNameConflictError,
-    TemplateSummary,
-    TemplateUpdate,
-    create_template,
-    delete_template,
-    get_template,
-    list_templates,
-    seed_default_templates,
-    update_template,
-)
+from .db import connect, init_db
+from .template_store import seed_default_templates
+
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
-_INDEX_HTML = _STATIC_DIR / "index.html"
 
 
 @asynccontextmanager
@@ -95,278 +60,14 @@ if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
-@app.get("/healthz", response_class=PlainTextResponse)
-def healthz() -> str:
-    return "ok"
-
-
-@app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    if not _INDEX_HTML.exists():
-        raise HTTPException(status_code=500, detail="composer index.html missing")
-    return _INDEX_HTML.read_text(encoding="utf-8")
-
-
-@app.post("/api/preview/html", response_class=HTMLResponse)
-def preview_html(issue: NewsletterIssue) -> str:
-    return render_html(issue)
-
-
-@app.post("/api/preview/text", response_class=PlainTextResponse)
-def preview_text(issue: NewsletterIssue) -> str:
-    return render_text(issue)
-
-
-@app.post("/api/eml")
-def download_eml(
-    issue: NewsletterIssue,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Response:
-    eml_bytes = build_eml(issue)
-    filename = build_eml_filename(issue)
-    if load_settings(conn).auto_archive_on_download:
-        create_archive(
-            conn,
-            ArchiveCreate(
-                slug=issue.header_slug(),
-                subject=issue.effective_subject(),
-                filename=filename,
-                payload=issue.model_dump(mode="json"),
-                eml_bytes=eml_bytes,
-            ),
-        )
-    return Response(
-        content=eml_bytes,
-        media_type="message/rfc822",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@app.get("/api/settings", response_model=AppSettings)
-def get_settings(conn: sqlite3.Connection = Depends(get_db)) -> AppSettings:
-    """Return current app-wide settings, or built-in defaults if unset."""
-    return load_settings(conn)
-
-
-@app.put("/api/settings", response_model=AppSettings)
-def put_settings(
-    settings: AppSettings,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> AppSettings:
-    """Replace the stored settings with the supplied payload."""
-    return save_settings(conn, settings)
-
-
-@app.get("/api/templates", response_model=list[TemplateSummary])
-def api_list_templates(
-    conn: sqlite3.Connection = Depends(get_db),
-) -> list[TemplateSummary]:
-    """Return all templates (builtins first), without their payloads."""
-    return list_templates(conn)
-
-
-@app.get("/api/templates/{template_id}", response_model=Template)
-def api_get_template(
-    template_id: int,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Template:
-    t = get_template(conn, template_id)
-    if t is None:
-        raise HTTPException(status_code=404, detail="Template not found")
-    return t
-
-
-@app.post("/api/templates", response_model=Template, status_code=201)
-def api_create_template(
-    body: TemplateCreate,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Template:
-    try:
-        return create_template(conn, body)
-    except TemplateNameConflictError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-
-
-@app.put("/api/templates/{template_id}", response_model=Template)
-def api_update_template(
-    template_id: int,
-    body: TemplateUpdate,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Template:
-    try:
-        updated = update_template(conn, template_id, body)
-    except TemplateNameConflictError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Template not found")
-    return updated
-
-
-@app.delete("/api/templates/{template_id}", status_code=204)
-def api_delete_template(
-    template_id: int,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Response:
-    try:
-        deleted = delete_template(conn, template_id)
-    except BuiltinDeleteError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Template not found")
-    return Response(status_code=204)
-
-
-@app.get("/api/drafts", response_model=list[DraftSummary])
-def api_list_drafts(
-    conn: sqlite3.Connection = Depends(get_db),
-) -> list[DraftSummary]:
-    """Return all drafts (most-recently-updated first), without their payloads."""
-    return list_drafts(conn)
-
-
-@app.get("/api/drafts/{draft_id}", response_model=Draft)
-def api_get_draft(
-    draft_id: int,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Draft:
-    d = get_draft(conn, draft_id)
-    if d is None:
-        raise HTTPException(status_code=404, detail="Draft not found")
-    return d
-
-
-@app.post("/api/drafts", response_model=Draft, status_code=201)
-def api_create_draft(
-    body: DraftCreate,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Draft:
-    return create_draft(conn, body)
-
-
-@app.put("/api/drafts/{draft_id}", response_model=Draft)
-def api_update_draft(
-    draft_id: int,
-    body: DraftUpdate,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Draft:
-    updated = update_draft(conn, draft_id, body)
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Draft not found")
-    return updated
-
-
-@app.delete("/api/drafts/{draft_id}", status_code=204)
-def api_delete_draft(
-    draft_id: int,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Response:
-    deleted = delete_draft(conn, draft_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Draft not found")
-    return Response(status_code=204)
-
-
-@app.get("/api/archive", response_model=list[ArchiveSummary])
-def api_list_archive(
-    conn: sqlite3.Connection = Depends(get_db),
-) -> list[ArchiveSummary]:
-    """Return archived issues, most-recently-saved first, without payloads."""
-    return list_archive(conn)
-
-
-@app.get("/api/archive/{archive_id}", response_model=ArchiveEntry)
-def api_get_archive(
-    archive_id: int,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> ArchiveEntry:
-    entry = get_archive(conn, archive_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Archive entry not found")
-    return entry
-
-
-@app.get("/api/archive/{archive_id}/download")
-def api_download_archive(
-    archive_id: int,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Response:
-    """Stream the stored ``.eml`` bytes back to the user as a download."""
-    found = get_archive_eml(conn, archive_id)
-    if found is None:
-        raise HTTPException(status_code=404, detail="Archive entry not found")
-    filename, eml_bytes = found
-    return Response(
-        content=eml_bytes,
-        media_type="message/rfc822",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@app.delete("/api/archive/{archive_id}", status_code=204)
-def api_delete_archive(
-    archive_id: int,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> Response:
-    deleted = delete_archive(conn, archive_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Archive entry not found")
-    return Response(status_code=204)
-
-
-@app.get("/api/fetch/article")
-def fetch_article(
-    url: str = Query(..., description="Public article URL to scrape."),
-) -> JSONResponse:
-    """Fetch an article and return metadata to pre-fill an Article entry.
-
-    Returns a JSON object with optional ``headline``, ``byline``,
-    ``pull_quote``, ``publication_logo_url``, and ``read_more_url`` keys.
-    The composer UI uses this to populate empty fields when the user
-    clicks "Fetch" next to an article URL.
-    """
-
-    try:
-        validate_fetch_url(url)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    try:
-        meta: ArticleMetadata = fetch_article_metadata(url)
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"upstream returned {e.response.status_code}",
-        )
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"fetch failed: {e}")
-
-    return JSONResponse(content=dict(meta))
-
-
-@app.get("/api/fetch/youtube")
-def fetch_youtube(
-    url: str = Query(..., description="Public YouTube video URL to scrape."),
-) -> JSONResponse:
-    """Fetch a YouTube video and return metadata to pre-fill a podcast block.
-
-    Returns a JSON object with optional ``title``, ``summary``,
-    ``youtube_video_url``, and a ``timecodes`` list of
-    ``{timecode, label, url}`` parsed from MM:SS lines in the description.
-    """
-
-    try:
-        validate_youtube_url(url)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    try:
-        meta: YoutubeMetadata = fetch_youtube_metadata(url)
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"upstream returned {e.response.status_code}",
-        )
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"fetch failed: {e}")
-
-    return JSONResponse(content=dict(meta))
+for _ctrl in (
+    pages_ctrl,
+    preview_ctrl,
+    eml_ctrl,
+    settings_ctrl,
+    templates_ctrl,
+    drafts_ctrl,
+    archive_ctrl,
+    fetch_ctrl,
+):
+    app.include_router(_ctrl.router)
