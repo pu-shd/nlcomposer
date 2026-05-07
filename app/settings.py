@@ -101,6 +101,17 @@ class AppSettings(BaseModel):
             "click can disable this from the confirm dialog itself."
         ),
     )
+    embed_all_media: bool = Field(
+        default=True,
+        description=(
+            "When True, the renderer prefers embedded (cid:) attachments "
+            "for Article Logos and Static-block images that are present "
+            "in the Media Library, falling back to the source URL with a "
+            "warning if the cached bytes are not yet available. When "
+            "False, every media reference is rendered as the source URL "
+            "regardless of cache state."
+        ),
+    )
 
 
 def _now_iso() -> str:

@@ -1333,6 +1333,7 @@
     'default_intro_html', 'default_footer_html',
     'preview_debounce_ms', 'auto_archive_on_download',
     'include_read_more_link', 'confirm_before_delete',
+    'embed_all_media',
   ];
 
   const setSettingsStatus = (msg, kind = 'info') => {

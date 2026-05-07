@@ -39,6 +39,10 @@ def test_settings_model_has_sane_defaults():
     # Confirm-before-delete defaults on so users don't accidentally drop
     # work; the confirm-delete dialog itself offers an opt-out.
     assert s.confirm_before_delete is True
+    # Embed-all-media defaults on so a fresh install renders Article
+    # Logos and Static-block images from cached bytes; the renderer
+    # falls back to the source URL when bytes are missing.
+    assert s.embed_all_media is True
     # Newsletter brand defaults to a generic name so the same composer
     # can serve any periodical out of the box.
     assert s.newsletter_name == "MyNewsletter"
@@ -206,6 +210,7 @@ def test_index_includes_settings_button_and_dialog(client: TestClient):
         "default_intro_html", "default_footer_html",
         "preview_debounce_ms", "auto_archive_on_download",
         "include_read_more_link", "confirm_before_delete",
+        "embed_all_media",
     ):
         assert f'name="{name}"' in body, f"settings dialog missing field {name}"
 
@@ -227,3 +232,35 @@ def test_composer_js_calls_settings_endpoint(client: TestClient):
     # Both halves of the contract must be wired:
     assert "loadSettings" in js
     assert "saveSettings" in js
+
+
+def test_embed_all_media_round_trips_through_http(client: TestClient):
+    """The renderer reads ``embed_all_media`` to decide between cid:
+    attachments and bare source URLs; the toggle has to survive a PUT.
+    """
+    res = client.put("/api/settings", json={"embed_all_media": False})
+    assert res.status_code == 200, res.text
+    assert res.json()["embed_all_media"] is False
+
+    again = client.get("/api/settings").json()
+    assert again["embed_all_media"] is False
+
+
+def test_embed_all_media_persists_in_db():
+    conn = connect()
+    init_db(conn)
+    try:
+        save_settings(conn, AppSettings(embed_all_media=False))
+        conn.commit()
+        loaded = load_settings(conn)
+    finally:
+        conn.close()
+    assert loaded.embed_all_media is False
+
+
+def test_composer_js_includes_embed_all_media_field(client: TestClient):
+    """SETTINGS_FIELDS must list embed_all_media so fillSettingsForm
+    and collectSettings round-trip the new checkbox.
+    """
+    js = client.get("/static/composer.js").text
+    assert "embed_all_media" in js
