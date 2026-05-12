@@ -1721,8 +1721,8 @@
         setMastheadStatus(
           item.alt_text
             ? 'Uploaded — press Save to apply.'
-            : 'Uploaded — set its Image description in Logos & Media when you have a moment.',
-          'ok',
+            : 'Uploaded. Set its Image description in Logos & Media first; Save will be rejected without one.',
+          item.alt_text ? 'ok' : 'error',
         );
       } catch (err) {
         setMastheadStatus('Network error: ' + err.message, 'error');

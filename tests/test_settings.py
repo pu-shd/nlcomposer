@@ -201,6 +201,81 @@ def test_put_settings_self_heals_when_settings_table_is_missing(client: TestClie
     assert again.json()["from_name"] == "After Self-Heal"
 
 
+def test_put_settings_rejects_masthead_media_id_with_empty_alt_text(client: TestClient):
+    """Save must refuse a masthead upload whose Image description is
+    blank — parity with the Article-logo / Static-block guard inside the
+    Logos & Media picker. The 422 detail names Logos & Media so the
+    user knows where to go."""
+    import io
+
+    upload_res = client.post(
+        "/api/media/upload",
+        data={"kind": "logo"},
+        files={
+            "file": (
+                "masthead.png",
+                io.BytesIO(b"\x89PNG\r\n\x1a\nfake-bytes"),
+                "image/png",
+            ),
+        },
+    )
+    assert upload_res.status_code == 201, upload_res.text
+    media_id = upload_res.json()["id"]
+    assert upload_res.json()["alt_text"] == ""
+
+    res = client.put(
+        "/api/settings",
+        json={"masthead_logo_media_id": media_id},
+    )
+    assert res.status_code == 422, res.text
+    assert "Image description" in res.json()["detail"]
+    assert "Logos & Media" in res.json()["detail"]
+
+
+def test_put_settings_accepts_masthead_media_id_once_alt_text_is_set(
+    client: TestClient,
+):
+    """Same upload, but the user fills the Image description first —
+    Save must accept it. Regression net so the gate doesn't accidentally
+    reject every save in the future."""
+    import io
+
+    upload_res = client.post(
+        "/api/media/upload",
+        data={"kind": "logo"},
+        files={
+            "file": (
+                "masthead.png",
+                io.BytesIO(b"\x89PNG\r\n\x1a\nfake-bytes"),
+                "image/png",
+            ),
+        },
+    )
+    media_id = upload_res.json()["id"]
+    desc_res = client.put(
+        f"/api/media/{media_id}", json={"alt_text": "SmartDrivingCars masthead"}
+    )
+    assert desc_res.status_code == 200, desc_res.text
+
+    res = client.put(
+        "/api/settings",
+        json={"masthead_logo_media_id": media_id},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["masthead_logo_media_id"] == media_id
+
+
+def test_put_settings_rejects_masthead_media_id_pointing_at_missing_item(
+    client: TestClient,
+):
+    res = client.put(
+        "/api/settings",
+        json={"masthead_logo_media_id": 9999},
+    )
+    assert res.status_code == 422, res.text
+    assert "no longer exists" in res.json()["detail"]
+
+
 def test_put_settings_persists_and_round_trips(client: TestClient):
     payload = {
         "from_name": "Alain K.",

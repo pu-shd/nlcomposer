@@ -291,7 +291,11 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 #composer .sortable-section[open] > summary.section-header::before { transform: rotate(90deg); }
 #composer .sortable-section .section-title { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 6px; }
 #composer .sortable-section .section-drag-handle {
-  display: none;
+  /* Reorderable-by-design: every section under #sortable-sections
+     (Articles / Podcast / Static blocks) can move and can repeat, so
+     the handle is always visible — even with a single section of the
+     given type — to signal that the section type is multi-instance. */
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--muted);
@@ -303,10 +307,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 #composer .sortable-section .section-drag-handle:hover { background: rgba(26, 68, 128, 0.12); color: var(--accent); }
 #composer .sortable-section .section-drag-handle:active { cursor: grabbing; }
 #composer .sortable-section .section-drag-handle svg { width: 14px; height: 18px; display: block; }
-/* Show the section drag handles only when there's more than one
-   sortable section — single-section case stays uncluttered. */
-.sortable-sections.has-many .section-drag-handle { display: inline-flex; }
-.sortable-sections.has-many > .sortable-section { transition: transform 0.12s ease; }
+.sortable-sections > .sortable-section { transition: transform 0.12s ease; }
 #composer .sortable-section .section-remove {
   flex: 0 0 auto;
   font-size: 18px;
@@ -1080,6 +1081,15 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   flex-direction: column;
   gap: 10px;
 }
+/* The "Add by URL" / "Upload file" tab pair toggles each form's
+   `hidden` attribute to show one at a time. The `display: flex` rule
+   above outranks the user-agent `[hidden] { display: none }` by
+   specificity, which left both panels stacked and made the tab strip
+   look inert. Honor the attribute explicitly so the tabs actually
+   swap the visible form. */
+#templates-dialog .templates-create[hidden],
+#drafts-dialog .templates-create[hidden],
+#media-dialog .templates-create[hidden] { display: none; }
 #templates-dialog .templates-create h3,
 #drafts-dialog .templates-create h3,
 #media-dialog .templates-create h3 {
