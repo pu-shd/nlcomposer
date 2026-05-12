@@ -400,11 +400,21 @@ ensure_container_app() {
 
   if az containerapp show -n "$AZ_ACA_APP" -g "$AZ_RG" >/dev/null 2>&1; then
     info "Updating existing container app to image ${image}"
+    # --revision-suffix forces a brand-new revision even when the image
+    # tag string is unchanged across runs. Without it `az containerapp
+    # update --image` compares the template by literal value, finds
+    # nothing different, and silently no-ops — the new ACR digest sits
+    # there while the previous container keeps serving. A timestamp
+    # suffix is unique per invocation and small enough to fit ACA's
+    # 64-char revision-name budget.
+    local rev_suffix
+    rev_suffix="r$(date -u +%Y%m%d%H%M%S)"
     run az containerapp update \
       -n "$AZ_ACA_APP" -g "$AZ_RG" \
       --image "$image" \
+      --revision-suffix "$rev_suffix" \
       --set-env-vars "SDC_DATA_DIR=/app/data" "SDC_SQLITE_VFS=unix-dotfile" >/dev/null
-    ok "Updated"
+    ok "Updated (new revision suffix ${rev_suffix})"
   else
     run az containerapp create \
       -n "$AZ_ACA_APP" -g "$AZ_RG" \

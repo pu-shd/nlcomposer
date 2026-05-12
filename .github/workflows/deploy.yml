@@ -104,11 +104,18 @@ jobs:
             .
 
       - name: Update Container App
+        # `--revision-suffix` is the only reliable way to force a new
+        # revision when the image *tag* (e.g. "v1") is unchanged across
+        # runs. Without it, ACA compares the template by string and
+        # silently no-ops the update — the new image sits in ACR but
+        # the running replicas keep serving the previous digest.
         run: |
+          SUFFIX="r${{ github.run_number }}-$(echo "${{ github.sha }}" | cut -c1-7)"
           az containerapp update \
             --name "${{ secrets.AZURE_ACA_APP }}" \
             --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-            --image "${{ secrets.AZURE_ACR_NAME }}.azurecr.io/${{ secrets.AZURE_ACA_APP }}:${{ inputs.image_tag }}"
+            --image "${{ secrets.AZURE_ACR_NAME }}.azurecr.io/${{ secrets.AZURE_ACA_APP }}:${{ inputs.image_tag }}" \
+            --revision-suffix "$SUFFIX"
 
       - name: Show new revision
         run: |
