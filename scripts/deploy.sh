@@ -130,6 +130,7 @@ AZ_ACA_APP="${AZ_ACA_APP}"
 AZ_IMAGE_TAG="${AZ_IMAGE_TAG}"
 AZ_ENTRA_APP="${AZ_ENTRA_APP}"
 AZ_ENTRA_PRINCIPALS="${AZ_ENTRA_PRINCIPALS}"
+AZ_ENTRA_MINIMAL_PERMS="${AZ_ENTRA_MINIMAL_PERMS}"
 GH_REPO="${GH_REPO}"
 EOF
   ok "Saved configuration to ${ENV_FILE}"
@@ -196,6 +197,9 @@ ensure_config() {
   prompt_with_default AZ_ENTRA_PRINCIPALS \
                       "Allowed principals (comma-separated UPNs / group names / object IDs; empty = tenant-wide)" \
                       ""
+  prompt_with_default AZ_ENTRA_MINIMAL_PERMS \
+                      "Strip Graph permissions from Entra app (avoid admin-consent prompt for OIDC sign-in)? [true/false]" \
+                      "true"
   prompt_with_default GH_REPO           "GitHub repo (owner/name) for CI"     "${default_repo}"
 
   # Lower-case the storage and ACR names to satisfy Azure naming rules.
@@ -213,6 +217,7 @@ ensure_config() {
   info "Image tag    : ${AZ_IMAGE_TAG}"
   info "Entra app    : ${AZ_ENTRA_APP}"
   info "Allowed      : ${AZ_ENTRA_PRINCIPALS:-<tenant-wide>}"
+  info "Minimal perms: ${AZ_ENTRA_MINIMAL_PERMS} (clear requiredResourceAccess on app reg)"
   info "GitHub repo  : ${GH_REPO:-<not set>}"
 
   confirm "Save and continue with these values?" || { err "Aborted by user."; exit 1; }
@@ -537,6 +542,26 @@ ensure_entra_app() {
         --body '{"web":{"implicitGrantSettings":{"enableIdTokenIssuance":true,"enableAccessTokenIssuance":false}}}' \
         >/dev/null 2>&1 \
         || warn "Failed to enable id_token issuance — sign-in may fail with AADSTS700054 until this is set."
+    fi
+  fi
+
+  # Strip Graph permissions (User.Read, offline_access, …) from the app
+  # registration when AZ_ENTRA_MINIMAL_PERMS=true. Container Apps Easy
+  # Auth only needs `openid` for sign-in + named-principal gating; the
+  # default-template permissions trigger a consent screen that, in
+  # tenants which disable user consent (e.g. universities), is gated
+  # behind admin approval and blocks every login. Clearing the array
+  # makes the consent screen vanish entirely.
+  if (( ! DRY_RUN )) && [[ "${AZ_ENTRA_MINIMAL_PERMS:-true}" == "true" ]] && [[ -n "${_obj_id:-}" ]]; then
+    step "Strip Graph permissions from Entra app reg (skip consent prompt)"
+    if az rest --method PATCH \
+         --uri "https://graph.microsoft.com/v1.0/applications/${_obj_id}" \
+         --headers "Content-Type=application/json" \
+         --body '{"requiredResourceAccess": []}' \
+         >/dev/null 2>&1; then
+      ok "Cleared requiredResourceAccess"
+    else
+      warn "Failed to clear requiredResourceAccess — admin consent may still be required."
     fi
   fi
 
