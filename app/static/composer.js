@@ -236,14 +236,21 @@
   // ───────── Article logo affordances ───────────────────────────────
   // The Logo URL field has three siblings: Fetch (register the URL in
   // the Media Library), Upload (POST a file via /api/media/upload and
-  // fill the field with the resulting cid: link), and Library (open
-  // the picker dialog and pick from kind=logo). All three feed back
-  // into data-field="publication_logo_url" so the rest of the article
-  // serialization is unchanged.
+  // remember the resulting Media Library id), and Library (open the
+  // picker dialog and pick from kind=logo). Upload + uploaded-pick set
+  // the hidden data-field="publication_logo_media_id" — Pydantic's URL
+  // validator rejected the ``/api/media/{id}/content`` relative URL the
+  // older flow used to stuff into the visible URL input, breaking the
+  // issue payload on every preview/eml round-trip. URL-only entries
+  // continue to live in data-field="publication_logo_url".
   const wireArticleLogoActions = (card) => {
     const logoInput = card.querySelector('[data-field="publication_logo_url"]');
+    const mediaIdInput = card.querySelector('[data-field="publication_logo_media_id"]');
     const statusEl = card.querySelector('[data-role="logo-status"]');
     const fileInput = card.querySelector('[data-role="logo-upload"]');
+    const setLogoMedia = (id) => {
+      if (mediaIdInput) mediaIdInput.value = id == null ? '' : String(id);
+    };
     const setLogoStatus = (msg, kind = 'info') => {
       if (!statusEl) return;
       statusEl.textContent = msg || '';
@@ -277,8 +284,8 @@
           const item = await res.json();
           setLogoStatus(
             item.alt_text
-              ? 'Registered in Media Library.'
-              : 'Registered — set Image description in Media Library.',
+              ? 'Registered in Logos & Media.'
+              : 'Registered — set Image description in Logos & Media.',
             'ok',
           );
           schedulePreview();
@@ -318,10 +325,14 @@
             return;
           }
           const item = await res.json();
-          // Point the field at the cached bytes endpoint so the
-          // preview iframe can render it without a network call.
-          logoInput.value = `/api/media/${item.id}/content`;
-          setLogoStatus('Uploaded — set Image description in Media Library.', 'ok');
+          // Stash the Media Library id in the hidden companion field —
+          // the URL input would not accept a relative ``/api/media/…``
+          // value through Pydantic on the next preview round-trip, so we
+          // keep the URL field empty for upload-sourced logos and let
+          // the template fall back to media_id.
+          if (logoInput) logoInput.value = '';
+          setLogoMedia(item.id);
+          setLogoStatus('Uploaded — set Image description in Logos & Media.', 'ok');
           schedulePreview();
         } catch (err) {
           setLogoStatus('Network error: ' + err.message, 'error');
@@ -340,10 +351,20 @@
           kind: 'logo',
           title: 'Pick an article logo',
           onPick: (item) => {
-            // Prefer the source URL when present (so saved drafts that
-            // round-trip through /api/preview keep the same URL); fall
-            // back to the cached-bytes endpoint for uploads.
-            logoInput.value = item.url || `/api/media/${item.id}/content`;
+            // Two flavors of library item:
+            //   - URL-sourced: paste the public URL into the URL field
+            //     and drop any media_id so drafts continue to look the
+            //     same as a hand-typed URL.
+            //   - Uploaded (item.url is null): keep the URL field empty
+            //     and stash the Media Library id; the template prefers
+            //     media_id and falls back to URL.
+            if (item.url) {
+              if (logoInput) logoInput.value = item.url;
+              setLogoMedia('');
+            } else {
+              if (logoInput) logoInput.value = '';
+              setLogoMedia(item.id);
+            }
             setLogoStatus(`Using "${item.alt_text || 'library item'}".`, 'ok');
             schedulePreview();
           },
@@ -733,7 +754,7 @@
             onPick: (item) => {
               if (!item.alt_text) {
                 setRtStatus(
-                  'Insert blocked — set Image description in Media Library first.',
+                  'Insert blocked — set Image description in Logos & Media first.',
                   'error',
                 );
                 return;
@@ -984,6 +1005,12 @@
         const v = currentSettings[k];
         if (v) root[k] = v;
       });
+      // masthead_logo_media_id is numeric — `if (v)` would drop a legit
+      // 0 in theory, but Media Library ids start at 1, so a truthy check
+      // is safe here and avoids leaking `null` into the issue payload.
+      if (currentSettings.masthead_logo_media_id) {
+        root.masthead_logo_media_id = currentSettings.masthead_logo_media_id;
+      }
       // Boolean toggle: don't gate on truthiness — `false` is meaningful.
       if (typeof currentSettings.include_read_more_link === 'boolean') {
         root.include_read_more_link = currentSettings.include_read_more_link;
@@ -1553,6 +1580,11 @@
     'newsletter_name',
     'from_name', 'from_email', 'to_email', 'reply_to',
     'unsubscribe_url', 'masthead_logo_url',
+    // Hidden field — value is a Media Library id (int) for an uploaded
+    // masthead logo. Driven by the Upload button below the URL row;
+    // snapshot/collect logic treats empty string as "unset" and any
+    // non-empty value as an int.
+    'masthead_logo_media_id',
     'initial_publication_date',
     'default_intro_html', 'default_footer_html',
     'preview_debounce_ms', 'auto_archive_on_download',
@@ -1599,6 +1631,10 @@
       if (el.type === 'checkbox') el.checked = !!v;
       else el.value = v == null ? '' : v;
     });
+    // Hidden masthead-logo media id was just (re-)assigned by the loop;
+    // re-render the thumbnail/clear-button affordance from the stored value.
+    syncMastheadThumb();
+    setMastheadStatus('');
     // Re-baseline + reset Save state once the form mirrors settings.
     _settingsBaseline = _snapshotSettingsForm();
     refreshSettingsDirty();
@@ -1609,6 +1645,104 @@
   settingsForm.addEventListener('input', refreshSettingsDirty);
   settingsForm.addEventListener('change', refreshSettingsDirty);
 
+  // ─── Masthead-logo upload affordance ─────────────────────────────────
+  // The Settings form pairs a URL input (manual paste) with an Upload
+  // button that pushes the file through /api/media/upload (kind=logo).
+  // On success the returned Media Library id lands in a hidden
+  // <input name="masthead_logo_media_id"> — that hidden value flows
+  // through collectSettings just like any other field, persists into
+  // AppSettings, and is later mirrored onto the NewsletterIssue payload
+  // in buildIssue(). The eml controller resolves the id to inline bytes
+  // (cid:) at .eml-build time so the recipient's mail client never
+  // needs to fetch the logo from the deployed app.
+  const mastheadHidden = settingsForm.elements['masthead_logo_media_id'];
+  const mastheadThumb = document.getElementById('masthead-thumb');
+  const mastheadUploadBtn = document.getElementById('masthead-upload-btn');
+  const mastheadClearBtn = document.getElementById('masthead-clear-btn');
+  const mastheadFileInput = document.getElementById('masthead-upload-file');
+  const mastheadStatusEl = document.getElementById('masthead-upload-status');
+
+  const setMastheadStatus = (msg, kind = 'info') => {
+    if (!mastheadStatusEl) return;
+    mastheadStatusEl.textContent = msg || '';
+    mastheadStatusEl.dataset.kind = kind;
+  };
+
+  // Reflect the hidden input's current value into the thumbnail + clear
+  // button visibility. Called whenever the value changes (programmatic
+  // set after upload, clear button, fillSettingsForm on dialog open).
+  const syncMastheadThumb = () => {
+    if (!mastheadHidden || !mastheadThumb || !mastheadClearBtn) return;
+    const id = mastheadHidden.value;
+    if (id) {
+      // Append the id as a cache-busting hint so a fresh upload that
+      // happens to reuse the same id (unlikely, but possible across
+      // teardown + reupload cycles) doesn't show the stale image.
+      mastheadThumb.src = `/api/media/${encodeURIComponent(id)}/content?_=${id}`;
+      mastheadThumb.hidden = false;
+      mastheadClearBtn.hidden = false;
+    } else {
+      mastheadThumb.removeAttribute('src');
+      mastheadThumb.hidden = true;
+      mastheadClearBtn.hidden = true;
+    }
+  };
+
+  if (mastheadUploadBtn && mastheadFileInput) {
+    mastheadUploadBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      mastheadFileInput.click();
+    });
+    mastheadFileInput.addEventListener('change', async () => {
+      const file = mastheadFileInput.files && mastheadFileInput.files[0];
+      if (!file) return;
+      mastheadUploadBtn.disabled = true;
+      setMastheadStatus('Uploading…');
+      try {
+        const fd = new FormData();
+        fd.append('kind', 'logo');
+        fd.append('file', file);
+        const res = await fetch('/api/media/upload', { method: 'POST', body: fd });
+        if (!res.ok) {
+          let detail = '';
+          try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+          if (res.status === 429) {
+            const retry = res.headers.get('Retry-After') || '?';
+            setMastheadStatus(`Rate limited — retry in ${retry}s.`, 'error');
+          } else {
+            setMastheadStatus(`${res.status}: ${detail || res.statusText}`, 'error');
+          }
+          return;
+        }
+        const item = await res.json();
+        mastheadHidden.value = String(item.id);
+        syncMastheadThumb();
+        refreshSettingsDirty();
+        setMastheadStatus(
+          item.alt_text
+            ? 'Uploaded — press Save to apply.'
+            : 'Uploaded — set its Image description in Logos & Media when you have a moment.',
+          'ok',
+        );
+      } catch (err) {
+        setMastheadStatus('Network error: ' + err.message, 'error');
+      } finally {
+        mastheadUploadBtn.disabled = false;
+        mastheadFileInput.value = '';
+      }
+    });
+  }
+
+  if (mastheadClearBtn) {
+    mastheadClearBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      mastheadHidden.value = '';
+      syncMastheadThumb();
+      refreshSettingsDirty();
+      setMastheadStatus('Cleared. The Logos & Media item remains; only the reference is removed.');
+    });
+  }
+
   const collectSettings = () => {
     const out = {};
     SETTINGS_FIELDS.forEach((k) => {
@@ -1616,7 +1750,7 @@
       if (!el) return;
       if (el.type === 'checkbox') {
         out[k] = el.checked;
-      } else if (el.type === 'number') {
+      } else if (el.type === 'number' || k === 'masthead_logo_media_id') {
         const n = el.value === '' ? null : Number(el.value);
         if (n !== null && !Number.isNaN(n)) out[k] = n;
       } else {
@@ -2697,7 +2831,7 @@
   const renderPickerList = (items, kindFilter) => {
     const filtered = items.filter((m) => !kindFilter || m.kind === kindFilter);
     if (filtered.length === 0) {
-      mediaPickerList.innerHTML = `<li class="hint">No ${kindFilter || 'media'} entries yet — add one in the Media Library first.</li>`;
+      mediaPickerList.innerHTML = `<li class="hint">No ${kindFilter || 'media'} entries yet — add one in Logos & Media first.</li>`;
       return;
     }
     mediaPickerList.innerHTML = filtered.map((m) => {
@@ -2721,10 +2855,10 @@
 
   const openLibraryPicker = async ({ kind, title, onPick }) => {
     _pickerCallback = onPick;
-    if (mediaPickerTitle) mediaPickerTitle.textContent = title || 'Pick from Media Library';
+    if (mediaPickerTitle) mediaPickerTitle.textContent = title || 'Pick from Logos & Media';
     if (mediaPickerHint) {
       mediaPickerHint.textContent =
-        'Click an item to use it. Items missing an Image description are dimmed — set one in the Media Library before referencing.';
+        'Click an item to use it. Items missing an Image description are dimmed — set one in Logos & Media before referencing.';
     }
     setMediaPickerStatus('Loading…');
     try {

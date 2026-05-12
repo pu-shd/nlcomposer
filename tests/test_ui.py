@@ -433,6 +433,126 @@ def test_eml_endpoint_returns_attachment_for_full_issue(sample_issue, client: Te
     assert b"multipart/alternative" in res.content
 
 
+def test_eml_endpoint_inlines_masthead_logo_from_media_id(sample_issue, client: TestClient):
+    """Uploading a masthead and pointing the issue at it embeds the bytes
+    inline (cid:) in the resulting .eml — the recipient's mail client
+    never tries to dereference /api/media/{id}/content.
+
+    Regression net for the upload path that the Settings dialog wires up:
+    fail-stop if anyone reverts the eml controller to ignore
+    ``masthead_logo_media_id`` (in which case the .eml would carry the
+    relative URL and silently break in every mailbox on the planet).
+    """
+    import io
+    from email import message_from_bytes, policy
+
+    # 1. Upload a fake PNG through the same /api/media/upload endpoint the
+    #    Settings UI uses. PNG_BYTES is the same minimal signature-prefix
+    #    payload the media_controller tests rely on.
+    png_bytes = b"\x89PNG\r\n\x1a\nfake-but-non-empty-bytes"
+    upload_res = client.post(
+        "/api/media/upload",
+        data={"kind": "logo"},
+        files={"file": ("masthead.png", io.BytesIO(png_bytes), "image/png")},
+    )
+    assert upload_res.status_code == 201, upload_res.text
+    media_id = upload_res.json()["id"]
+
+    # 2. POST an issue whose masthead points at the upload id (and has NO
+    #    URL fallback). The eml controller must resolve the id to inline
+    #    bytes; the template must render cid: not /api/media/...
+    payload = sample_issue.model_dump(mode="json")
+    payload["masthead_logo_media_id"] = media_id
+    payload.pop("masthead_logo_url", None)
+    res = client.post("/api/eml", json=payload)
+    assert res.status_code == 200, res.text
+
+    msg = message_from_bytes(res.content, policy=policy.default)
+    image_parts = [p for p in msg.walk() if p.get_content_type().startswith("image/")]
+    assert len(image_parts) == 1
+    cid = image_parts[0].get("Content-ID", "").strip("<>")
+    assert cid
+
+    # 3. HTML alternative references cid:, not the /api/media URL.
+    html_parts = [p for p in msg.walk() if p.get_content_type() == "text/html"]
+    assert any(f"cid:{cid}" in p.get_content() for p in html_parts)
+    assert all(f"/api/media/{media_id}/content" not in p.get_content() for p in html_parts)
+
+
+def test_eml_falls_back_to_url_when_media_id_has_no_cached_bytes(
+    sample_issue, client: TestClient
+):
+    """A URL-sourced Media Library item is *pending* until the background
+    fetcher caches its bytes. The eml controller must NOT attach a 0-byte
+    image — it should skip the cid path and let the template fall through
+    to the URL fallback (which exists precisely for this case)."""
+    # Register a URL-sourced item — status is "pending", no bytes cached.
+    reg_res = client.post(
+        "/api/media",
+        json={"kind": "logo", "url": "https://example.com/pending-logo.png"},
+    )
+    assert reg_res.status_code == 201, reg_res.text
+    media_id = reg_res.json()["id"]
+    assert reg_res.json()["status"] == "pending"
+
+    payload = sample_issue.model_dump(mode="json")
+    payload["masthead_logo_media_id"] = media_id
+    payload["masthead_logo_url"] = "https://example.com/fallback-logo.png"
+    res = client.post("/api/eml", json=payload)
+    assert res.status_code == 200, res.text
+
+    from email import message_from_bytes, policy
+    msg = message_from_bytes(res.content, policy=policy.default)
+    image_parts = [p for p in msg.walk() if p.get_content_type().startswith("image/")]
+    assert image_parts == [], "no inline image — bytes were not cached"
+    # The URL fallback wins; template renders the regular <img src=URL>.
+    html = next(
+        p for p in msg.walk() if p.get_content_type() == "text/html"
+    ).get_content()
+    assert "https://example.com/fallback-logo.png" in html
+    assert f"/api/media/{media_id}/content" not in html
+
+
+def test_preview_round_trips_article_with_media_id_and_no_url(
+    sample_issue, client: TestClient
+):
+    """The article-logo upload flow now stores the Media Library id in a
+    hidden companion field instead of stuffing /api/media/{id}/content
+    into the URL input — that relative URL failed Pydantic's AnyHttpUrl
+    validator on every preview/eml round-trip and broke uploaded article
+    logos.
+
+    Regression net: an article with media_id set and url empty must
+    serialize cleanly through /api/preview/html and render via the
+    /api/media endpoint.
+    """
+    payload = sample_issue.model_dump(mode="json")
+    # The fixture sets publication_logo_url on the first article; switch
+    # it to an upload-shaped reference (media_id, no url) to simulate the
+    # post-upload state the JS would POST.
+    payload["articles"][0].pop("publication_logo_url", None)
+    payload["articles"][0]["publication_logo_media_id"] = 17  # numeric int — the simpler validator path
+
+    res = client.post("/api/preview/html", json=payload)
+    assert res.status_code == 200, res.text
+    assert 'src="/api/media/17/content"' in res.text
+
+
+def test_preview_accepts_string_media_id_for_lax_int_coercion(
+    sample_issue, client: TestClient
+):
+    """JSON from a <input type='hidden'> serializes as a string. Pydantic's
+    default lax mode coerces "17" → 17 for int fields — confirm that path
+    works so we don't have to special-case the hidden input on the JS side."""
+    payload = sample_issue.model_dump(mode="json")
+    payload["articles"][0].pop("publication_logo_url", None)
+    payload["articles"][0]["publication_logo_media_id"] = "17"
+
+    res = client.post("/api/preview/html", json=payload)
+    assert res.status_code == 200, res.text
+    assert 'src="/api/media/17/content"' in res.text
+
+
 def test_preview_endpoint_rejects_invalid_issue(client: TestClient):
     """The UI relies on a 422 to surface validation errors when required
     fields are missing — confirm that round trip works."""

@@ -19,7 +19,7 @@
     <div id="main-menu" class="dropdown" hidden role="menu" aria-label="Main menu">
       <button type="button" id="open-drafts" role="menuitem" aria-haspopup="dialog">Drafts</button>
       <button type="button" id="open-archive" role="menuitem" aria-haspopup="dialog">Archive</button>
-      <button type="button" id="open-media" role="menuitem" aria-haspopup="dialog">Media Library</button>
+      <button type="button" id="open-media" role="menuitem" aria-haspopup="dialog">Logos &amp; Media</button>
     </div>
   </div>
   <h1>Newsletter Composer</h1>
@@ -179,10 +179,17 @@
       <label class="span-2">Logo URL
         <div class="row inline">
           <input type="url" data-field="publication_logo_url">
-          <button type="button" class="btn ghost btn-fetch" data-action="register-logo" title="Register this URL in the Media Library">Fetch</button>
+          <button type="button" class="btn ghost btn-fetch" data-action="register-logo" title="Register this URL in Logos &amp; Media">Fetch</button>
           <button type="button" class="btn ghost btn-fetch" data-action="upload-logo" title="Upload a PNG/JPG and use it as this article's logo">Upload</button>
-          <button type="button" class="btn ghost btn-fetch" data-action="pick-logo" title="Pick from Media Library">Library</button>
+          <button type="button" class="btn ghost btn-fetch" data-action="pick-logo" title="Pick from Logos &amp; Media">Library</button>
           <input type="file" class="logo-upload-input" data-role="logo-upload" accept="image/png,image/jpeg" hidden>
+          <!-- Hidden Media Library id companion to the URL field. Set by the
+               Upload action (and by Library when the picked item has no
+               URL of its own). Keeping it separate means the URL field
+               never holds a relative ``/api/media/...`` value — that path
+               failed Pydantic on the issue's round-trip through the
+               preview/eml endpoints and broke uploaded article logos. -->
+          <input type="hidden" data-field="publication_logo_media_id">
         </div>
         <small class="fetch-status" data-role="logo-status"></small>
       </label>
@@ -272,7 +279,7 @@
             <button type="button" class="static-tool" data-rt-action="italic" title="Italic (wrap selection in <em>)" aria-label="Italic"><em>I</em></button>
             <button type="button" class="static-tool" data-rt-action="heading" title="Heading (wrap selection in <h2>)" aria-label="Heading">H</button>
             <button type="button" class="static-tool" data-rt-action="link" title="Insert a link" aria-label="Insert link">Link</button>
-            <button type="button" class="static-tool" data-rt-action="image" title="Insert an image from the Media Library" aria-label="Insert image">Image</button>
+            <button type="button" class="static-tool" data-rt-action="image" title="Insert an image from Logos &amp; Media" aria-label="Insert image">Image</button>
           </div>
           <textarea data-field="html" rows="4" placeholder='<p>Sponsor blurb…</p>'></textarea>
         </div>
@@ -388,6 +395,17 @@
         <span class="lbl">Masthead logo URL</span>
         <input type="url" name="masthead_logo_url" placeholder="https://...">
       </label>
+      <div class="settings-row masthead-upload-row">
+        <span class="lbl">Or upload logo</span>
+        <div class="masthead-upload-controls">
+          <img id="masthead-thumb" class="masthead-thumb" alt="Masthead preview" hidden>
+          <button type="button" id="masthead-upload-btn" class="btn-secondary">Upload…</button>
+          <button type="button" id="masthead-clear-btn" class="btn-secondary" hidden>Clear</button>
+          <input type="file" id="masthead-upload-file" accept="image/png,image/jpeg" hidden>
+          <input type="hidden" name="masthead_logo_media_id">
+          <small id="masthead-upload-status" class="field-hint"></small>
+        </div>
+      </div>
       <label class="settings-row settings-row-tall">
         <span class="lbl">Default intro HTML</span>
         <textarea name="default_intro_html" rows="2" placeholder="<p>Greetings…</p>"></textarea>
@@ -425,7 +443,7 @@
         <span class="lbl">Embed all media</span>
         <span class="settings-checkbox-field">
           <input type="checkbox" name="embed_all_media">
-          <span>Embed Article Logos and Static-block images from the Media Library; fall back to source URL when cache is unavailable</span>
+          <span>Embed Article Logos and Static-block images from Logos &amp; Media; fall back to source URL when cache is unavailable</span>
         </span>
       </label>
     </div>
@@ -508,7 +526,7 @@
 <dialog id="media-dialog" aria-labelledby="media-title">
   <div class="dialog-body">
     <header class="dialog-header">
-      <h2 id="media-title">Media Library</h2>
+      <h2 id="media-title">Logos &amp; Media</h2>
       <button type="button" class="btn-remove" id="media-close" aria-label="Close">&times;</button>
     </header>
     <p class="hint">Article Logos and Static-block Images. Fill the Image description before referencing an item in a newsletter. PNG and JPG only.</p>
@@ -561,10 +579,10 @@
 <dialog id="media-picker-dialog" aria-labelledby="media-picker-title">
   <div class="dialog-body">
     <header class="dialog-header">
-      <h2 id="media-picker-title">Pick from Media Library</h2>
+      <h2 id="media-picker-title">Pick from Logos &amp; Media</h2>
       <button type="button" class="btn-remove" id="media-picker-close" aria-label="Close">&times;</button>
     </header>
-    <p class="hint" id="media-picker-hint">Click an item to use it. Items missing an Image description are dimmed — set one in the Media Library before referencing.</p>
+    <p class="hint" id="media-picker-hint">Click an item to use it. Items missing an Image description are dimmed — set one in Logos &amp; Media before referencing.</p>
     <ul class="templates-list media-list" id="media-picker-list" aria-live="polite"></ul>
     <footer class="dialog-actions">
       <small id="media-picker-status" class="status" aria-live="polite"></small>

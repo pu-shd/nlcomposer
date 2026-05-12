@@ -850,6 +850,34 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #settings-dialog .settings-row-tall { align-items: start; }
 #settings-dialog .settings-row-tall > .lbl { padding-top: 7px; }
+
+/* Masthead-logo upload affordance: thumbnail, Upload, and Clear buttons
+   inline in a single row, with a status line below. The thumbnail is
+   capped so a large source PNG doesn't blow up the dialog height. */
+#settings-dialog .masthead-upload-row { align-items: start; }
+#settings-dialog .masthead-upload-row > .lbl { padding-top: 7px; }
+#settings-dialog .masthead-upload-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+#settings-dialog .masthead-thumb {
+  max-height: 40px;
+  max-width: 200px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: white;
+  padding: 2px;
+}
+#settings-dialog #masthead-upload-status[data-kind="error"] { color: var(--danger); }
+#settings-dialog #masthead-upload-status[data-kind="ok"]    { color: var(--ok, #1f7a3a); }
+#settings-dialog #masthead-upload-status {
+  flex-basis: 100%;
+  margin: 0;
+}
 #settings-dialog .settings-row-checkbox > .settings-checkbox-field,
 #compose-new-dialog .settings-row-checkbox > .settings-checkbox-field,
 #confirm-delete-dialog .settings-row-checkbox > .settings-checkbox-field {

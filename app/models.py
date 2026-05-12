@@ -47,6 +47,18 @@ class Article(BaseModel):
         default=None,
         description="Small logo/icon shown next to the headline (favicon by default).",
     )
+    publication_logo_media_id: Optional[int] = Field(
+        default=None,
+        description=(
+            "Media Library id for an uploaded article logo. Preferred over "
+            "``publication_logo_url`` when set — the in-browser preview "
+            "renders it as ``/api/media/{id}/content``. (Mail-client "
+            "inline embedding of per-article logos follows the planned "
+            "``embed_all_media`` work; until then, uploaded article logos "
+            "render in the preview but not in the recipient's inbox — "
+            "use a public URL via the Logo URL field for now.)"
+        ),
+    )
     alain_comment: Optional[str] = Field(
         default=None,
         description='Optional "Hmmmm... Alain" commentary appended after Read more.',
@@ -126,6 +138,16 @@ class NewsletterIssue(BaseModel):
         description='Printed date string, e.g. "Sunday, May 3, 2026". Auto-generated if omitted.',
     )
     masthead_logo_url: Optional[SanitizedHttpUrl] = None
+    masthead_logo_media_id: Optional[int] = Field(
+        default=None,
+        description=(
+            "Media Library id for an uploaded masthead logo. Preferred over "
+            "``masthead_logo_url`` when set — the eml builder resolves it to "
+            "inline bytes (cid:) and the in-browser preview renders it as "
+            "``/api/media/{id}/content``. ``url`` remains as a fallback if "
+            "both are present and the media item is not yet ready."
+        ),
+    )
     masthead_logo_cid: Optional[str] = Field(
         default=None,
         description="Content-ID for an inline-attached logo image (set by the eml builder).",

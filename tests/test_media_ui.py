@@ -36,7 +36,7 @@ def test_media_button_lives_inside_main_menu(client: TestClient):
     menu_end = body.index("</div>", menu_start)
     menu_block = body[menu_start:menu_end]
     assert 'id="open-media"' in menu_block
-    assert "Media Library" in menu_block
+    assert "Logos &amp; Media" in menu_block
 
 
 def test_media_create_form_offers_kind_and_url(client: TestClient):

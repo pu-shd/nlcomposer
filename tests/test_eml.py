@@ -132,6 +132,50 @@ def test_build_eml_with_inline_logo_attaches_related_image(sample_issue):
     )
 
 
+def test_render_html_uses_media_endpoint_when_only_media_id_is_set(sample_issue):
+    """Preview path: masthead_logo_media_id renders as /api/media/{id}/content.
+
+    The in-browser preview re-renders on every keystroke and shouldn't
+    need to do any byte resolution. The eml controller swaps this for an
+    inline cid: at .eml-build time — that's covered by the dedicated
+    /api/eml test in test_main.py.
+    """
+    issue = sample_issue.model_copy(update={"masthead_logo_media_id": 7})
+    html = render_html(issue)
+    assert 'src="/api/media/7/content"' in html
+    # The plain URL fallback should not appear when media_id is set.
+    assert "cid:" not in html
+
+
+def test_render_html_prefers_cid_over_media_id_and_url(sample_issue):
+    """When build_eml has set the cid, the template ignores media_id/url.
+
+    The cid path is what survives in the recipient's mail client — the
+    /api/media URL would 404 once the message leaves our domain — so the
+    template must always prefer cid when build_eml has populated it.
+    """
+    issue = sample_issue.model_copy(
+        update={
+            "masthead_logo_cid": "masthead-test-cid",
+            "masthead_logo_media_id": 7,
+            "masthead_logo_url": "https://example.com/logo.png",
+        }
+    )
+    html = render_html(issue)
+    assert 'src="cid:masthead-test-cid"' in html
+    assert "/api/media/7/content" not in html
+    assert "https://example.com/logo.png" not in html
+
+
+def test_render_html_falls_back_to_url_when_no_cid_and_no_media_id(sample_issue):
+    issue = sample_issue.model_copy(
+        update={"masthead_logo_url": "https://example.com/logo.png"}
+    )
+    html = render_html(issue)
+    assert 'src="https://example.com/logo.png"' in html
+    assert "/api/media/" not in html
+
+
 def test_filename_is_filesystem_safe(sample_issue):
     fname = build_eml_filename(sample_issue)
     assert fname.endswith(".eml")

@@ -50,6 +50,17 @@ class AppSettings(BaseModel):
     # Reusable issue chrome
     unsubscribe_url: Optional[SanitizedHttpUrl] = None
     masthead_logo_url: Optional[SanitizedHttpUrl] = None
+    masthead_logo_media_id: Optional[int] = Field(
+        default=None,
+        description=(
+            "Media Library id for an uploaded masthead logo. Mirrors onto "
+            "NewsletterIssue.masthead_logo_media_id at build time. When "
+            "both this and ``masthead_logo_url`` are set, the renderer "
+            "prefers the uploaded item (which can be embedded inline via "
+            "cid:) and falls back to the URL only if the media item is "
+            "missing or not yet ready."
+        ),
+    )
     default_intro_html: Optional[str] = Field(
         default=None,
         description="Carry-forward intro paragraph(s) for new drafts. Raw HTML.",

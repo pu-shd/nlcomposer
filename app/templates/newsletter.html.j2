@@ -35,7 +35,11 @@
   {# ── MASTHEAD ─────────────────────────────────────────────────────── #}
   <tr><td style="padding:18px 16px 6px 16px;text-align:center;">
     {%- if issue.masthead_logo_cid %}
+      {# Inline-embedded via build_eml — the email reader resolves cid: locally. #}
       <img src="cid:{{ issue.masthead_logo_cid }}" alt="{{ issue.newsletter_name }}" style="max-width:100%;height:auto;display:inline-block;border:0;">
+    {%- elif issue.masthead_logo_media_id %}
+      {# In-browser preview only: the eml controller swaps this for a cid: at build time. #}
+      <img src="/api/media/{{ issue.masthead_logo_media_id }}/content" alt="{{ issue.newsletter_name }}" style="max-width:100%;height:auto;display:inline-block;border:0;">
     {%- elif issue.masthead_logo_url %}
       <img src="{{ issue.masthead_logo_url }}" alt="{{ issue.newsletter_name }}" style="max-width:100%;height:auto;display:inline-block;border:0;">
     {%- else %}
@@ -61,7 +65,11 @@
   {%- for article in issue.articles %}
   <tr><td class="article-pad" style="padding:18px 16px 0 16px;">
     <h3 class="article-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:18px;margin:0 0 6px 0;line-height:1.25;">
-      {%- if article.publication_logo_url %}
+      {%- if article.publication_logo_media_id %}
+        {# Preview-time render of an uploaded article logo. Mail-client
+           inline embedding is the planned `embed_all_media` work. #}
+        <img class="pub-icon" src="/api/media/{{ article.publication_logo_media_id }}/content" alt="" width="20" height="20" style="vertical-align:middle;margin-right:6px;border:0;">
+      {%- elif article.publication_logo_url %}
         <img class="pub-icon" src="{{ article.publication_logo_url }}" alt="" width="20" height="20" style="vertical-align:middle;margin-right:6px;border:0;">
       {%- endif %}
       <a href="{{ article.url }}" style="color:#1a4480;text-decoration:none;">{{ article.headline }}</a>

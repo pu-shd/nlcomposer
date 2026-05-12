@@ -121,6 +121,29 @@ def test_save_then_load_round_trip():
     assert loaded.auto_archive_on_download is False
 
 
+def test_save_then_load_round_trips_masthead_logo_media_id():
+    """AppSettings.masthead_logo_media_id persists through SQLite.
+
+    Covers the new "uploaded masthead logo" path — settings save the
+    Media Library id, and load_settings returns it intact (as int, not
+    string) so buildIssue() and the eml controller can dereference it.
+    """
+    conn = connect()
+    init_db(conn)
+    try:
+        save_settings(
+            conn,
+            AppSettings(masthead_logo_media_id=42),
+        )
+        conn.commit()
+        loaded = load_settings(conn)
+    finally:
+        conn.close()
+    assert loaded.masthead_logo_media_id == 42
+    # Default is None when not set
+    assert AppSettings().masthead_logo_media_id is None
+
+
 def test_save_is_upsert_not_append():
     """A second save must overwrite the first row, never insert id=2."""
     conn = connect()
