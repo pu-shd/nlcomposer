@@ -1023,9 +1023,84 @@ do_update() {
   load_env
   preflight
   heading "Build & redeploy"
+  warn "This rolls a new container revision against ${AZ_ACA_APP} in"
+  warn "${AZ_RG}. The Azure Files share ${AZ_FILE_SHARE} (where app.db"
+  warn "lives) is NOT touched — drafts, settings, archive, and the"
+  warn "media library persist across this rollout. Schema changes that"
+  warn "are NOT forward-compatible require an explicit \`deploy.sh"
+  warn "wipe-data\` first."
+  if ! confirm "Build the image and roll the new revision?"; then
+    err "Aborted."; exit 1
+  fi
   build_and_push_image
   ensure_container_app
   ok "Update complete."
+}
+
+# Wipe the SQLite database on the Azure Files share. Surface is
+# intentionally separate from `update` so a code rollout never destroys
+# data by accident. Required when a schema change is NOT forward-
+# compatible and the app has no production data worth migrating yet.
+do_wipe_data() {
+  load_env
+  preflight
+  banner
+  heading "Wipe SQLite database on Azure Files share"
+  warn "This will DELETE app.db from share '${AZ_FILE_SHARE}' in storage"
+  warn "account '${AZ_STORAGE}'. ALL drafts, settings, templates, archive"
+  warn "entries, and uploaded media are lost. Cached image bytes in the"
+  warn "media library are also gone."
+  warn ""
+  warn "Use this only when an incompatible schema change has shipped and"
+  warn "the app has no production data worth keeping. To preserve data,"
+  warn "abort now and migrate the schema instead."
+  if ! confirm "Continue?"; then
+    err "Aborted."; exit 1
+  fi
+  if (( ! ASSUME_YES )); then
+    print -nP "${C_RED}${C_BOLD}Type the file share name '${AZ_FILE_SHARE}' to confirm: ${C_RESET}"
+    local typed
+    read -r typed || typed=""
+    if [[ "$typed" != "$AZ_FILE_SHARE" ]]; then
+      err "Mismatch — abort."; exit 1
+    fi
+  fi
+
+  step "Resolving storage key"
+  local key
+  key=$(query az storage account keys list -g "$AZ_RG" -n "$AZ_STORAGE" \
+        --query "[0].value" -o tsv 2>/dev/null || echo "")
+  if [[ -z "$key" ]]; then
+    err "Could not read storage key — is the storage account up?"
+    exit 1
+  fi
+
+  step "Deleting app.db from share ${AZ_FILE_SHARE}"
+  if az storage file show \
+       --account-name "$AZ_STORAGE" --account-key "$key" \
+       --share-name "$AZ_FILE_SHARE" --path app.db >/dev/null 2>&1; then
+    run az storage file delete \
+      --account-name "$AZ_STORAGE" --account-key "$key" \
+      --share-name "$AZ_FILE_SHARE" --path app.db >/dev/null
+    ok "Deleted app.db"
+  else
+    info "app.db not present on share — nothing to delete"
+  fi
+
+  step "Restarting container app so init_db reseeds an empty DB"
+  local active_rev
+  active_rev=$(query az containerapp revision list \
+    -n "$AZ_ACA_APP" -g "$AZ_RG" \
+    --query "[?properties.active].name | [0]" -o tsv 2>/dev/null || echo "")
+  if [[ -n "$active_rev" ]]; then
+    run az containerapp revision restart \
+      -n "$AZ_ACA_APP" -g "$AZ_RG" --revision "$active_rev" >/dev/null \
+      || warn "Revision restart failed — manually restart to reseed the DB."
+    ok "Active revision restarted"
+  else
+    warn "No active revision found — start the container app to reseed."
+  fi
+  ok "Wipe complete."
 }
 
 # Split a hostname like "composer.smartdrivingcar.com" into apex + leading
@@ -1133,9 +1208,12 @@ Usage: scripts/deploy.sh <command> [options]
 
 Commands:
   setup       Interactive end-to-end provision (idempotent — safe to rerun)
-  update      Rebuild image and refresh the Container App
+  update      Rebuild image and refresh the Container App (asks before rolling)
   domain      Bind the configured AZ_CUSTOM_DOMAIN (DNS pause + managed cert)
   status      Show current state of every Azure resource
+  wipe-data   DELETE app.db from the Azure Files share. Destructive; required
+              after non-forward-compatible schema changes when there is no
+              production data to migrate. Prompts for typed share-name confirm.
   teardown    Remove the resource group, Entra apps, and CI secrets
   help        This message
 
@@ -1164,11 +1242,12 @@ done
 [[ -n "$SUBSCRIPTION" ]] && AZ_SUBSCRIPTION="$SUBSCRIPTION"
 
 case "$ACTION" in
-  setup)    do_setup ;;
-  update)   do_update ;;
-  domain)   do_domain ;;
-  status)   status ;;
-  teardown) teardown ;;
+  setup)     do_setup ;;
+  update)    do_update ;;
+  domain)    do_domain ;;
+  status)    status ;;
+  wipe-data) do_wipe_data ;;
+  teardown)  teardown ;;
   help|-h|--help) usage ;;
   *) err "Unknown command: $ACTION"; usage; exit 2 ;;
 esac

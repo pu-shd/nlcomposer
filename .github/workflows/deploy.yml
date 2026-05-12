@@ -1,8 +1,14 @@
 name: Deploy to Azure Container Apps
 
-# Manual-dispatch only. Mirrors `scripts/deploy.sh update`:
-#   1. server-side `az acr build` of the current repo tree
-#   2. `az containerapp update --image` against the running app
+# Manual-dispatch only. Mirrors `scripts/deploy.sh update` and (optionally)
+# `scripts/deploy.sh wipe-data`. Two confirmation inputs gate any
+# production-impacting work:
+#
+#   confirm        — must equal "deploy" to roll a new revision.
+#   wipe_database  — defaults false; when true, app.db on the Azure Files
+#                    share is DELETED before the new revision starts.
+#                    Requires the extra wipe_confirm input set to "WIPE".
+#
 # Required repo secrets (set by `scripts/deploy.sh setup`):
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
 #   AZURE_RESOURCE_GROUP, AZURE_ACR_NAME, AZURE_ACA_APP
@@ -10,10 +16,26 @@ name: Deploy to Azure Container Apps
 on:
   workflow_dispatch:
     inputs:
+      confirm:
+        description: 'Type "deploy" to confirm. Rolls a new container revision in PRODUCTION.'
+        required: true
+        default: ""
       image_tag:
         description: "Image tag to build and deploy"
         required: false
         default: "v1"
+      wipe_database:
+        description: 'DESTRUCTIVE: when "true", deletes app.db from the Azure Files share BEFORE deploy. All drafts/settings/archive lost.'
+        required: false
+        default: "false"
+      wipe_confirm:
+        description: 'Required when wipe_database is "true". Type "WIPE" to acknowledge the data loss.'
+        required: false
+        default: ""
+      file_share:
+        description: 'Azure Files share holding app.db. Only used when wipe_database=true.'
+        required: false
+        default: "sdc-data"
 
 permissions:
   id-token: write
@@ -23,6 +45,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Gate — confirm input
+        run: |
+          echo "::warning::This workflow modifies the LIVE deployment. Review the inputs before proceeding."
+          if [ "${{ inputs.confirm }}" != "deploy" ]; then
+            echo "::error::Confirm input must equal 'deploy' (case-sensitive). Got: '${{ inputs.confirm }}'"
+            exit 1
+          fi
+          if [ "${{ inputs.wipe_database }}" = "true" ]; then
+            echo "::warning::wipe_database=true — app.db on share '${{ inputs.file_share }}' will be DELETED before deploy."
+            if [ "${{ inputs.wipe_confirm }}" != "WIPE" ]; then
+              echo "::error::wipe_confirm must equal 'WIPE' (case-sensitive) when wipe_database is true. Got: '${{ inputs.wipe_confirm }}'"
+              exit 1
+            fi
+          fi
+          echo "Confirmation gate passed."
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -32,6 +70,30 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Wipe app.db on Azure Files share (DESTRUCTIVE — gated above)
+        if: ${{ inputs.wipe_database == 'true' }}
+        run: |
+          echo "::warning::Deleting app.db on share '${{ inputs.file_share }}'…"
+          STORAGE=$(az storage account list \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --query "[?starts_with(name, 'st')].name | [0]" -o tsv)
+          if [ -z "$STORAGE" ]; then
+            echo "::error::Could not auto-detect storage account in RG ${{ secrets.AZURE_RESOURCE_GROUP }}."
+            exit 1
+          fi
+          echo "Using storage account: $STORAGE"
+          KEY=$(az storage account keys list \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            -n "$STORAGE" --query "[0].value" -o tsv)
+          if az storage file show --account-name "$STORAGE" --account-key "$KEY" \
+               --share-name "${{ inputs.file_share }}" --path app.db >/dev/null 2>&1; then
+            az storage file delete --account-name "$STORAGE" --account-key "$KEY" \
+              --share-name "${{ inputs.file_share }}" --path app.db
+            echo "app.db deleted."
+          else
+            echo "app.db was not present on the share — nothing to delete."
+          fi
 
       - name: Build & push image to ACR
         run: |
