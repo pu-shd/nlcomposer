@@ -1028,6 +1028,105 @@ do_update() {
   ok "Update complete."
 }
 
+# Split a hostname like "composer.smartdrivingcar.com" into apex + leading
+# subdomain label(s). Apex domains are rejected: GoDaddy ALIAS records
+# for ACA are awkward, so we require a subdomain like "composer.foo.com".
+_split_host() {
+  local host="$1"
+  local n
+  n=$(awk -F. '{print NF}' <<< "$host")
+  if (( n < 3 )); then
+    err "Custom hostname '${host}' looks like an apex (or invalid). Use a subdomain."
+    return 1
+  fi
+  SPLIT_APEX=$(awk -F. '{print $(NF-1)"."$NF}' <<< "$host")
+  SPLIT_SUB="${host%.$SPLIT_APEX}"
+}
+
+do_domain() {
+  load_env
+  banner
+  preflight
+  heading "Custom domain"
+
+  if [[ -z "${AZ_CUSTOM_DOMAIN:-}" ]]; then
+    prompt_with_default AZ_CUSTOM_DOMAIN "Custom hostname" ""
+    if [[ -z "$AZ_CUSTOM_DOMAIN" ]]; then
+      err "AZ_CUSTOM_DOMAIN is required."
+      exit 1
+    fi
+    write_env_file
+  fi
+  local host="$AZ_CUSTOM_DOMAIN"
+  _split_host "$host" || exit 1
+  local sub="$SPLIT_SUB" apex="$SPLIT_APEX"
+
+  local fqdn verif
+  fqdn=$(query az containerapp show -n "$AZ_ACA_APP" -g "$AZ_RG" --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "")
+  verif=$(query az containerapp show -n "$AZ_ACA_APP" -g "$AZ_RG" --query properties.customDomainVerificationId -o tsv 2>/dev/null || echo "")
+  if [[ -z "$fqdn" || -z "$verif" ]]; then
+    err "Container App ${AZ_ACA_APP} not provisioned yet — run \`scripts/deploy.sh setup\` first."
+    exit 1
+  fi
+
+  step "DNS records required at your registrar (apex: ${apex})"
+  info "CNAME  Name=${sub}             Value=${fqdn}"
+  info "TXT    Name=asuid.${sub}       Value=${verif}"
+  pause_for_manual "Add the two DNS records, then continue" \
+    "CNAME : Host=${sub}        Points to=${fqdn}      TTL=600" \
+    "TXT   : Host=asuid.${sub}  Value=${verif}          TTL=600" \
+    "Wait 1-3 min for propagation. Verify with:" \
+    "  dig +short CNAME ${host}" \
+    "  dig +short TXT   asuid.${host}"
+
+  step "Add hostname ${host} to Container App"
+  local exists
+  exists=$(az containerapp hostname list -n "$AZ_ACA_APP" -g "$AZ_RG" --query "[?name=='${host}'].name" -o tsv 2>/dev/null || echo "")
+  if [[ -n "$exists" ]]; then
+    ok "Hostname already attached"
+  else
+    run az containerapp hostname add -n "$AZ_ACA_APP" -g "$AZ_RG" --hostname "$host" >/dev/null
+    ok "Hostname attached"
+  fi
+
+  step "Provision + bind managed certificate (free, auto-renewing)"
+  local bind_type
+  bind_type=$(az containerapp hostname list -n "$AZ_ACA_APP" -g "$AZ_RG" --query "[?name=='${host}'].bindingType" -o tsv 2>/dev/null || echo "")
+  if [[ "$bind_type" == "SniEnabled" ]]; then
+    ok "Managed cert already bound"
+  else
+    run az containerapp hostname bind \
+      -n "$AZ_ACA_APP" -g "$AZ_RG" \
+      --hostname "$host" \
+      --environment "$AZ_ACA_ENV" \
+      --validation-method CNAME >/dev/null
+    ok "Managed certificate bound (initial issuance can take 1-3 min)"
+  fi
+
+  step "Ensure Entra app accepts callback for https://${host}"
+  local app_id
+  app_id=$(query az ad app list --display-name "$AZ_ENTRA_APP" --query "[0].appId" -o tsv 2>/dev/null || echo "")
+  if [[ -n "$app_id" && "$app_id" != "DRYRUN-VALUE" ]] && (( ! DRY_RUN )); then
+    local want="https://${host}/.auth/login/aad/callback"
+    local existing
+    existing=$(az ad app show --id "$app_id" --query "web.redirectUris" -o tsv 2>/dev/null || echo "")
+    if print -- "$existing" | grep -Fxq "$want"; then
+      ok "Redirect URI already registered: ${want}"
+    else
+      local merged
+      merged=$(printf "%s\n%s\n" "$existing" "$want" | awk 'NF && !seen[$0]++' | tr '\n' ' ')
+      run az ad app update --id "$app_id" --web-redirect-uris ${=merged} >/dev/null
+      ok "Redirect URI registered: ${want}"
+    fi
+  else
+    warn "Entra app ${AZ_ENTRA_APP} not found — skipped redirect-URI update"
+  fi
+
+  heading "Done"
+  ok "Custom domain live: https://${host}"
+  info "If the cert is still provisioning, the URL may briefly serve a TLS warning — refresh after 1-3 min."
+}
+
 usage() {
   cat <<EOF
 Usage: scripts/deploy.sh <command> [options]
@@ -1035,6 +1134,7 @@ Usage: scripts/deploy.sh <command> [options]
 Commands:
   setup       Interactive end-to-end provision (idempotent — safe to rerun)
   update      Rebuild image and refresh the Container App
+  domain      Bind the configured AZ_CUSTOM_DOMAIN (DNS pause + managed cert)
   status      Show current state of every Azure resource
   teardown    Remove the resource group, Entra apps, and CI secrets
   help        This message
@@ -1066,6 +1166,7 @@ done
 case "$ACTION" in
   setup)    do_setup ;;
   update)   do_update ;;
+  domain)   do_domain ;;
   status)   status ;;
   teardown) teardown ;;
   help|-h|--help) usage ;;
