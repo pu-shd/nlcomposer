@@ -1,7 +1,7 @@
 services:
   app:
     build: .
-    image: sdc-composer:dev
+    image: newsletter-composer:dev
     ports:
       - "8000:8000"
     volumes:
@@ -16,7 +16,7 @@ services:
 
   tests:
     build: .
-    image: sdc-composer:dev
+    image: newsletter-composer:dev
     command: pytest -q
     volumes:
       - ./app:/app/app

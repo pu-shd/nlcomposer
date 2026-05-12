@@ -1,4 +1,4 @@
-"""FastAPI composition root for the sdc-composer web app.
+"""FastAPI composition root for the newsletter-composer web app.
 
 This module is intentionally thin — it wires the pieces together but
 contains no route logic of its own. The MVC split lives here:
@@ -48,10 +48,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="sdc-composer",
+    title="newsletter-composer",
     description=(
-        "Compose a SmartDrivingCars newsletter and download a .eml file "
-        "matching the historical issue style."
+        "Compose an email newsletter from a structured form and download "
+        "a ready-to-send .eml file. Newsletter brand, masthead, and "
+        "default copy are configured per-instance from the Settings "
+        "dialog or AppSettings model."
     ),
     version="0.1.0",
     lifespan=lifespan,

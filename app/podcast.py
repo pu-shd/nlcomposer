@@ -24,8 +24,8 @@ from .links import sanitize_url
 
 _DEFAULT_TIMEOUT = 8.0
 _DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (compatible; sdc-composer/0.1; "
-    "+https://smartdrivingcar.com/)"
+    "Mozilla/5.0 (compatible; newsletter-composer/0.1; "
+    "+https://github.com/pu-shd/nlcomposer)"
 )
 _OEMBED_ENDPOINT = "https://www.youtube.com/oembed"
 

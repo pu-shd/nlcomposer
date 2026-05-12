@@ -53,7 +53,7 @@ def build_eml(
     """
 
     if masthead_logo_bytes is not None:
-        cid = make_msgid(domain="sdc-composer.local")
+        cid = make_msgid(domain="newsletter-composer.local")
         # Strip surrounding angle brackets for use inside ``cid:`` URI.
         bare_cid = cid.strip("<>")
         issue = issue.model_copy(update={"masthead_logo_cid": bare_cid})

@@ -1,7 +1,9 @@
 [project]
-name = "sdc-composer"
+name = "newsletter-composer"
 version = "0.1.0"
-description = "SmartDrivingCars newsletter composer — produces .eml files matching the historical issue style."
+description = "FastAPI web app for composing email newsletters and exporting a ready-to-send .eml message."
+license = { text = "MIT" }
+authors = [{ name = "Princeton University" }]
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110",
