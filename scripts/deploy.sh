@@ -601,18 +601,40 @@ ensure_entra_app() {
     az ad sp create --id "$ENTRA_APP_ID" >/dev/null 2>&1 || true
   fi
 
-  pause_for_manual "Generate Entra app client secret" \
-    "Open https://portal.azure.com → Entra ID → App registrations → ${AZ_ENTRA_APP}" \
-    "Certificates & secrets → New client secret (1-year recommended)" \
-    "Copy the secret VALUE — you will paste it next."
+  # Mint a fresh client secret automatically via Graph (same as the portal
+  # "New client secret" button) and immediately stash it on the Container
+  # App, so setup is fully unattended end-to-end. The plaintext value is
+  # only available in this single response — we capture it, push it into
+  # the auth secret store, and discard it. No copy-paste round-trip
+  # through a human.
+  local client_secret=""
+  if (( ! DRY_RUN )); then
+    step "Mint Entra app client secret (1-year, auto-rotated each setup)"
+    client_secret=$(az ad app credential reset \
+      --id "$ENTRA_APP_ID" \
+      --append \
+      --years 1 \
+      --display-name "deploy-script-$(date -u +%Y%m%d)" \
+      --query password -o tsv 2>/dev/null || echo "")
+    if [[ -n "$client_secret" ]]; then
+      ok "Secret minted"
+    else
+      warn "Could not mint client secret via Graph — falling back to manual paste."
+      pause_for_manual "Generate Entra app client secret" \
+        "Open https://portal.azure.com → Entra ID → App registrations → ${AZ_ENTRA_APP}" \
+        "Certificates & secrets → New client secret (1-year recommended)" \
+        "Copy the secret VALUE — you will paste it next."
+      if (( ! ASSUME_YES )); then
+        print -nP "${C_CYAN}Paste client-secret value:${C_RESET} "
+        read -rs client_secret || client_secret=""
+        print
+      fi
+    fi
+  fi
 
-  if (( ASSUME_YES )); then
-    info "(auto-yes) skipping client-secret bind"
+  if (( ASSUME_YES )) && [[ -z "$client_secret" ]]; then
+    info "(auto-yes + no secret) skipping client-secret bind"
   else
-    print -nP "${C_CYAN}Paste client-secret value (will be stored only on the Container App):${C_RESET} "
-    local client_secret
-    read -rs client_secret || client_secret=""
-    print
     if [[ -n "$client_secret" ]]; then
       step "Bind Entra auth to Container App"
       # We cannot use `az containerapp auth microsoft update` here.
@@ -648,6 +670,16 @@ ensure_entra_app() {
         # tempfile pattern is also less brittle for any quoting fun
         # with the JSON.
         local auth_uri="https://management.azure.com/subscriptions/${sub_id}/resourceGroups/${AZ_RG}/providers/Microsoft.App/containerApps/${AZ_ACA_APP}/authConfigs/current?api-version=2024-03-01"
+        # When MINIMAL_PERMS is on we also override loginParameters so
+        # Easy Auth requests only `openid` from AAD. Without this, the
+        # platform's built-in defaults add `profile email offline_access
+        # User.Read`, which trigger the consent screen even when the
+        # app registration has no requiredResourceAccess declared.
+        local login_block=""
+        if [[ "${AZ_ENTRA_MINIMAL_PERMS:-true}" == "true" ]]; then
+          login_block=',
+        "login": {"loginParameters": ["scope=openid"]}'
+        fi
         local body
         body=$(cat <<EOF
 {
@@ -663,7 +695,7 @@ ensure_entra_app() {
           "openIdIssuer": "https://login.microsoftonline.com/${tenant_id}/v2.0",
           "clientId": "${ENTRA_APP_ID}",
           "clientSecretSettingName": "microsoft-provider-authentication-secret"
-        }
+        }${login_block}
       }
     }
   }
