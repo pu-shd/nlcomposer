@@ -172,6 +172,35 @@ def test_get_settings_returns_defaults_when_unset(client: TestClient):
     assert body["auto_archive_on_download"] is True
 
 
+def test_put_settings_self_heals_when_settings_table_is_missing(client: TestClient):
+    """If something has nuked the ``settings`` table (most commonly a
+    half-finished ``deploy.sh wipe-data`` where the new container hasn't
+    re-run init_db yet), the next PUT should re-bootstrap the schema and
+    succeed — instead of returning a bare 500 the user can't act on.
+    """
+    # Simulate the missing-schema state by dropping the settings table
+    # via a direct connection. The test client opens its own per-request
+    # connection, so we have to mirror it.
+    from app.db import connect
+    raw = connect()
+    try:
+        raw.execute("DROP TABLE IF EXISTS settings")
+        raw.commit()
+    finally:
+        raw.close()
+
+    res = client.put(
+        "/api/settings",
+        json={"from_name": "After Self-Heal", "preview_debounce_ms": 333},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["from_name"] == "After Self-Heal"
+
+    again = client.get("/api/settings")
+    assert again.status_code == 200
+    assert again.json()["from_name"] == "After Self-Heal"
+
+
 def test_put_settings_persists_and_round_trips(client: TestClient):
     payload = {
         "from_name": "Alain K.",

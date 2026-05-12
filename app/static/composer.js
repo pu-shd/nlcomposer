@@ -1814,14 +1814,24 @@
     }
   };
 
-  // Close-with-unsaved guard: if the X (or Esc on a native <dialog>)
-  // is pressed while the form is dirty, surface the inline warning
-  // and a Discard button instead of letting the user lose changes.
+  // Close-with-unsaved guard: when the form is dirty, ask the user
+  // whether to discard. Confirmed → drop their edits and close.
+  // Cancelled → leave the dialog open so they can Save or keep
+  // editing. The earlier behavior refused to close at all, which
+  // trapped the user in the dialog whenever the inline Discard
+  // button was overlooked.
   const tryCloseSettingsDialog = () => {
     if (refreshSettingsDirty()) {
-      setSettingsStatus('Save or Discard your changes first.', 'error');
-      settingsForm.querySelector('input, textarea, select')?.focus();
-      return false;
+      const ok = window.confirm(
+        'You have unsaved Settings changes.\n\nDiscard them and close?',
+      );
+      if (!ok) {
+        setSettingsStatus('Save or Discard your changes first.', 'error');
+        settingsForm.querySelector('input, textarea, select')?.focus();
+        return false;
+      }
+      // User chose Discard — wipe edits, then close.
+      discardSettingsChanges();
     }
     closeSettingsDialog();
     return true;

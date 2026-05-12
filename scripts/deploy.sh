@@ -1075,6 +1075,37 @@ do_wipe_data() {
     exit 1
   fi
 
+  # The running container holds an open SQLite handle on app.db over the
+  # SMB share. Deleting an open file on Azure Files SMB can ghost the
+  # inode (the delete returns success but the open file lives on, and
+  # the next `init_db` sees the old schema). To get a deterministic
+  # empty database we:
+  #   1. restart the active revision so the old container releases the
+  #      file handle (and starts a NEW container — which immediately
+  #      reopens app.db, so we must…)
+  #   2. delete app.db right after the container starts
+  #   3. restart once more so the *next* container boot creates a fresh
+  #      app.db via init_db (idempotent — runs CREATE TABLE IF NOT EXISTS
+  #      for every table on every startup).
+  # This is heavier than a single restart but is the only sequence that
+  # reliably nukes the data on SMB.
+  local active_rev
+  active_rev=$(query az containerapp revision list \
+    -n "$AZ_ACA_APP" -g "$AZ_RG" \
+    --query "[?properties.active].name | [0]" -o tsv 2>/dev/null || echo "")
+  if [[ -z "$active_rev" ]]; then
+    warn "No active revision — wipe will only delete app.db; start the app to reseed."
+  fi
+
+  if [[ -n "$active_rev" ]]; then
+    step "Restart #1 — release the old container's file handle"
+    run az containerapp revision restart \
+      -n "$AZ_ACA_APP" -g "$AZ_RG" --revision "$active_rev" >/dev/null \
+      || warn "Revision restart failed (continuing)."
+    info "Waiting 10s for the old replica to exit"
+    sleep 10
+  fi
+
   step "Deleting app.db from share ${AZ_FILE_SHARE}"
   if az storage file show \
        --account-name "$AZ_STORAGE" --account-key "$key" \
@@ -1087,18 +1118,30 @@ do_wipe_data() {
     info "app.db not present on share — nothing to delete"
   fi
 
-  step "Restarting container app so init_db reseeds an empty DB"
-  local active_rev
-  active_rev=$(query az containerapp revision list \
-    -n "$AZ_ACA_APP" -g "$AZ_RG" \
-    --query "[?properties.active].name | [0]" -o tsv 2>/dev/null || echo "")
   if [[ -n "$active_rev" ]]; then
+    step "Restart #2 — new container runs init_db against an empty data dir"
     run az containerapp revision restart \
       -n "$AZ_ACA_APP" -g "$AZ_RG" --revision "$active_rev" >/dev/null \
       || warn "Revision restart failed — manually restart to reseed the DB."
-    ok "Active revision restarted"
+    info "Waiting 15s for the new replica to come up + run init_db"
+    sleep 15
+  fi
+
+  step "Verifying app.db exists with a fresh schema"
+  local size=""
+  if az storage file show \
+       --account-name "$AZ_STORAGE" --account-key "$key" \
+       --share-name "$AZ_FILE_SHARE" --path app.db >/dev/null 2>&1; then
+    size=$(az storage file show \
+      --account-name "$AZ_STORAGE" --account-key "$key" \
+      --share-name "$AZ_FILE_SHARE" --path app.db \
+      --query "properties.contentLength" -o tsv 2>/dev/null || echo "?")
+  fi
+  if [[ -n "$size" && "$size" != "0" && "$size" != "?" ]]; then
+    ok "app.db reseeded — size ${size} bytes"
   else
-    warn "No active revision found — start the container app to reseed."
+    warn "app.db not visible yet — give it another minute, then check status."
+    warn "If a Save still 500s after that, hit /healthz to confirm the app is up."
   fi
   ok "Wipe complete."
 }
