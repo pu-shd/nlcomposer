@@ -230,6 +230,33 @@
     wireArticleDragHandle(node);
     targetContainer.appendChild(node);
     renumber();
+
+    // Rehydrate the inline alt-text editor for drafts that already
+    // carry a publication_logo_media_id: fetch the media item, surface
+    // the editor, and bind it. Single fetch per article on load — the
+    // editor is otherwise hidden until Fetch / Upload / Library lights
+    // it up.
+    const seededMediaId = data?.publication_logo_media_id;
+    if (seededMediaId) {
+      const altRow = node.querySelector('[data-role="logo-alt-row"]');
+      const altInput = node.querySelector('[data-role="logo-alt-text"]');
+      const altStatusEl = node.querySelector('[data-role="logo-alt-status"]');
+      fetch(`/api/media/${encodeURIComponent(seededMediaId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((item) => {
+          if (!item || !altRow || !altInput) return;
+          altRow.hidden = false;
+          altInput.value = item.alt_text || '';
+          altInput.dataset.mediaId = String(item.id);
+          if (altStatusEl) {
+            altStatusEl.textContent = item.alt_text
+              ? 'Saved.'
+              : 'Required before this logo can be used.';
+            altStatusEl.dataset.kind = item.alt_text ? 'ok' : 'error';
+          }
+        })
+        .catch(() => { /* silent — stale id; the editor stays hidden */ });
+    }
     return node;
   };
 
@@ -248,6 +275,9 @@
     const mediaIdInput = card.querySelector('[data-field="publication_logo_media_id"]');
     const statusEl = card.querySelector('[data-role="logo-status"]');
     const fileInput = card.querySelector('[data-role="logo-upload"]');
+    const altRow = card.querySelector('[data-role="logo-alt-row"]');
+    const altInput = card.querySelector('[data-role="logo-alt-text"]');
+    const altStatusEl = card.querySelector('[data-role="logo-alt-status"]');
     const setLogoMedia = (id) => {
       if (mediaIdInput) mediaIdInput.value = id == null ? '' : String(id);
     };
@@ -256,6 +286,71 @@
       statusEl.textContent = msg || '';
       statusEl.dataset.kind = kind;
     };
+    const setAltStatus = (msg, kind = 'info') => {
+      if (!altStatusEl) return;
+      altStatusEl.textContent = msg || '';
+      altStatusEl.dataset.kind = kind;
+    };
+    // Show or hide the inline alt-text editor. Pass a MediaItem to bind
+    // the editor to a specific library row; pass null to clear it (e.g.
+    // when the article switches to a plain URL with no library backing).
+    const showAltEditor = (item) => {
+      if (!altRow || !altInput) return;
+      if (item == null) {
+        altRow.hidden = true;
+        altInput.value = '';
+        delete altInput.dataset.mediaId;
+        setAltStatus('');
+        return;
+      }
+      altRow.hidden = false;
+      altInput.value = item.alt_text || '';
+      altInput.dataset.mediaId = String(item.id);
+      setAltStatus(
+        item.alt_text ? 'Saved.' : 'Required before this logo can be used.',
+        item.alt_text ? 'ok' : 'error',
+      );
+    };
+    // PUT /api/media/{id} when the alt text loses focus. Sends an empty
+    // string when cleared so the gate flips back to "required" and the
+    // Logos & Media list reflects the user's intent.
+    const persistAltText = async () => {
+      const id = altInput?.dataset?.mediaId;
+      if (!id) return;
+      const value = altInput.value.trim();
+      try {
+        const res = await fetch(`/api/media/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ alt_text: value }),
+        });
+        if (!res.ok) {
+          let detail = '';
+          try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+          setAltStatus(`${res.status}: ${detail || res.statusText}`, 'error');
+          return;
+        }
+        setAltStatus(
+          value ? 'Saved.' : 'Required before this logo can be used.',
+          value ? 'ok' : 'error',
+        );
+        // Other surfaces (Settings masthead validation, preview) read
+        // alt_text on the next request — schedule a preview refresh so
+        // the editor sees the change reflected without a manual reload.
+        schedulePreview();
+      } catch (err) {
+        setAltStatus('Network error: ' + err.message, 'error');
+      }
+    };
+    if (altInput) {
+      altInput.addEventListener('blur', persistAltText);
+      altInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          altInput.blur();
+        }
+      });
+    }
 
     const registerBtn = card.querySelector('[data-action="register-logo"]');
     if (registerBtn) {
@@ -282,10 +377,19 @@
             return;
           }
           const item = await res.json();
+          // Capture the registered library item id so the inline alt-
+          // text editor can edit *this* row directly — the favicon URL
+          // keeps rendering through `publication_logo_url`, the
+          // media_id reference is just so the editor has something to
+          // attach the description to. The eml controller will continue
+          // to skip cid embedding because URL-sourced items have no
+          // cached bytes yet (see _resolve_masthead_logo's twin pattern).
+          setLogoMedia(item.id);
+          showAltEditor(item);
           setLogoStatus(
             item.alt_text
               ? 'Registered in Logos & Media.'
-              : 'Registered — set Image description in Logos & Media.',
+              : 'Registered — fill the Image description below.',
             'ok',
           );
           schedulePreview();
@@ -332,7 +436,8 @@
           // the template fall back to media_id.
           if (logoInput) logoInput.value = '';
           setLogoMedia(item.id);
-          setLogoStatus('Uploaded — set Image description in Logos & Media.', 'ok');
+          showAltEditor(item);
+          setLogoStatus('Uploaded — fill the Image description below.', 'ok');
           schedulePreview();
         } catch (err) {
           setLogoStatus('Network error: ' + err.message, 'error');
@@ -352,19 +457,21 @@
           title: 'Pick an article logo',
           onPick: (item) => {
             // Two flavors of library item:
-            //   - URL-sourced: paste the public URL into the URL field
-            //     and drop any media_id so drafts continue to look the
-            //     same as a hand-typed URL.
+            //   - URL-sourced: paste the public URL into the URL field;
+            //     keep the media_id so the inline alt-text editor can
+            //     still bind to this row even though rendering goes
+            //     through the URL.
             //   - Uploaded (item.url is null): keep the URL field empty
             //     and stash the Media Library id; the template prefers
             //     media_id and falls back to URL.
             if (item.url) {
               if (logoInput) logoInput.value = item.url;
-              setLogoMedia('');
+              setLogoMedia(item.id);
             } else {
               if (logoInput) logoInput.value = '';
               setLogoMedia(item.id);
             }
+            showAltEditor(item);
             setLogoStatus(`Using "${item.alt_text || 'library item'}".`, 'ok');
             schedulePreview();
           },
@@ -493,18 +600,41 @@
         setFetchStatus(`Filled ${filled} field${filled === 1 ? '' : 's'}.`, 'ok');
       }
       // Side-channel: when the scraper produced a publication_logo_url
-      // (favicon), register it in the Media Library as kind=logo so the
+      // (favicon), register it in Logos & Media as kind=logo so the
       // user gets a one-step path from "Fetch article" to a usable
-      // library entry. Failures are silent — the field is set either
-      // way; this is purely about populating the library.
+      // library entry. The returned id is stashed onto the article's
+      // hidden media_id field and surfaced through the inline alt-text
+      // editor so the editor can satisfy the Image-description gate
+      // without leaving the Article card. Failures are silent — the
+      // visible URL field is set either way, so the article still
+      // renders; only the inline editor is skipped.
       const logoEl = card.querySelector('[data-field="publication_logo_url"]');
       if (logoEl && logoEl.value) {
         try {
-          await fetch('/api/media', {
+          const regRes = await fetch('/api/media', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ kind: 'logo', url: sanitizeUrl(logoEl.value) }),
           });
+          if (regRes.ok) {
+            const regItem = await regRes.json();
+            const mediaEl = card.querySelector('[data-field="publication_logo_media_id"]');
+            if (mediaEl) mediaEl.value = String(regItem.id);
+            const altRow = card.querySelector('[data-role="logo-alt-row"]');
+            const altInput = card.querySelector('[data-role="logo-alt-text"]');
+            const altStatusEl = card.querySelector('[data-role="logo-alt-status"]');
+            if (altRow && altInput) {
+              altRow.hidden = false;
+              altInput.value = regItem.alt_text || '';
+              altInput.dataset.mediaId = String(regItem.id);
+              if (altStatusEl) {
+                altStatusEl.textContent = regItem.alt_text
+                  ? 'Saved.'
+                  : 'Required before this logo can be used.';
+                altStatusEl.dataset.kind = regItem.alt_text ? 'ok' : 'error';
+              }
+            }
+          }
         } catch { /* non-fatal */ }
       }
       schedulePreview();

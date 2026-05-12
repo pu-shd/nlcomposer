@@ -247,7 +247,10 @@ def test_endpoint_rejects_non_http_with_400():
     assert res.status_code == 400
 
 
-def test_endpoint_returns_502_on_upstream_failure(monkeypatch):
+def test_endpoint_returns_502_with_actionable_detail_on_upstream_5xx(monkeypatch):
+    """5xx from the upstream should carry the status code AND tell the
+    user to try again later — bare ``upstream returned 503`` is unhelpful
+    in the article-card status line where the SPA renders it verbatim."""
     def fake_fetch_html(url, *, timeout=8.0, user_agent=None, client=None):
         request = httpx.Request("GET", url)
         response = httpx.Response(503, request=request)
@@ -258,10 +261,33 @@ def test_endpoint_returns_502_on_upstream_failure(monkeypatch):
         "/api/fetch/article", params={"url": "https://example.com/down"}
     )
     assert res.status_code == 502
-    assert "503" in res.json()["detail"]
+    detail = res.json()["detail"]
+    assert "503" in detail
+    assert "try again later" in detail.lower() or "down or misbehaving" in detail.lower()
+
+
+def test_endpoint_explains_403_with_anti_bot_guidance(monkeypatch):
+    """403 from a Cloudflare-fronted site (Substack et al.) — the editor
+    needs to know to enter the article fields by hand rather than retry
+    the same URL endlessly."""
+    def fake_fetch_html(url, *, timeout=8.0, user_agent=None, client=None):
+        request = httpx.Request("GET", url)
+        response = httpx.Response(403, request=request)
+        raise httpx.HTTPStatusError("403", request=request, response=response)
+
+    monkeypatch.setattr("app.fetch._fetch_html", fake_fetch_html)
+    res = client.get(
+        "/api/fetch/article",
+        params={"url": "https://pandaperspectives.substack.com/p/x"},
+    )
+    assert res.status_code == 502
+    detail = res.json()["detail"]
+    assert "refused" in detail.lower() or "anti-bot" in detail.lower()
+    assert "by hand" in detail.lower()
 
 
 def test_endpoint_returns_502_on_network_failure(monkeypatch):
+    """DNS / connection errors get a clear non-technical reason string."""
     def fake_fetch_html(url, *, timeout=8.0, user_agent=None, client=None):
         raise httpx.ConnectError("dns lookup failed")
 
@@ -270,4 +296,5 @@ def test_endpoint_returns_502_on_network_failure(monkeypatch):
         "/api/fetch/article", params={"url": "https://example.invalid/x"}
     )
     assert res.status_code == 502
-    assert "fetch failed" in res.json()["detail"]
+    detail = res.json()["detail"]
+    assert "could not reach" in detail.lower() or "connection" in detail.lower()

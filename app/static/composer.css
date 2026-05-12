@@ -705,6 +705,44 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 #composer .fetch-status[data-kind="error"] { color: var(--danger); }
 #composer .fetch-status[data-kind="ok"] { color: #166534; }
 
+/* Inline alt-text editor that appears under the article's Logo URL row
+   once the article references a Logos & Media item. The label-as-row
+   above keeps the [hidden] toggle behavior — make sure that wins over
+   the .span-2 grid placement so toggling hidden actually removes it
+   from the flow. */
+#composer .logo-alt-row[hidden] { display: none; }
+#composer .logo-alt-row {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 10px;
+  align-items: center;
+  padding: 8px 10px;
+  margin-top: 4px;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+  background: rgba(26, 68, 128, 0.04);
+}
+#composer .logo-alt-row > .lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+#composer .logo-alt-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: white;
+}
+#composer .logo-alt-row .fetch-status {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; height: auto; }
   .form-pane { border-right: 0; border-bottom: 1px solid var(--border); }

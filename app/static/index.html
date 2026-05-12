@@ -197,6 +197,16 @@
         </div>
         <small class="fetch-status" data-role="logo-status"></small>
       </label>
+      <!-- Inline alt-text editor. Shown whenever the article holds a
+           Logos & Media reference (uploaded or favicon-registered) so the
+           editor can satisfy the Image-description requirement without
+           leaving the Article card. The input is bound to the media
+           item's ``alt_text`` via PUT /api/media/{id} on blur. -->
+      <label class="span-2 logo-alt-row" data-role="logo-alt-row" hidden>
+        <span class="lbl">Image description (required)</span>
+        <input type="text" data-role="logo-alt-text" placeholder="Briefly describe the image (e.g. 'Substack logo')" maxlength="240">
+        <small class="fetch-status" data-role="logo-alt-status"></small>
+      </label>
       <label class="span-2">Headline
         <input type="text" data-field="headline" required>
       </label>

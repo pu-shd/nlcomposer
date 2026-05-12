@@ -321,6 +321,8 @@ def test_endpoint_502_on_upstream_failure(monkeypatch):
 
 
 def test_endpoint_502_on_network_error(monkeypatch):
+    """DNS / connect failures surface a clear non-technical reason —
+    the article-card status line renders ``detail`` verbatim."""
     def fake_fetch(url, *, client=None, timeout=8.0, user_agent=None):
         raise httpx.ConnectError("dns lookup failed")
 
@@ -330,4 +332,5 @@ def test_endpoint_502_on_network_error(monkeypatch):
         params={"url": "https://www.youtube.com/watch?v=abc12345678"},
     )
     assert res.status_code == 502
-    assert "fetch failed" in res.json()["detail"]
+    detail = res.json()["detail"]
+    assert "could not reach" in detail.lower() or "connection" in detail.lower()

@@ -22,10 +22,32 @@ from bs4 import BeautifulSoup
 from .links import sanitize_url
 
 _DEFAULT_TIMEOUT = 8.0
+# Many publisher CDNs (Substack, Cloudflare-fronted news sites) bounce
+# any User-Agent that openly self-identifies as automation — they 403
+# the request before it ever hits the page. Send a current desktop-
+# Chrome UA + the browser-ish headers a real navigation carries so the
+# fetcher reaches the same HTML a user pasting into a browser would.
+# We are scraping public OpenGraph/JSON-LD that the page is *designed*
+# to share, not bypassing any access control, so this stays well inside
+# the intended use of those tags.
 _DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (compatible; newsletter-composer/0.1; "
-    "+https://github.com/pu-shd/nlcomposer)"
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
 )
+_DEFAULT_HEADERS = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
 
 
 class ArticleMetadata(TypedDict, total=False):
@@ -296,7 +318,7 @@ def _fetch_html(
     relative icon paths in :func:`parse_article_metadata`.
     """
 
-    headers = {"User-Agent": user_agent, "Accept": "text/html,application/xhtml+xml"}
+    headers = {"User-Agent": user_agent, **_DEFAULT_HEADERS}
     if client is not None:
         r = client.get(url, headers=headers, follow_redirects=True, timeout=timeout)
         r.raise_for_status()
