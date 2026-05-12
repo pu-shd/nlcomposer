@@ -1,0 +1,57 @@
+name: Deploy to Azure Container Apps
+
+# Manual-dispatch only. Mirrors `scripts/deploy.sh update`:
+#   1. server-side `az acr build` of the current repo tree
+#   2. `az containerapp update --image` against the running app
+# Required repo secrets (set by `scripts/deploy.sh setup`):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#   AZURE_RESOURCE_GROUP, AZURE_ACR_NAME, AZURE_ACA_APP
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to build and deploy"
+        required: false
+        default: "v1"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build & push image to ACR
+        run: |
+          az acr build \
+            --registry "${{ secrets.AZURE_ACR_NAME }}" \
+            --image "${{ secrets.AZURE_ACA_APP }}:${{ inputs.image_tag }}" \
+            --file Dockerfile \
+            .
+
+      - name: Update Container App
+        run: |
+          az containerapp update \
+            --name "${{ secrets.AZURE_ACA_APP }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ secrets.AZURE_ACR_NAME }}.azurecr.io/${{ secrets.AZURE_ACA_APP }}:${{ inputs.image_tag }}"
+
+      - name: Show new revision
+        run: |
+          az containerapp revision list \
+            --name "${{ secrets.AZURE_ACA_APP }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --query "[?properties.active].{name:name, created:properties.createdTime, image:properties.template.containers[0].image}" \
+            -o table
