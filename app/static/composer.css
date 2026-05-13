@@ -1560,6 +1560,10 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 .ql-editor p {
   font-weight: 400 !important;
+  margin-bottom: 12px;
+}
+.ql-editor p:last-child {
+  margin-bottom: 0;
 }
 .ql-editor strong, .ql-editor b {
   font-weight: 700 !important;
