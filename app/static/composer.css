@@ -755,7 +755,6 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-radius: 6px;
   background: var(--panel);
   margin-bottom: 0;
-  overflow: hidden;
 }
 #composer .article-card[draggable="true"] { cursor: grabbing; }
 #composer .article-card.dragging { opacity: 0.45; }
@@ -1502,7 +1501,6 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border: 1px solid var(--border);
   border-radius: 5px;
   background: white;
-  overflow: hidden;
 }
 
 /* Lighter twin of .static-richtext used by Intro Message / Pull quote
@@ -1514,7 +1512,6 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border: 1px solid var(--border);
   border-radius: 5px;
   background: white;
-  overflow: hidden;
 }
 
 /* Library picker — same row chrome as the main media list, but each
