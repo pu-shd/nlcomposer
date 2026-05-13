@@ -61,15 +61,15 @@
       <details>
         <summary>Issue Details</summary>
         <div class="grid-2">
-          <label class="span-2">Issue Title
+          <label class="span-2">Issue Title <span class="required-star">*</span>
             <input type="text" name="issue_title" required placeholder="BeijingAutoShow" value="BeijingAutoShow">
             <small class="field-error" data-error-for="issue_title" hidden>Issue Title is required.</small>
           </label>
-          <label>Issue Number
+          <label>Issue Number <span class="required-star">*</span>
             <input type="number" name="issue_number" required min="1" value="9">
             <small class="field-error" data-error-for="issue_number" hidden>Issue Number is required.</small>
           </label>
-          <label>Issue Date
+          <label>Issue Date <span class="required-star">*</span>
             <input type="date" name="issue_date" required>
           </label>
           <label hidden>Year (computed)
@@ -200,7 +200,10 @@
       <button type="button" class="btn-remove" aria-label="Remove">×</button>
     </summary>
     <div class="grid-2">
-      <label class="span-2">Article Link
+      <label class="span-2">Headline <span class="required-star">*</span>
+        <input type="text" data-field="headline" required>
+      </label>
+      <label class="span-2">Article Link <span class="required-star">*</span>
         <div class="row inline">
           <input type="url" data-field="url" required>
           <button type="button" class="btn ghost btn-fetch" data-action="fetch-article" title="Fetch headline / byline / excerpt / favicon from the URL">Fetch</button>
@@ -235,9 +238,6 @@
         <span class="lbl">Image description (required)</span>
         <input type="text" data-role="logo-alt-text" placeholder="Briefly describe the image (e.g. 'Substack logo')" maxlength="240">
         <small class="fetch-status" data-role="logo-alt-status"></small>
-      </label>
-      <label class="span-2">Headline
-        <input type="text" data-field="headline" required>
       </label>
       <label>Author/Byline
         <input type="text" data-field="byline" placeholder="P. Perspective">

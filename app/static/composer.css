@@ -1014,6 +1014,12 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   color: var(--muted);
   letter-spacing: 0.02em;
 }
+.required-star {
+  color: var(--danger);
+  font-weight: bold;
+  margin-left: 2px;
+  font-size: 1.1em;
+}
 #settings-dialog .settings-row > input,
 #settings-dialog .settings-row > textarea,
 #compose-new-dialog .settings-row > input,
