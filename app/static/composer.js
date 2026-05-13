@@ -562,6 +562,31 @@
     const showAltEditor = altEditor.show;
 
     const registerBtn = card.querySelector('[data-action="register-logo"]');
+    const uploadBtn = card.querySelector('[data-action="upload-logo"]');
+    const pickBtn = card.querySelector('[data-action="pick-logo"]');
+    const clearBtn = card.querySelector('[data-action="clear-logo"]');
+
+    const refreshLogoUI = () => {
+      const hasLogo = !!(logoInput?.value || mediaIdInput?.value);
+      if (logoInput) logoInput.hidden = hasLogo;
+      if (registerBtn) registerBtn.hidden = hasLogo;
+      if (uploadBtn) uploadBtn.hidden = hasLogo;
+      if (pickBtn) pickBtn.hidden = hasLogo;
+      if (clearBtn) clearBtn.hidden = !hasLogo;
+    };
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (logoInput) logoInput.value = '';
+        setLogoMedia(null);
+        showAltEditor(null);
+        setLogoStatus('');
+        refreshLogoUI();
+        schedulePreview();
+      });
+    }
+
     if (registerBtn) {
       registerBtn.addEventListener('click', async (e) => {
         e.preventDefault();
@@ -601,6 +626,7 @@
               : 'Registered — fill the Image description below.',
             'ok',
           );
+          refreshLogoUI();
           schedulePreview();
         } catch (err) {
           setLogoStatus('Network error: ' + err.message, 'error');
@@ -610,7 +636,6 @@
       });
     }
 
-    const uploadBtn = card.querySelector('[data-action="upload-logo"]');
     if (uploadBtn && fileInput) {
       uploadBtn.addEventListener('click', (e) => {
         e.preventDefault();
@@ -632,6 +657,7 @@
           setLogoMedia(item.id);
           showAltEditor(item);
           setLogoStatus('Uploaded — fill the Image description below.', 'ok');
+          refreshLogoUI();
           schedulePreview();
         } catch (err) {
           if (err instanceof Response) await surfaceUploadError(err, setLogoStatus);
@@ -643,7 +669,6 @@
       });
     }
 
-    const pickBtn = card.querySelector('[data-action="pick-logo"]');
     if (pickBtn) {
       pickBtn.addEventListener('click', (e) => {
         e.preventDefault();
@@ -668,11 +693,20 @@
             }
             showAltEditor(item);
             setLogoStatus(`Using "${item.alt_text || 'library item'}".`, 'ok');
+            refreshLogoUI();
             schedulePreview();
           },
         });
       });
     }
+
+    // Initial state
+    refreshLogoUI();
+
+    // Listen for manual URL edits or programmatic changes triggered
+    // via dispatchEvent.
+    logoInput?.addEventListener('change', refreshLogoUI);
+    mediaIdInput?.addEventListener('change', refreshLogoUI);
   };
 
   // ───────── Article reorder (drag & drop) ───────────────────────────
@@ -810,7 +844,10 @@
           if (regRes.ok) {
             const regItem = await regRes.json();
             const mediaEl = card.querySelector('[data-field="publication_logo_media_id"]');
-            if (mediaEl) mediaEl.value = String(regItem.id);
+            if (mediaEl) {
+              mediaEl.value = String(regItem.id);
+              mediaEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
             const altRow = card.querySelector('[data-role="logo-alt-row"]');
             const altInput = card.querySelector('[data-role="logo-alt-text"]');
             const altStatusEl = card.querySelector('[data-role="logo-alt-status"]');
@@ -828,6 +865,7 @@
           }
         } catch { /* non-fatal */ }
       }
+      if (logoEl) logoEl.dispatchEvent(new Event('change', { bubbles: true }));
       schedulePreview();
     } catch (e) {
       setFetchStatus('Network error: ' + e.message, 'error');
