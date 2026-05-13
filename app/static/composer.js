@@ -202,11 +202,22 @@
 
     // Sync Quill -> Textarea
     quill.on('text-change', () => {
-      const html = quill.root.innerHTML;
+      let html = quill.root.innerHTML;
       // Quill's "empty" is <p><br></p>; treat as blank.
-      const val = html === '<p><br></p>' ? '' : html;
-      if (textarea.value !== val) {
-        textarea.value = val;
+      if (html === '<p><br></p>') html = '';
+
+      if (scope.dataset.quillUnwrap === 'true' && html) {
+        // Unwrap paragraphs for inline fields (Pull quote / Comment).
+        // Convert internal <p> tags to <br><br> and strip the outer wrap.
+        // e.g. <p>A</p><p>B</p> -> A<br><br>B
+        html = html
+          .replace(/^<p>/i, '')
+          .replace(/<\/p>$/i, '')
+          .replace(/<\/p><p>/gi, '<br><br>');
+      }
+
+      if (textarea.value !== html) {
+        textarea.value = html;
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
       }
     });
