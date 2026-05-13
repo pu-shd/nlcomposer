@@ -90,6 +90,16 @@ def get_draft(conn: sqlite3.Connection, draft_id: int) -> Optional[Draft]:
     return _row_to_draft(row) if row else None
 
 
+def get_latest_draft(conn: sqlite3.Connection) -> Optional[Draft]:
+    """Return the most recently updated draft, or ``None`` if none exist."""
+    row = conn.execute(
+        "SELECT * FROM drafts ORDER BY updated_at DESC LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return None
+    return _row_to_draft(row)
+
+
 def create_draft(conn: sqlite3.Connection, data: DraftCreate) -> Draft:
     """Insert a new draft. Returns the persisted row."""
     now = _now_iso()

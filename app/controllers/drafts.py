@@ -17,11 +17,19 @@ from ..draft_store import (
     get_draft,
     list_drafts,
     update_draft,
+    get_latest_draft,
 )
 from .utils import or_404
 
 
 router = APIRouter(prefix="/api/drafts")
+
+
+@router.get("/latest", response_model=Draft)
+def api_get_latest_draft(
+    conn: sqlite3.Connection = Depends(get_db),
+) -> Draft:
+    return or_404(get_latest_draft(conn), "Latest draft")
 
 
 @router.get("", response_model=list[DraftSummary])

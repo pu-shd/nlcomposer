@@ -509,8 +509,15 @@
       <label class="settings-row">
         <span class="lbl">Autosave interval (sec)</span>
         <input type="number" name="autosave_interval_seconds" min="0" max="600" step="5">
-        <small class="field-hint">Background save of the in-progress issue as a draft. 0 disables.</small>
       </label>
+      <label class="settings-row settings-row-checkbox">
+        <span class="lbl">Session restoration</span>
+        <span class="settings-checkbox-field">
+          <input type="checkbox" name="load_last_draft_on_login">
+          <span>Load last saved draft on login</span>
+        </span>
+      </label>
+
       <label class="settings-row settings-row-checkbox">
         <span class="lbl">Auto-archive</span>
         <span class="settings-checkbox-field">

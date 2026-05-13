@@ -189,6 +189,15 @@
       placeholder: textarea.placeholder || '',
     });
 
+    // Prevent double-click from potentially triggering system-level or
+    // browser-level formatting (like Bold on macOS in some contexts).
+    // Selection itself is handled by the browser before this fires or
+    // via standard event bubbling; we just want to stop the event from
+    // reaching anything that might interpret it as a format toggle.
+    quill.root.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+    });
+
     // Sync Quill -> Textarea
     quill.on('text-change', () => {
       const html = quill.root.innerHTML;
@@ -2072,6 +2081,7 @@
     // autosave block further down — applySettingsToRuntime kicks
     // restartAutosave whenever this value changes.
     'autosave_interval_seconds',
+    'load_last_draft_on_login',
   ];
 
   const setSettingsStatus = statusSetter(settingsStatus);
@@ -2814,6 +2824,22 @@
     }
   };
 
+  const _applyDraftToForm = (draft) => {
+    loadIssueIntoForm(draft.payload || {});
+    const dateEl = form.elements['issue_date'];
+    if (dateEl && !dateEl.value) {
+      dateEl.value = new Date().toISOString().slice(0, 10);
+    }
+    // Hand the autosave loop the freshly-loaded draft so subsequent
+    // ticks PUT to *this* row instead of forking a separate Autosave
+    // — copy.
+    if (typeof stampAutosaveSaved === 'function') {
+      try { stampAutosaveSaved(draft.id, JSON.stringify(buildIssue())); } catch { /* ignore */ }
+    }
+    validateRequired();
+    doPreview();
+  };
+
   const loadDraft = async (id) => {
     setDraftsStatus('Loading…');
     try {
@@ -2823,22 +2849,21 @@
         return;
       }
       const draft = await res.json();
-      loadIssueIntoForm(draft.payload || {});
-      const dateEl = form.elements['issue_date'];
-      if (dateEl && !dateEl.value) {
-        dateEl.value = new Date().toISOString().slice(0, 10);
-      }
-      // Hand the autosave loop the freshly-loaded draft so subsequent
-      // ticks PUT to *this* row instead of forking a separate Autosave
-      // — copy.
-      if (typeof stampAutosaveSaved === 'function') {
-        try { stampAutosaveSaved(draft.id, JSON.stringify(buildIssue())); } catch { /* ignore */ }
-      }
+      _applyDraftToForm(draft);
       setDraftsStatus(`Loaded "${draft.name}"`, 'ok');
       setTimeout(closeDraftsDialog, 350);
     } catch (e) {
       setDraftsStatus('Network error: ' + e.message, 'error');
     }
+  };
+
+  const loadLatestDraft = async () => {
+    try {
+      const res = await fetch('/api/drafts/latest');
+      if (!res.ok) return;
+      const draft = await res.json();
+      _applyDraftToForm(draft);
+    } catch { /* ignore */ }
   };
 
   const deleteDraft = async (id, name) => {
@@ -3777,8 +3802,13 @@
 
   // Pull settings before the first preview so any saved defaults
   // (from_name/from_email/etc.) end up in the rendered .eml.
-  loadSettings().then((s) => {
-    if (s) applySettingsToForm(s);
+  loadSettings().then(async (s) => {
+    if (s) {
+      applySettingsToForm(s);
+      if (s.load_last_draft_on_login) {
+        await loadLatestDraft();
+      }
+    }
     validateRequired();
     doPreview();
     // applySettingsToForm called restartAutosave for us; seed the

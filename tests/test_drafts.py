@@ -403,3 +403,38 @@ def test_dropping_a_section_removes_it_from_form_sections(
     types = [s["type"] for s in fetched["payload"]["form_sections"]]
     assert "podcast" not in types
     assert types == ["articles", "static_blocks"]
+
+def test_get_latest_draft():
+    from app.draft_store import get_latest_draft
+    conn = connect()
+    init_db(conn)
+    try:
+        # None when empty
+        assert get_latest_draft(conn) is None
+        # Returns the only one
+        a = create_draft(conn, DraftCreate(name="A", payload={"a": 1}))
+        assert get_latest_draft(conn).id == a.id
+        # Returns the newest by updated_at
+        time.sleep(0.01)
+        b = create_draft(conn, DraftCreate(name="B", payload={"b": 1}))
+        assert get_latest_draft(conn).id == b.id
+        # Patching 'A' makes it newest
+        time.sleep(0.01)
+        update_draft(conn, a.id, DraftUpdate(name="A updated"))
+        assert get_latest_draft(conn).id == a.id
+    finally:
+        conn.close()
+
+
+def test_api_get_latest_draft(client: TestClient):
+    # 404 when empty
+    res = client.get("/api/drafts/latest")
+    assert res.status_code == 404
+
+    # Returns the newest
+    client.post("/api/drafts", json={"name": "A", "payload": {}})
+    time.sleep(0.01)
+    client.post("/api/drafts", json={"name": "B", "payload": {}})
+    res = client.get("/api/drafts/latest")
+    assert res.status_code == 200
+    assert res.json()["name"] == "B"

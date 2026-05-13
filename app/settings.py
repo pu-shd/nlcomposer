@@ -187,6 +187,10 @@ class AppSettings(BaseModel):
             "draft table is being inspected concurrently."
         ),
     )
+    load_last_draft_on_login: bool = Field(
+        default=True,
+        description="When True, the SPA fetches and loads the most recently updated draft on page load.",
+    )
 
 
 def _now_iso() -> str:
