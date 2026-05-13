@@ -704,21 +704,162 @@ def test_compose_form_does_not_render_sortable_handle_for_fixed_sections(client:
         )
 
 
-def test_composer_js_simulated_drag_reorders_section_dom():
-    """Simulate the post-drag DOM by walking the section-build pipeline
-    in two distinct orders and confirm form_sections preserves the order
-    the user sees on screen.
+def test_sortable_section_templates_carry_full_drag_handle_affordance(client: TestClient):
+    """The drag-handle on each sortable section template must carry the
+    full accessibility + iconography contract the CSS + JS rely on:
 
-    This is the closest static-analysis-only environment can get to a
-    headless-browser DnD test: we exercise the *invariant* that the
-    section ordering in #sortable-sections drives the form_sections
-    array, not source order in the markup.
+      - element class ``section-drag-handle`` (CSS visibility + cursor)
+      - ``aria-label`` so screen readers announce the affordance
+      - ``title`` so hovering reveals the affordance on desktop
+      - an inline ``<svg>`` grip icon (CSS sizes it to 14×18)
+
+    Regression net for the moment someone removes ``draggable="false"``
+    on the handle (it must default to false so clicks on the handle
+    don't *also* start a drag of the parent <summary>; mousedown flips
+    it to true at runtime — see wireSectionDragHandle).
     """
-    js_path = "/static/composer.js"  # noqa: F841 — referenced in comment
-    # Load JS body to confirm the pipeline contract; the actual DOM
-    # exercise happens through the API round-trip tests in test_drafts.py
-    # (which simulates a draft saved after a drag reorder).
-    assert True
+    body = client.get("/").text
+    for tpl_id in (
+        "articles-section-template",
+        "podcast-section-template",
+        "static-blocks-section-template",
+    ):
+        tpl_start = body.index(f'id="{tpl_id}"')
+        tpl_end = body.index("</template>", tpl_start)
+        tpl = body[tpl_start:tpl_end]
+        # Drag-handle element + a11y wiring
+        assert 'class="section-drag-handle"' in tpl, (
+            f"{tpl_id}: handle must be exactly the class CSS keys off of"
+        )
+        assert 'aria-label="Drag to reorder section"' in tpl, (
+            f"{tpl_id}: drag handle must announce itself to assistive tech"
+        )
+        assert 'title="Drag to reorder section"' in tpl, (
+            f"{tpl_id}: drag handle needs a hover tooltip"
+        )
+        # Inline grip icon — sized by CSS rule
+        # `#composer .sortable-section .section-drag-handle svg`
+        # (matches the dotted-grip style of the article-card handles).
+        handle_idx = tpl.index('class="section-drag-handle"')
+        handle_close = tpl.index("</span>", handle_idx)
+        handle = tpl[handle_idx:handle_close]
+        assert "<svg" in handle, (
+            f"{tpl_id}: drag handle must inline an SVG grip icon"
+        )
+        # The handle element itself must NOT be marked
+        # ``draggable="true"`` — wireSectionDragHandle flips the
+        # *parent* <details> section's `.draggable` on mousedown, so a
+        # draggable handle would race the section drag and produce a
+        # confused state. (Default for <span> is non-draggable, so no
+        # explicit ``draggable="false"`` is required; just absence of
+        # the true form.)
+        assert 'draggable="true"' not in handle, (
+            f"{tpl_id}: section-drag-handle must not be draggable=\"true\" — "
+            "wireSectionDragHandle drives the section drag, not the handle"
+        )
+
+
+def test_section_reorder_round_trips_through_draft_save_and_load(client: TestClient):
+    """Simulate a user dragging the Podcast section to sit above the
+    Articles section, then back-and-forth through the draft store. The
+    DOM-position invariant is encoded in ``form_sections`` — the
+    composer.js section walker preserves DOM order in that array and
+    loadIssueIntoForm rehydrates from it, so the surviving order in the
+    saved draft is the authoritative test of "the drag reorder stuck."
+    """
+    # Two saves of the same set of sections, with the form_sections
+    # array describing two different orders. /api/drafts round-trips
+    # the JSON payload verbatim — what we POST is what we get back.
+    base = {
+        "newsletter_name": "Test",
+        "issue_year": 14,
+        "issue_number": 9,
+        "issue_title": "Demo",
+        "issue_date": "2026-05-03",
+        "from_name": "x",
+        "from_email": "x@example.com",
+        "to_email": "y@example.com",
+        "articles": [
+            {"headline": "A", "url": "https://example.com/a"},
+        ],
+    }
+    payload_order_a = {
+        **base,
+        "form_sections": [
+            {"type": "articles", "id": "s-1", "count": 1},
+            {"type": "podcast", "id": "s-2", "enabled": True},
+            {"type": "static_blocks", "id": "s-3", "count": 0},
+        ],
+    }
+    payload_order_b = {
+        **base,
+        "form_sections": [
+            # Podcast first, then static_blocks, then articles.
+            {"type": "podcast", "id": "s-2", "enabled": True},
+            {"type": "static_blocks", "id": "s-3", "count": 0},
+            {"type": "articles", "id": "s-1", "count": 1},
+        ],
+    }
+
+    # Save order A.
+    a = client.post(
+        "/api/drafts", json={"name": "Order A", "payload": payload_order_a}
+    )
+    assert a.status_code == 201, a.text
+    a_id = a.json()["id"]
+    # Save order B.
+    b = client.post(
+        "/api/drafts", json={"name": "Order B", "payload": payload_order_b}
+    )
+    assert b.status_code == 201, b.text
+    b_id = b.json()["id"]
+
+    # Reload each and confirm the section order survived the round-trip
+    # — independently per draft, so the two saves don't bleed into one
+    # another.
+    a_got = client.get(f"/api/drafts/{a_id}").json()
+    b_got = client.get(f"/api/drafts/{b_id}").json()
+    a_order = [s["type"] for s in a_got["payload"]["form_sections"]]
+    b_order = [s["type"] for s in b_got["payload"]["form_sections"]]
+    assert a_order == ["articles", "podcast", "static_blocks"], a_order
+    assert b_order == ["podcast", "static_blocks", "articles"], b_order
+
+
+def test_section_reorder_does_not_change_rendered_article_position(client: TestClient):
+    """Moving a section in form_sections is a presentation-only choice
+    in the editor — articles still render in the order they appear in
+    NewsletterIssue.articles (a single flat list). This regression net
+    ensures we never accidentally start splicing articles into sections
+    in a way that depends on form_sections ordering."""
+    payload = {
+        "newsletter_name": "Test",
+        "issue_year": 14,
+        "issue_number": 9,
+        "issue_title": "Demo",
+        "issue_date": "2026-05-03",
+        "from_name": "x",
+        "from_email": "x@example.com",
+        "to_email": "y@example.com",
+        "articles": [
+            {"headline": "First", "url": "https://example.com/first"},
+            {"headline": "Second", "url": "https://example.com/second"},
+        ],
+        # form_sections puts podcast first, but the rendered HTML's
+        # articles block still has First above Second.
+        "form_sections": [
+            {"type": "podcast", "id": "s-2", "enabled": True},
+            {"type": "articles", "id": "s-1", "count": 2},
+        ],
+    }
+    res = client.post("/api/preview/html", json=payload)
+    assert res.status_code == 200, res.text
+    html = res.text
+    first_idx = html.index("First")
+    second_idx = html.index("Second")
+    assert first_idx < second_idx, (
+        "articles must render in NewsletterIssue.articles order regardless "
+        "of form_sections layout"
+    )
 
 
 # ───────── Highlights overhaul: template + JS wiring smoke checks ────

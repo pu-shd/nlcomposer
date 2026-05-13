@@ -6,6 +6,28 @@
  * "Download .eml" submits a hidden form so the browser handles the file save.
  */
 (() => {
+  // Session-expiry fetch wrapper. Easy Auth fronts the whole app; once
+  // the session cookie expires, the auth proxy responds to JSON-shaped
+  // API calls with a 401 and to HTML navigations with a 302 chain that
+  // ends at login.microsoftonline.com. Either way, leaving the page
+  // partly-alive after expiry surfaces as a confusing string of
+  // background errors — including the "Unsafe attempt to load URL …
+  // from frame …" complaint when a cross-origin redirect gets caught
+  // by the browser's iframe security policy. Catch the 401 once at
+  // the fetch boundary and trigger a top-level reload: Easy Auth then
+  // owns the OAuth dance at the parent-navigation level where it's
+  // allowed to redirect cross-origin.
+  const _nativeFetch = window.fetch.bind(window);
+  let _sessionReloadInFlight = false;
+  window.fetch = (input, init) =>
+    _nativeFetch(input, init).then((res) => {
+      if (res.status === 401 && !_sessionReloadInFlight) {
+        _sessionReloadInFlight = true;
+        window.location.reload();
+      }
+      return res;
+    });
+
   const form = document.getElementById('composer');
   const preview = document.getElementById('preview');
   const previewMeta = document.getElementById('preview-meta');
@@ -1156,12 +1178,35 @@
       schedulePreview();
     };
 
-    const renderSuggestions = (candidates) => {
+    const renderSuggestions = (candidates, ctx = {}) => {
       if (!dropdown) return;
       if (!candidates.length) {
-        dropdown.innerHTML = '<li class="hint">No matches — try fewer letters.</li>';
+        // Three distinct empty states — each gets actionable wording so
+        // the editor knows why the list is bare and what to do next.
+        const q = (ctx.q || '').trim();
+        const noCurrent = (ctx.inIssueTotal || 0) === 0;
+        const noArchive = (ctx.archiveTotal || 0) === 0;
+        let msg;
+        if (q && noArchive && noCurrent) {
+          msg = "No archived issues yet — download or send an issue to populate the archive, then highlights from past editions will appear here.";
+        } else if (q) {
+          // We DID find archive or in-issue articles, just nothing
+          // matching the user's substring.
+          msg = "No matches — try fewer letters.";
+        } else if (noArchive && noCurrent) {
+          msg = "No articles yet — add Articles to this issue or download a past issue to surface highlights from prior editions.";
+        } else if (noArchive) {
+          msg = "No archived issues yet — current-issue articles will show up here as you add them; past-edition highlights will appear once you send your first issue.";
+        } else {
+          // noCurrent && archive has entries — user just hasn't typed.
+          // The archive entries should have shown up; if they didn't,
+          // the fetch failed or returned empty for some other reason.
+          msg = "Start typing to search highlights from prior editions.";
+        }
+        dropdown.innerHTML = `<li class="hint">${_escHtml(msg)}</li>`;
         dropdown.hidden = false;
         searchInput.setAttribute('aria-expanded', 'true');
+        dropdown._candidates = null;
         return;
       }
       dropdown.innerHTML = candidates.map((c, i) => {
@@ -1187,13 +1232,16 @@
       const q = searchInput.value.trim();
       const seq = (_highlightSearchSeq.get(searchInput) || 0) + 1;
       _highlightSearchSeq.set(searchInput, seq);
-      const inIssue = _currentArticlesAsCandidates().filter((c) => {
-        if (!c.headline) return false;
-        if (!q) return true;
-        return c.headline.toLowerCase().includes(q.toLowerCase());
-      });
+      // inIssueTotal counts every visible article BEFORE we filter by
+      // the user's query — empty-state messages use the unfiltered
+      // totals so "no articles yet" vs "no matches" is distinguishable.
+      const inIssueAll = _currentArticlesAsCandidates().filter((c) => c.headline);
+      const inIssue = q
+        ? inIssueAll.filter((c) => c.headline.toLowerCase().includes(q.toLowerCase()))
+        : inIssueAll;
       const archive = await fetchArchiveCandidates(q);
       if (seq !== _highlightSearchSeq.get(searchInput)) return; // stale
+      const archiveTotal = archive.length;
       // Dedup by URL across both sources — the current issue wins when
       // an article happens to be both this week AND in a recent archive.
       const seen = new Set();
@@ -1204,7 +1252,25 @@
         seen.add(key);
         merged.push(c);
       }
-      renderSuggestions(merged.slice(0, 50));
+      // When the user hasn't typed yet, also probe the archive
+      // unfiltered so the empty-state message knows whether the archive
+      // has ANY entries at all. Skip the extra request if we already
+      // got results back to keep the input snappy.
+      let archiveAvailability = archiveTotal;
+      if (!q && archiveTotal === 0) {
+        try {
+          const probe = await fetch('/api/archive/highlight-candidates?limit=1');
+          if (probe.ok) {
+            const items = await probe.json();
+            archiveAvailability = items.length;
+          }
+        } catch { /* leave as 0 */ }
+      }
+      renderSuggestions(merged.slice(0, 50), {
+        q,
+        inIssueTotal: inIssueAll.length,
+        archiveTotal: archiveAvailability,
+      });
     };
 
     if (searchInput) {

@@ -154,7 +154,19 @@
       </button>
     </div>
     <div class="preview-frame">
-      <iframe id="preview" title="Newsletter preview"></iframe>
+      <!-- sandbox="allow-same-origin" lets the rendered newsletter HTML
+           reach our /api/media/{id}/content image endpoint as same-origin
+           (the masthead and Logos & Media thumbnails) but blocks every
+           form of navigation out of the iframe. Important: without this,
+           if the session cookie expires mid-edit, any cross-origin
+           redirect the rendered HTML triggers (e.g. a 302 chain that
+           ends at login.microsoftonline.com) gets caught by the browser
+           as "Unsafe attempt to load URL … from frame with URL …
+           Domains, protocols and ports must match." The sandbox prevents
+           the iframe from ever attempting that navigation in the first
+           place; session expiry now manifests through the session-
+           expiry fetch wrapper instead (force a top-level reload). -->
+      <iframe id="preview" title="Newsletter preview" sandbox="allow-same-origin" srcdoc=""></iframe>
     </div>
   </section>
 </main>
