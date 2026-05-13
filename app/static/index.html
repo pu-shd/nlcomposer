@@ -686,7 +686,11 @@
       <h2 id="media-picker-title">Pick from Logos &amp; Media</h2>
       <button type="button" class="btn-remove" id="media-picker-close" aria-label="Close">&times;</button>
     </header>
+    <div class="media-picker-search">
+      <input type="text" id="media-picker-search-input" placeholder="Search by title..." aria-label="Search logos and media">
+    </div>
     <p class="hint" id="media-picker-hint">Click an item to use it. Items missing an Image description are dimmed — set one in Logos &amp; Media before referencing.</p>
+
     <ul class="templates-list media-list" id="media-picker-list" aria-live="polite"></ul>
     <!-- Or fetch a brand-new asset by URL. The dialog uses its current
          kind (logo / image) for the POST, then PUTs the alt-text so

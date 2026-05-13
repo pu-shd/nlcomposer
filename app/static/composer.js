@@ -3378,16 +3378,28 @@
   const mediaPickerTitle = document.getElementById('media-picker-title');
   const mediaPickerUrlForm = document.getElementById('media-picker-url-form');
   const mediaPickerUrlStatus = document.getElementById('media-picker-url-status');
+  const mediaPickerSearchInput = document.getElementById('media-picker-search-input');
   const setMediaPickerUrlStatus = statusSetter(mediaPickerUrlStatus);
 
   let _pickerCallback = null;
+  let _pickerItems = [];
+  let _pickerKind = null;
 
   const setMediaPickerStatus = statusSetter(mediaPickerStatus);
 
   const renderPickerList = (items, kindFilter) => {
-    const filtered = items.filter((m) => !kindFilter || m.kind === kindFilter);
+    const query = (mediaPickerSearchInput?.value || '').toLowerCase().trim();
+    const filtered = items.filter((m) => {
+      const matchKind = !kindFilter || m.kind === kindFilter;
+      const matchQuery = !query || (m.alt_text || '').toLowerCase().includes(query);
+      return matchKind && matchQuery;
+    });
+
     if (filtered.length === 0) {
-      mediaPickerList.innerHTML = `<li class="hint">No ${kindFilter || 'media'} entries yet — add one in Logos & Media first.</li>`;
+      const msg = query
+        ? `No matches for "${query}".`
+        : `No ${kindFilter || 'media'} entries yet — add one in Logos & Media first.`;
+      mediaPickerList.innerHTML = `<li class="hint">${msg}</li>`;
       return;
     }
     mediaPickerList.innerHTML = filtered.map((m) => {
@@ -3409,13 +3421,15 @@
     }).join('');
   };
 
-  // Track the picker's current `kind` so the URL-fetch form below
-  // knows what to POST. Set on every openLibraryPicker, cleared on
-  // close so a stale value doesn't slip into a later URL fetch.
-  let _pickerKind = null;
+  // Track the picker's current `kind` and items so the URL-fetch form
+  // and search input know what to work with. Set on every
+  // openLibraryPicker, cleared on close so stale values don't slip
+  // into a later interaction.
   const openLibraryPicker = async ({ kind, title, onPick }) => {
     _pickerCallback = onPick;
     _pickerKind = kind || null;
+    _pickerItems = [];
+    if (mediaPickerSearchInput) mediaPickerSearchInput.value = '';
     if (mediaPickerTitle) mediaPickerTitle.textContent = title || 'Pick from Logos & Media';
     if (mediaPickerHint) {
       mediaPickerHint.textContent =
@@ -3432,13 +3446,17 @@
       const res = await fetch('/api/media');
       if (!res.ok) {
         setMediaPickerStatus(`List failed: ${res.status}`, 'error');
+        _pickerItems = [];
         renderPickerList([], kind);
       } else {
-        renderPickerList(await res.json(), kind);
+        _pickerItems = await res.json();
+        renderPickerList(_pickerItems, kind);
         setMediaPickerStatus('');
+        mediaPickerSearchInput?.focus();
       }
     } catch (err) {
       setMediaPickerStatus('Network error: ' + err.message, 'error');
+      _pickerItems = [];
       renderPickerList([], kind);
     }
     openDialog(mediaPickerDialog);
@@ -3447,8 +3465,14 @@
   const closeLibraryPicker = () => {
     _pickerCallback = null;
     _pickerKind = null;
+    _pickerItems = [];
+    if (mediaPickerSearchInput) mediaPickerSearchInput.value = '';
     closeDialog(mediaPickerDialog);
   };
+
+  mediaPickerSearchInput?.addEventListener('input', () => {
+    renderPickerList(_pickerItems, _pickerKind);
+  });
 
   mediaPickerList.addEventListener('click', async (e) => {
     const row = e.target.closest('.media-row');
