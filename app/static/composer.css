@@ -115,17 +115,10 @@ html, body {
 }
 .btn.btn-with-icon svg { width: 14px; height: 14px; flex: 0 0 auto; }
 
-/* Section "+ Add …" buttons stick to the bottom-right of the form-pane
-   viewport while their containing <details> body is in scroll range,
-   so adding a new article/block/highlight is one click away even when
-   the section already has many entries scrolled past the top. The
-   form-pane is the scrolling ancestor (overflow-y: auto), so sticky
-   resolves against it; once the user scrolls past the section's body,
-   the button releases and the next section's button takes over. */
+/* Section "+ Add …" buttons live at the bottom-right of their containing
+   <details> body. They scroll with the content so they don't float
+   over other items in the section. */
 .btn.add {
-  position: sticky;
-  bottom: 12px;
-  z-index: 5;
   display: block;
   width: fit-content;
   margin: 8px 0 0 auto;
@@ -137,7 +130,6 @@ html, body {
   font-weight: 600;
   font-size: 13px;
   letter-spacing: 0.01em;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
   cursor: pointer;
 }
 .btn.add:hover {
