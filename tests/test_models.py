@@ -229,7 +229,11 @@ def test_highlights_grouped_separates_in_issue_from_archive():
     assert groups[1]["refs"][0].cached_url == "https://example.com/older"
 
 
-def test_highlights_grouped_orders_archive_groups_newest_first():
+def test_highlights_grouped_preserves_drag_order_across_groups():
+    """Group ordering follows the editor's drag order: whichever group
+    contributes its first ref earliest appears first in the rendered
+    output. This is the new contract — date-desc was the previous
+    behavior but it overrode the user's intentional ordering choices."""
     from app.models import HighlightRef
 
     issue = _minimal_issue(
@@ -251,11 +255,35 @@ def test_highlights_grouped_orders_archive_groups_newest_first():
         ]
     )
     groups = issue.highlights_grouped()
-    # No in-issue refs → no "This issue" bucket at the top; archive
-    # groups sort newest-first.
     assert len(groups) == 2
-    assert groups[0]["date"] == date(2026, 1, 1)
-    assert groups[1]["date"] == date(2025, 1, 1)
+    # First-occurrence (drag) order: the 2025 ref came first → group A.
+    assert groups[0]["date"] == date(2025, 1, 1)
+    assert groups[1]["date"] == date(2026, 1, 1)
+
+
+def test_highlights_grouped_supports_archive_above_in_issue():
+    """When an archive ref is dragged above all in-issue refs, the
+    archive group renders first. The "This issue" bucket is no longer
+    pinned to the top — drag order owns it."""
+    from app.models import HighlightRef
+
+    issue = _minimal_issue(
+        [
+            HighlightRef(
+                source_archive_id=1,
+                source_article_index=0,
+                cached_headline="Older recap",
+                cached_url="https://example.com/older",
+                cached_issue_date=date(2025, 5, 1),
+                cached_issue_title="MayLast",
+            ),
+            HighlightRef(article_index=0),
+        ]
+    )
+    groups = issue.highlights_grouped()
+    assert len(groups) == 2
+    assert "May" in groups[0]["label"]
+    assert groups[1]["label"] == "This issue"
 
 
 def test_highlights_grouped_dedups_by_url_within_group():

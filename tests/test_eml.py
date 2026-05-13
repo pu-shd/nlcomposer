@@ -236,3 +236,34 @@ def test_render_html_omits_subheadings_when_only_current_issue(sample_issue):
     assert ">Highlights<" in html
     # No "This issue" sub-heading when there's only one group.
     assert ">This issue<" not in html
+
+
+# ───────── Inline rich text in intro / pull_quote / alain_comment ────
+
+
+def test_render_html_passes_intro_pull_quote_and_comment_through_safe(sample_issue):
+    """Intro Message, Pull quote, and Comment now accept inline HTML
+    from the composer's basic rich-text toolbar (bold / italic / link).
+    The template must render them with the |safe filter so the
+    wrapping <strong> / <em> / <a> survives the round-trip — without
+    that, Jinja's autoescape would print the literal angle brackets
+    and the toolbar would be useless."""
+    from app.models import Article
+    issue = sample_issue.model_copy(
+        update={
+            "intro_html": "Hello <strong>everyone</strong>!",
+            "articles": [
+                Article(
+                    headline="A",
+                    url="https://example.com/a",
+                    pull_quote="quote with <em>emphasis</em>",
+                    alain_comment="comment with <a href=\"https://example.com/x\">link</a>",
+                )
+            ],
+        }
+    )
+    html = render_html(issue)
+    # Wrappers survive — Jinja didn't escape them into &lt;strong&gt;.
+    assert "Hello <strong>everyone</strong>!" in html
+    assert "quote with <em>emphasis</em>" in html
+    assert '<a href="https://example.com/x">link</a>' in html

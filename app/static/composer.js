@@ -250,6 +250,13 @@
     }
     wireArticleLogoActions(node);
     wireArticleDragHandle(node);
+    // Bold / Italic / Link toolbars for the two inline rich-text
+    // fields on the article card (Pull quote + Comment). Both render
+    // through the |safe filter in the Jinja template, so the wrapping
+    // <strong> / <em> / <a> the toolbar inserts survives the round-trip.
+    node.querySelectorAll('[data-rt-scope]').forEach((scope) => {
+      wireBasicRichtextToolbar(scope);
+    });
     targetContainer.appendChild(node);
     renumber();
 
@@ -925,6 +932,67 @@
   // (escapeHtml is defined in the dialogs section further down — at
   // toolbar click time the IIFE has fully run, so the closure resolves
   // it correctly. No local twin needed.)
+
+  // ───────── Basic rich-text toolbar (intro / pull_quote / comment) ──
+  // Lighter-weight twin of wireStaticRichtext: same Bold / Italic /
+  // Link controls but no Heading or Image action (those make sense in
+  // the static-block sponsor-style body, not in inline copy fields).
+  // Attach by passing the scope element that contains the toolbar +
+  // the textarea. Toolbar clicks wrap the current selection with the
+  // corresponding HTML tag; the template renders the field with
+  // |safe so wrapping survives the round-trip.
+  const wireBasicRichtextToolbar = (scope) => {
+    if (!scope) return;
+    const textarea = scope.querySelector('textarea');
+    if (!textarea) return;
+    const statusEl = scope.parentElement?.querySelector('[data-role="rt-status"]')
+      || scope.querySelector('[data-role="rt-status"]');
+    const setStatus = (msg, kind = 'info') => {
+      if (!statusEl) return;
+      statusEl.textContent = msg || '';
+      statusEl.dataset.kind = kind;
+    };
+    const insertAtSelection = (before, selection, after) => {
+      const start = textarea.selectionStart ?? textarea.value.length;
+      const end = textarea.selectionEnd ?? start;
+      const value = textarea.value;
+      const inserted = `${before}${selection}${after}`;
+      textarea.value = value.slice(0, start) + inserted + value.slice(end);
+      const caret = start + inserted.length;
+      textarea.setSelectionRange(caret, caret);
+      textarea.focus();
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const wrapSelection = (open, close) => {
+      const start = textarea.selectionStart ?? textarea.value.length;
+      const end = textarea.selectionEnd ?? start;
+      const sel = textarea.value.slice(start, end);
+      insertAtSelection(open, sel, close);
+    };
+    scope.querySelectorAll('[data-rt-action]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const action = btn.dataset.rtAction;
+        if (action === 'bold') wrapSelection('<strong>', '</strong>');
+        else if (action === 'italic') wrapSelection('<em>', '</em>');
+        else if (action === 'link') {
+          const url = window.prompt('Link URL:', 'https://');
+          if (!url) return;
+          const safe = sanitizeUrl(url.trim());
+          const start = textarea.selectionStart ?? textarea.value.length;
+          const end = textarea.selectionEnd ?? start;
+          const sel = textarea.value.slice(start, end);
+          const text = sel || safe;
+          insertAtSelection(
+            '',
+            `<a href="${escapeHtml(safe)}">${escapeHtml(text)}</a>`,
+            '',
+          );
+          setStatus('Link inserted.', 'ok');
+        }
+      });
+    });
+  };
 
   // ───────── Sortable section management ────────────────────────────
   // Sections (Articles / Podcast / Static blocks) live in #sortable-
@@ -3345,6 +3413,13 @@
   const mediaPickerStatus = document.getElementById('media-picker-status');
   const mediaPickerHint = document.getElementById('media-picker-hint');
   const mediaPickerTitle = document.getElementById('media-picker-title');
+  const mediaPickerUrlForm = document.getElementById('media-picker-url-form');
+  const mediaPickerUrlStatus = document.getElementById('media-picker-url-status');
+  const setMediaPickerUrlStatus = (msg, kind = 'info') => {
+    if (!mediaPickerUrlStatus) return;
+    mediaPickerUrlStatus.textContent = msg || '';
+    mediaPickerUrlStatus.dataset.kind = kind;
+  };
 
   let _pickerCallback = null;
 
@@ -3379,12 +3454,23 @@
     }).join('');
   };
 
+  // Track the picker's current `kind` so the URL-fetch form below
+  // knows what to POST. Set on every openLibraryPicker, cleared on
+  // close so a stale value doesn't slip into a later URL fetch.
+  let _pickerKind = null;
   const openLibraryPicker = async ({ kind, title, onPick }) => {
     _pickerCallback = onPick;
+    _pickerKind = kind || null;
     if (mediaPickerTitle) mediaPickerTitle.textContent = title || 'Pick from Logos & Media';
     if (mediaPickerHint) {
       mediaPickerHint.textContent =
         'Click an item to use it. Items missing an Image description are dimmed — set one in Logos & Media before referencing.';
+    }
+    // Reset the URL-fetch form so values from the last open don't
+    // bleed across.
+    if (mediaPickerUrlForm) {
+      mediaPickerUrlForm.reset();
+      setMediaPickerUrlStatus('');
     }
     setMediaPickerStatus('Loading…');
     try {
@@ -3409,6 +3495,7 @@
 
   const closeLibraryPicker = () => {
     _pickerCallback = null;
+    _pickerKind = null;
     if (typeof mediaPickerDialog.close === 'function') {
       mediaPickerDialog.close();
     } else {
@@ -3436,6 +3523,68 @@
       setMediaPickerStatus('Network error: ' + err.message, 'error');
     }
   });
+
+  if (mediaPickerUrlForm) {
+    mediaPickerUrlForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(mediaPickerUrlForm);
+      const url = trim(fd.get('url') || '');
+      const altText = trim(fd.get('alt_text') || '');
+      if (!url) {
+        setMediaPickerUrlStatus('URL is required.', 'error');
+        return;
+      }
+      if (!altText) {
+        setMediaPickerUrlStatus('Image description is required.', 'error');
+        return;
+      }
+      if (!_pickerKind) {
+        // Defensive: the picker should always carry a kind, but bail
+        // cleanly if it doesn't rather than POSTing nonsense.
+        setMediaPickerUrlStatus('Picker is missing a kind context.', 'error');
+        return;
+      }
+      setMediaPickerUrlStatus('Fetching…');
+      try {
+        // Step 1: register / upsert the URL in Logos & Media. Idempotent
+        // on URL, so re-submitting the same URL returns the existing
+        // row (kind preserved). The endpoint 403s when
+        // AppSettings.media_url_imports_enabled is off — surface that
+        // verbatim.
+        const regRes = await fetch('/api/media', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: _pickerKind, url: sanitizeUrl(url) }),
+        });
+        if (!regRes.ok) {
+          let detail = '';
+          try { detail = (await regRes.json()).detail || ''; } catch { /* ignore */ }
+          setMediaPickerUrlStatus(`${regRes.status}: ${detail || regRes.statusText}`, 'error');
+          return;
+        }
+        let item = await regRes.json();
+        // Step 2: stamp the Image description so the picker's
+        // onPick consumer doesn't get blocked on empty alt_text.
+        // Skip when the existing row already had a non-empty
+        // description (preserve operator intent).
+        if (!(item.alt_text || '').trim()) {
+          const altRes = await fetch(`/api/media/${item.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alt_text: altText }),
+          });
+          if (altRes.ok) {
+            item = await altRes.json();
+          }
+        }
+        const cb = _pickerCallback;
+        closeLibraryPicker();
+        if (cb) cb(item);
+      } catch (err) {
+        setMediaPickerUrlStatus('Network error: ' + err.message, 'error');
+      }
+    });
+  }
 
   document.getElementById('media-picker-close').addEventListener('click', (e) => {
     e.preventDefault();
@@ -3728,6 +3877,15 @@
       resetAutosaveTarget();
     }, { capture: true });
   }
+
+  // Wire the static-form rich-text toolbars (Intro Message lives in
+  // Issue Details — not cloned from a template, so addArticle's
+  // querySelectorAll loop won't pick it up). Anything inside the
+  // composer <form> that carries data-rt-scope and a sibling textarea
+  // gets the same toolbar wiring.
+  form.querySelectorAll('[data-rt-scope]').forEach((scope) => {
+    wireBasicRichtextToolbar(scope);
+  });
 
   // Pull settings before the first preview so any saved defaults
   // (from_name/from_email/etc.) end up in the rendered .eml.

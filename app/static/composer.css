@@ -1493,6 +1493,51 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   width: 100%;
 }
 
+/* Lighter twin of .static-richtext used by Intro Message / Pull quote
+   / Comment toolbars. Same Bold / Italic / Link buttons but a more
+   compact chrome that fits inline copy fields. Re-uses the same
+   border treatment so the textarea looks consistent with the surrounding
+   form. */
+#composer .rt-field {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: white;
+  overflow: hidden;
+}
+#composer .rt-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 3px 5px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+#composer .rt-tool {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  min-width: 26px;
+}
+#composer .rt-tool:hover {
+  background: white;
+  border-color: var(--border);
+  color: var(--accent);
+}
+#composer .rt-tool:active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+#composer .rt-field textarea {
+  border: 0;
+  border-radius: 0;
+  width: 100%;
+}
+
 /* Library picker — same row chrome as the main media list, but each
    row is itself a button (Use) so picking is one click. The picker is
    reused by Article Logo + Static-block image-embed flows. */

@@ -61,71 +61,79 @@
   </td></tr>
   {%- endif %}
 
-  {# ── ARTICLES ────────────────────────────────────────────────────── #}
-  {%- for article in issue.articles %}
-  <tr><td class="article-pad" style="padding:18px 16px 0 16px;">
-    <h3 class="article-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:18px;margin:0 0 6px 0;line-height:1.25;">
-      {%- if article.publication_logo_media_id %}
-        {# Preview-time render of an uploaded article logo. Mail-client
-           inline embedding is the planned `embed_all_media` work. #}
-        <img class="pub-icon" src="/api/media/{{ article.publication_logo_media_id }}/content" alt="" width="20" height="20" style="vertical-align:middle;margin-right:6px;border:0;">
-      {%- elif article.publication_logo_url %}
-        <img class="pub-icon" src="{{ article.publication_logo_url }}" alt="" width="20" height="20" style="vertical-align:middle;margin-right:6px;border:0;">
-      {%- endif %}
-      <a href="{{ article.url }}" style="color:#1a4480;text-decoration:none;">{{ article.headline }}</a>
-    </h3>
-    <div class="article-body" style="font-size:14px;line-height:1.5;color:#222;">
-      {%- set parts = [] %}
-      {%- if article.byline %}{% set _ = parts.append(article.byline) %}{% endif %}
-      {%- if article.date_text %}{% set _ = parts.append(article.date_text) %}{% endif %}
-      {%- if parts %}<span>{{ parts | join(', ') }},</span> {% endif %}
-      {%- if article.pull_quote %}
-        <span>&ldquo;{{ article.pull_quote }}&rdquo;</span>
-      {%- endif %}
-      {%- if issue.include_read_more_link %}
-      <a href="{{ article.effective_read_more_url() }}" style="color:#1a4480;">{{ article.read_more_label }}</a>
-      {%- endif %}
-      {%- if article.alain_comment %}
-        <span style="color:#b91c1c;font-style:italic;"> Hmmmm&hellip; {{ article.alain_comment }} Alain</span>
-      {%- endif %}
-    </div>
-  </td></tr>
-  {%- endfor %}
-
-  {# ── PODCAST ─────────────────────────────────────────────────────── #}
-  {%- if issue.podcast %}
-  {%- set p = issue.podcast %}
-  <tr><td class="podcast-pad" style="padding:24px 16px 0 16px;">
-    <h3 class="podcast-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:18px;margin:0 0 6px 0;">
-      {{ issue.newsletter_name }}
-      {%- if p.zoomcast_url %} <a href="{{ p.zoomcast_url }}" style="color:#1a4480;">ZoomCast{% if p.episode_number %} {{ p.episode_number }}{% endif %}</a> /{% endif %}
-      {%- if p.podcast_url %} <a href="{{ p.podcast_url }}" style="color:#1a4480;">Podcasts{% if p.episode_number %} {{ p.episode_number }}{% endif %}</a>{% endif %}
-      {%- if p.guest %} - w/{{ p.guest }}{% endif %}
-    </h3>
-    {%- if p.title %}
-      <p class="podcast-title" style="margin:0 0 6px 0;font-size:15px;font-weight:bold;">{{ p.title }}</p>
-    {%- endif %}
-    {%- if p.summary %}
-      <p class="podcast-summary" style="margin:0 0 8px 0;font-size:14px;line-height:1.45;">{{ p.summary }}</p>
-    {%- endif %}
-    {%- if p.timecodes %}
-    <ul class="podcast-list" style="margin:0;padding-left:20px;font-size:14px;line-height:1.5;">
-      {%- for tc in p.timecodes %}
-      <li><a href="{{ tc.url }}" style="color:#1a4480;">{{ tc.timecode }}</a> {{ tc.label }}</li>
+  {# ── BODY: articles / podcast / static blocks in form_sections order  #}
+  {# rendered_sections() yields the user's dragged section order. With no
+     form_sections payload the helper falls back to the legacy fixed
+     order (articles → podcast → static blocks) so older drafts and any
+     direct API caller still render exactly as before. #}
+  {%- for section in issue.rendered_sections() %}
+    {%- if section.type == "articles" %}
+      {%- for article in section.articles %}
+      <tr><td class="article-pad" style="padding:18px 16px 0 16px;">
+        <h3 class="article-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:18px;margin:0 0 6px 0;line-height:1.25;">
+          {%- if article.publication_logo_media_id %}
+            {# Preview-time render of an uploaded article logo. Mail-client
+               inline embedding is the planned `embed_all_media` work. #}
+            <img class="pub-icon" src="/api/media/{{ article.publication_logo_media_id }}/content" alt="" width="20" height="20" style="vertical-align:middle;margin-right:6px;border:0;">
+          {%- elif article.publication_logo_url %}
+            <img class="pub-icon" src="{{ article.publication_logo_url }}" alt="" width="20" height="20" style="vertical-align:middle;margin-right:6px;border:0;">
+          {%- endif %}
+          <a href="{{ article.url }}" style="color:#1a4480;text-decoration:none;">{{ article.headline }}</a>
+        </h3>
+        <div class="article-body" style="font-size:14px;line-height:1.5;color:#222;">
+          {%- set parts = [] %}
+          {%- if article.byline %}{% set _ = parts.append(article.byline) %}{% endif %}
+          {%- if article.date_text %}{% set _ = parts.append(article.date_text) %}{% endif %}
+          {%- if parts %}<span>{{ parts | join(', ') }},</span> {% endif %}
+          {%- if article.pull_quote %}
+            {# pull_quote accepts inline HTML (bold/italic/link via the
+               composer's rich-text toolbar). Curly quotes wrap the
+               content, which itself is honored as-is. #}
+            <span>&ldquo;{{ article.pull_quote | safe }}&rdquo;</span>
+          {%- endif %}
+          {%- if issue.include_read_more_link %}
+          <a href="{{ article.effective_read_more_url() }}" style="color:#1a4480;">{{ article.read_more_label }}</a>
+          {%- endif %}
+          {%- if article.alain_comment %}
+            {# alain_comment is also rich-text — same toolbar wraps. #}
+            <span style="color:#b91c1c;font-style:italic;"> Hmmmm&hellip; {{ article.alain_comment | safe }} Alain</span>
+          {%- endif %}
+        </div>
+      </td></tr>
       {%- endfor %}
-    </ul>
+    {%- elif section.type == "podcast" %}
+      {%- set p = section.podcast %}
+      <tr><td class="podcast-pad" style="padding:24px 16px 0 16px;">
+        <h3 class="podcast-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:18px;margin:0 0 6px 0;">
+          {{ issue.newsletter_name }}
+          {%- if p.zoomcast_url %} <a href="{{ p.zoomcast_url }}" style="color:#1a4480;">ZoomCast{% if p.episode_number %} {{ p.episode_number }}{% endif %}</a> /{% endif %}
+          {%- if p.podcast_url %} <a href="{{ p.podcast_url }}" style="color:#1a4480;">Podcasts{% if p.episode_number %} {{ p.episode_number }}{% endif %}</a>{% endif %}
+          {%- if p.guest %} - w/{{ p.guest }}{% endif %}
+        </h3>
+        {%- if p.title %}
+          <p class="podcast-title" style="margin:0 0 6px 0;font-size:15px;font-weight:bold;">{{ p.title }}</p>
+        {%- endif %}
+        {%- if p.summary %}
+          <p class="podcast-summary" style="margin:0 0 8px 0;font-size:14px;line-height:1.45;">{{ p.summary }}</p>
+        {%- endif %}
+        {%- if p.timecodes %}
+        <ul class="podcast-list" style="margin:0;padding-left:20px;font-size:14px;line-height:1.5;">
+          {%- for tc in p.timecodes %}
+          <li><a href="{{ tc.url }}" style="color:#1a4480;">{{ tc.timecode }}</a> {{ tc.label }}</li>
+          {%- endfor %}
+        </ul>
+        {%- endif %}
+      </td></tr>
+    {%- elif section.type == "static_blocks" %}
+      {%- for block in section.blocks if block.enabled %}
+      <tr><td class="static-pad" style="padding:24px 16px 0 16px;font-size:14px;line-height:1.5;">
+        {%- if block.title %}
+        <h3 class="static-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:16px;margin:0 0 6px 0;color:#1a4480;">{{ block.title }}</h3>
+        {%- endif %}
+        {{ block.html | safe }}
+      </td></tr>
+      {%- endfor %}
     {%- endif %}
-  </td></tr>
-  {%- endif %}
-
-  {# ── STATIC BLOCKS (sponsor / book / conferences) ────────────────── #}
-  {%- for block in issue.static_blocks if block.enabled %}
-  <tr><td class="static-pad" style="padding:24px 16px 0 16px;font-size:14px;line-height:1.5;">
-    {%- if block.title %}
-    <h3 class="static-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:16px;margin:0 0 6px 0;color:#1a4480;">{{ block.title }}</h3>
-    {%- endif %}
-    {{ block.html | safe }}
-  </td></tr>
   {%- endfor %}
 
   {# ── BOTTOM HIGHLIGHTS REPEAT ────────────────────────────────────── #}

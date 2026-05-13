@@ -9,19 +9,21 @@
 {{ issue.intro_html | striptags }}
 
 {% endif -%}
-{% for article in issue.articles -%}
+{% for section in issue.rendered_sections() -%}
+{% if section.type == "articles" -%}
+{% for article in section.articles -%}
 === {{ article.headline }} ===
 {{ article.url }}
 {% if article.byline %}{{ article.byline }}{% if article.date_text %}, {{ article.date_text }}{% endif %}{% endif %}
-{% if article.pull_quote %}"{{ article.pull_quote }}"{% endif %}
+{% if article.pull_quote %}"{{ article.pull_quote | striptags }}"{% endif %}
 {% if issue.include_read_more_link %}{{ article.read_more_label }}: {{ article.effective_read_more_url() }}
 {% endif -%}
-{% if article.alain_comment %}Hmmmm... {{ article.alain_comment }} -Alain{% endif %}
+{% if article.alain_comment %}Hmmmm... {{ article.alain_comment | striptags }} -Alain{% endif %}
 
 {% endfor -%}
-{% if issue.podcast -%}
+{% elif section.type == "podcast" -%}
 --- {{ issue.newsletter_name }} Podcast ---
-{% set p = issue.podcast -%}
+{% set p = section.podcast -%}
 {% if p.title %}{{ p.title }}{% endif %}
 {% if p.zoomcast_url %}ZoomCast: {{ p.zoomcast_url }}{% endif %}
 {% if p.podcast_url %}Podcasts: {{ p.podcast_url }}{% endif %}
@@ -30,19 +32,26 @@
   {{ tc.timecode }} {{ tc.label }} ({{ tc.url }})
 {%- endfor %}
 
-{% endif -%}
-{% for block in issue.static_blocks if block.enabled -%}
+{% elif section.type == "static_blocks" -%}
+{% for block in section.blocks if block.enabled -%}
 {% if block.title %}--- {{ block.title }} ---{% endif %}
 {{ block.html | striptags }}
 
 {% endfor -%}
+{% endif -%}
+{% endfor -%}
 {% if issue.highlights -%}
 --- Highlights ---
-{% for h in issue.highlights -%}
-{% if h.article_index < issue.articles | length -%}
-{% set a = issue.articles[h.article_index] -%}
-* {{ h.override_label or a.headline }} — {{ a.url }}
+{% for group in issue.highlights_grouped() -%}
+{% if issue.highlights_grouped() | length > 1 %}
+* {{ group.label }} *
 {% endif -%}
+{% for h in group.refs -%}
+{% set _label = h.display_label(issue.articles) -%}
+{% set _url = h.display_url(issue.articles) -%}
+{% if _label and _url %}* {{ _label }} — {{ _url }}
+{% endif -%}
+{% endfor -%}
 {% endfor %}
 {% endif -%}
 {% if issue.footer_html -%}

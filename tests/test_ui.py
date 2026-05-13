@@ -197,9 +197,13 @@ def test_topbar_uses_hamburger_menu_for_drafts_and_archive(client: TestClient):
 
 def test_topbar_renames_download_and_replaces_reset_with_compose_new(client: TestClient):
     body = client.get("/").text
-    # Download .eml -> Download (the .eml extension was redundant
-    # given the icon-styling and download-attribute filename).
-    assert ">Download<" in body
+    # "Download" → "Download & Archive": clicking the button writes
+    # the issue to the archive table in the same request, so the new
+    # label makes the side effect explicit at the click target.
+    assert ">Download &amp; Archive<" in body, (
+        "topbar Download button should read 'Download & Archive' so the "
+        "side-effect of archiving is visible at click time"
+    )
     assert "Download .eml" not in body
     # Reset is gone; a Compose-new button takes its place and opens
     # a custom dialog (so we don't lose work to a confirm()).
@@ -825,12 +829,11 @@ def test_section_reorder_round_trips_through_draft_save_and_load(client: TestCli
     assert b_order == ["podcast", "static_blocks", "articles"], b_order
 
 
-def test_section_reorder_does_not_change_rendered_article_position(client: TestClient):
-    """Moving a section in form_sections is a presentation-only choice
-    in the editor — articles still render in the order they appear in
-    NewsletterIssue.articles (a single flat list). This regression net
-    ensures we never accidentally start splicing articles into sections
-    in a way that depends on form_sections ordering."""
+def test_section_reorder_preserves_article_ordering_within_articles_section(client: TestClient):
+    """Within an Articles section, articles still appear in
+    NewsletterIssue.articles slice order — the section can move
+    around relative to other section types but the internal article
+    sequence is the model's flat list."""
     payload = {
         "newsletter_name": "Test",
         "issue_year": 14,
@@ -844,8 +847,6 @@ def test_section_reorder_does_not_change_rendered_article_position(client: TestC
             {"headline": "First", "url": "https://example.com/first"},
             {"headline": "Second", "url": "https://example.com/second"},
         ],
-        # form_sections puts podcast first, but the rendered HTML's
-        # articles block still has First above Second.
         "form_sections": [
             {"type": "podcast", "id": "s-2", "enabled": True},
             {"type": "articles", "id": "s-1", "count": 2},
@@ -857,8 +858,92 @@ def test_section_reorder_does_not_change_rendered_article_position(client: TestC
     first_idx = html.index("First")
     second_idx = html.index("Second")
     assert first_idx < second_idx, (
-        "articles must render in NewsletterIssue.articles order regardless "
-        "of form_sections layout"
+        "articles inside an Articles section render in articles-list "
+        "order even when the section itself moves around"
+    )
+
+
+def test_section_reorder_drives_render_order_of_section_types(client: TestClient):
+    """Dragging Podcast above Articles makes Podcast render first in
+    the .eml — form_sections is the render plan, not just metadata.
+    With no form_sections the renderer falls back to the legacy
+    fixed order (articles → podcast → static blocks)."""
+    payload_dragged = {
+        "newsletter_name": "Test",
+        "issue_year": 14,
+        "issue_number": 9,
+        "issue_title": "Demo",
+        "issue_date": "2026-05-03",
+        "from_name": "x",
+        "from_email": "x@example.com",
+        "to_email": "y@example.com",
+        "articles": [{"headline": "ArticleA", "url": "https://example.com/a"}],
+        "podcast": {
+            "episode_number": 1,
+            "title": "PodcastA",
+        },
+        "static_blocks": [{"title": "StaticA", "html": "<p>x</p>"}],
+        # Editor dragged: static → podcast → articles
+        "form_sections": [
+            {"type": "static_blocks", "count": 1},
+            {"type": "podcast", "enabled": True},
+            {"type": "articles", "count": 1},
+        ],
+    }
+    html = client.post("/api/preview/html", json=payload_dragged).text
+    static_idx = html.index("StaticA")
+    podcast_idx = html.index("PodcastA")
+    article_idx = html.index("ArticleA")
+    assert static_idx < podcast_idx < article_idx, (
+        "form_sections is the render plan — static then podcast then "
+        "articles, exactly the dragged order"
+    )
+
+    # Legacy fallback: no form_sections → original fixed order.
+    payload_legacy = {**payload_dragged}
+    payload_legacy.pop("form_sections")
+    html2 = client.post("/api/preview/html", json=payload_legacy).text
+    a2 = html2.index("ArticleA")
+    p2 = html2.index("PodcastA")
+    s2 = html2.index("StaticA")
+    assert a2 < p2 < s2, (
+        "no form_sections → renderer falls back to legacy article → "
+        "podcast → static_blocks ordering"
+    )
+
+
+def test_multiple_articles_sections_render_contiguous_slices(client: TestClient):
+    """Two Articles sections with a Static block between them: each
+    section's slice of NewsletterIssue.articles must render back-to-
+    back, with the Static block landing in the middle per
+    form_sections."""
+    payload = {
+        "newsletter_name": "Test",
+        "issue_year": 14,
+        "issue_number": 9,
+        "issue_title": "Demo",
+        "issue_date": "2026-05-03",
+        "from_name": "x",
+        "from_email": "x@example.com",
+        "to_email": "y@example.com",
+        "articles": [
+            {"headline": "ArticleA", "url": "https://example.com/a"},
+            {"headline": "ArticleB", "url": "https://example.com/b"},
+        ],
+        "static_blocks": [{"title": "StaticMid", "html": "<p>x</p>"}],
+        "form_sections": [
+            {"type": "articles", "count": 1},
+            {"type": "static_blocks", "count": 1},
+            {"type": "articles", "count": 1},
+        ],
+    }
+    html = client.post("/api/preview/html", json=payload).text
+    a_idx = html.index("ArticleA")
+    s_idx = html.index("StaticMid")
+    b_idx = html.index("ArticleB")
+    assert a_idx < s_idx < b_idx, (
+        "form_sections must slice the flat articles list — first article "
+        "before the static block, second article after"
     )
 
 
@@ -1173,4 +1258,114 @@ def test_logos_and_media_upload_tab_uses_button_then_picker_flow(client: TestCli
     assert "mediaUploadFileInput.click()" in trigger_block, (
         "media-upload-trigger click handler must call .click() on the "
         "hidden file input — that's what opens the OS picker"
+    )
+
+
+# ───────── WYSIWYG toolbars + picker URL fetch ───────────────────────
+
+
+def test_basic_richtext_toolbars_wrap_intro_pull_quote_and_comment(client: TestClient):
+    """The composer surfaces a basic rich-text toolbar (Bold / Italic /
+    Link) next to every textarea whose content should accept inline
+    HTML — Intro Message in Issue Details, plus Pull quote and Comment
+    inside each article card. Without these the user has to type raw
+    <strong>/<em>/<a> tags by hand."""
+    body = client.get("/").text
+
+    # Intro Message inside Issue Details
+    intro_idx = body.index('name="intro_html"')
+    intro_wrap_open = body.rfind('data-rt-scope', 0, intro_idx)
+    assert intro_wrap_open >= 0, (
+        "Intro Message textarea must sit inside a data-rt-scope wrapper "
+        "that the basic rich-text toolbar binds to"
+    )
+    # All three actions must be present in the toolbar around the intro.
+    intro_toolbar_end = body.index('</div>', intro_wrap_open)
+    intro_toolbar = body[intro_wrap_open:intro_toolbar_end]
+    for action in ('bold', 'italic', 'link'):
+        assert f'data-rt-action="{action}"' in intro_toolbar, (
+            f"Intro Message toolbar missing {action}"
+        )
+
+    # Pull quote + Comment inside the article template
+    article_tpl_start = body.index('id="article-template"')
+    article_tpl_end = body.index('</template>', article_tpl_start)
+    article_tpl = body[article_tpl_start:article_tpl_end]
+    # Each textarea sits in its own data-rt-scope.
+    pull_quote_idx = article_tpl.index('data-field="pull_quote"')
+    pq_scope_idx = article_tpl.rfind('data-rt-scope', 0, pull_quote_idx)
+    assert pq_scope_idx >= 0, "Pull quote textarea must live in a data-rt-scope"
+    comment_idx = article_tpl.index('data-field="alain_comment"')
+    cm_scope_idx = article_tpl.rfind('data-rt-scope', 0, comment_idx)
+    assert cm_scope_idx >= 0, "Comment textarea must live in a data-rt-scope"
+
+    # JS exposes the generalized helper and binds it on init and per-card.
+    js = client.get("/static/composer.js").text
+    assert "wireBasicRichtextToolbar" in js
+    # Wired from the form-level init (Intro Message lives in the static
+    # form, not the article template).
+    assert "form.querySelectorAll('[data-rt-scope]'" in js
+    # Wired per article card so cloned Pull-quote + Comment scopes get
+    # picked up too.
+    assert "node.querySelectorAll('[data-rt-scope]'" in js
+
+
+def test_basic_richtext_toolbar_css_helpers_are_styled(client: TestClient):
+    """The new .rt-field / .rt-toolbar / .rt-tool classes need styling
+    so the toolbars actually look like buttons. Mirror the existing
+    .static-* treatment so the form feels consistent."""
+    css = client.get("/static/composer.css").text
+    for cls in ('.rt-field', '.rt-toolbar', '.rt-tool'):
+        assert cls in css, f"composer.css missing styling for {cls}"
+
+
+def test_media_picker_dialog_carries_url_fetch_form(client: TestClient):
+    """The Pick-an-image dialog accepts a new asset by URL in addition
+    to picking from the existing library list. The URL form requires
+    both URL and Image description — alt_text is otherwise the
+    static-block image-embed flow's hard gate on insertion."""
+    body = client.get("/").text
+    picker_idx = body.index('id="media-picker-dialog"')
+    picker_end = body.index('</dialog>', picker_idx)
+    picker = body[picker_idx:picker_end]
+
+    assert 'id="media-picker-url-form"' in picker, (
+        "Pick-an-image dialog must expose the URL-fetch form"
+    )
+    # Both required inputs are present.
+    assert 'name="url"' in picker
+    assert 'name="alt_text"' in picker
+    assert 'id="media-picker-url-status"' in picker, (
+        "URL-fetch form needs a status slot for the user to see fetch errors"
+    )
+
+    js = client.get("/static/composer.js").text
+    # The URL-fetch submit hits the same /api/media surface the
+    # Logos & Media dialog uses for URL imports, then PUTs the
+    # description so the picker's onPick callback sees a non-empty
+    # alt_text and isn't blocked downstream.
+    assert "mediaPickerUrlForm" in js
+    assert "mediaPickerUrlForm.addEventListener('submit'" in js
+    # Carries the picker's current `kind` through the URL register.
+    assert "_pickerKind" in js
+
+
+def test_image_embed_picker_via_static_block_can_accept_url_fetch(client: TestClient):
+    """Sanity: the static-block image-embed toolbar opens the same
+    picker that the URL fetch form is bound to, so a user clicking
+    Image inside a static block can now paste a URL and immediately
+    embed without bouncing to Logos & Media first."""
+    js = client.get("/static/composer.js").text
+    # The static-block Image action still calls openLibraryPicker
+    # with kind=image — that picker now carries the URL form.
+    assert "openLibraryPicker({" in js
+    image_action_idx = js.index("data-rt-action: 'image'") if "data-rt-action: 'image'" in js else None
+    # The actual handler dispatches via "if (action === 'image')" — assert
+    # that block still calls openLibraryPicker so the URL form is reachable.
+    img_handler = js.index("action === 'image'")
+    next_brace = js.index("}", img_handler)
+    handler_block = js[img_handler:next_brace]
+    assert "openLibraryPicker" in handler_block, (
+        "static-block Image action must route through openLibraryPicker — "
+        "that's the dialog now carrying the URL-fetch form"
     )

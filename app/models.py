@@ -9,7 +9,7 @@ seen in production newsletters.
 from __future__ import annotations
 
 from datetime import date as _date
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import AnyHttpUrl, BaseModel, BeforeValidator, Field, model_validator
 
@@ -234,6 +234,38 @@ class HighlightRef(BaseModel):
         return self.cached_headline
 
 
+class FormSection(BaseModel):
+    """Render-plan entry describing the position of a sortable form
+    section in the issue. The SPA emits one of these per visible
+    Articles / Podcast / Static-blocks section, in DOM order, so the
+    template can lay them out in the user's dragged order rather than
+    the model-default "all articles, then podcast, then static blocks"
+    sequence.
+
+    For ``articles`` and ``static_blocks``, ``count`` is the number of
+    entries the section contributes to the corresponding flat list on
+    NewsletterIssue. The renderer walks that list with per-type
+    cursors so the slice for each section is contiguous in the model
+    and rendered back-to-back in the output.
+
+    For ``podcast``, ``enabled`` mirrors the section's checkbox; only
+    the first enabled podcast section consumes the singular
+    ``NewsletterIssue.podcast`` slot.
+    """
+
+    type: Literal["articles", "podcast", "static_blocks"]
+    id: Optional[str] = None
+    count: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="For articles / static_blocks: number of entries in this section.",
+    )
+    enabled: Optional[bool] = Field(
+        default=None,
+        description="For podcast: whether this section is the one that contributes the issue's podcast block.",
+    )
+
+
 class NewsletterIssue(BaseModel):
     """One full newsletter issue ready for rendering."""
 
@@ -286,6 +318,13 @@ class NewsletterIssue(BaseModel):
     podcast: Optional[PodcastEpisode] = None
     static_blocks: list[StaticBlock] = Field(default_factory=list)
     highlights: list[HighlightRef] = Field(default_factory=list)
+    # UI-driven render plan — describes which sortable section
+    # (Articles / Podcast / Static blocks) appears at each position in
+    # the user's dragged order. Empty means "legacy fixed order"
+    # (all articles, then podcast, then all static blocks) so older
+    # drafts continue to render exactly as they always did. See
+    # rendered_sections() for the resolution logic.
+    form_sections: list[FormSection] = Field(default_factory=list)
 
     footer_html: Optional[str] = None
     unsubscribe_url: Optional[SanitizedHttpUrl] = None
@@ -330,84 +369,146 @@ class NewsletterIssue(BaseModel):
             f"{d.month}.{d.day:02d}.{d.year % 100:02d}"
         )
 
-    def highlights_grouped(self) -> list[dict]:
-        """Group bottom highlights by source issue date for the template.
+    def rendered_sections(self) -> list[dict]:
+        """Resolve form_sections into a render plan the template walks.
 
-        Returns a list of ``{label, date, refs}`` dicts ordered by date
-        descending (newest issue first) so the current week sits at the
-        top of the rendered Highlights block. ``label`` is the heading
-        text — ``"This issue"`` for refs into the current articles,
-        otherwise the source issue's formatted date plus its title.
-        Inside each group, refs preserve the order the editor arranged
-        them with the drag handle. URL-keyed dedup keeps the first
-        occurrence of each article so a recap that appears in multiple
-        archive editions only renders once.
+        Returns a list of dicts, each carrying:
+
+          - ``{"type": "articles", "articles": [Article, ...]}``
+          - ``{"type": "podcast",  "podcast":  PodcastEpisode}``
+          - ``{"type": "static_blocks", "blocks": [StaticBlock, ...]}``
+
+        in the editor's dragged order. For ``articles`` and
+        ``static_blocks``, the slice corresponds to the section's
+        contiguous chunk of the flat list — per-type cursors advance
+        through ``self.articles`` and ``self.static_blocks`` so
+        multiple sections of the same type still get distinct slices.
+
+        Empty / missing form_sections falls back to the legacy fixed
+        order (articles → podcast → static_blocks) so pre-form_sections
+        drafts and any direct API caller that doesn't bother emitting
+        the metadata continues to render exactly as before.
         """
-        in_issue: list[HighlightRef] = []
-        # ``(year, month, day, title)`` sort key so older years sink
-        # toward the bottom of the rendered block; in-issue group is
-        # synthesized separately and always emitted first.
-        by_archive: dict[tuple, dict] = {}
+        if not self.form_sections:
+            out: list[dict] = []
+            if self.articles:
+                out.append({"type": "articles", "articles": list(self.articles)})
+            if self.podcast:
+                out.append({"type": "podcast", "podcast": self.podcast})
+            if self.static_blocks:
+                out.append({"type": "static_blocks", "blocks": list(self.static_blocks)})
+            return out
+
+        art_cursor = 0
+        sb_cursor = 0
+        podcast_emitted = False
+        out = []
+        for fs in self.form_sections:
+            if fs.type == "articles":
+                n = fs.count or 0
+                slice_ = list(self.articles[art_cursor : art_cursor + n])
+                art_cursor += n
+                if slice_:
+                    out.append({"type": "articles", "articles": slice_})
+            elif fs.type == "static_blocks":
+                n = fs.count or 0
+                slice_ = list(self.static_blocks[sb_cursor : sb_cursor + n])
+                sb_cursor += n
+                if slice_:
+                    out.append({"type": "static_blocks", "blocks": slice_})
+            elif fs.type == "podcast":
+                # The model carries a single ``podcast`` slot, so only
+                # the first enabled podcast section consumes it. Extra
+                # podcast entries in form_sections are placeholders
+                # (their data round-trips through buildIssue) and
+                # render nothing.
+                if not podcast_emitted and fs.enabled and self.podcast:
+                    out.append({"type": "podcast", "podcast": self.podcast})
+                    podcast_emitted = True
+
+        # Defensive tail: if form_sections under-counts (a saved draft
+        # whose counts drifted from the actual flat list), flush the
+        # leftover entries in legacy order so nothing silently drops.
+        leftover_articles = list(self.articles[art_cursor:])
+        if leftover_articles:
+            out.append({"type": "articles", "articles": leftover_articles})
+        leftover_blocks = list(self.static_blocks[sb_cursor:])
+        if leftover_blocks:
+            out.append({"type": "static_blocks", "blocks": leftover_blocks})
+        if not podcast_emitted and self.podcast:
+            out.append({"type": "podcast", "podcast": self.podcast})
+        return out
+
+    def highlights_grouped(self) -> list[dict]:
+        """Group bottom highlights by source issue, preserving drag order.
+
+        Returns a list of ``{label, date, refs}`` dicts in the order the
+        editor laid them out with the highlights drag handle. Groups
+        appear in *first-occurrence* order — the first ref's group is
+        the first group, the next previously-unseen ref's group is the
+        second, and so on — so dragging an archive ref above all
+        in-issue refs surfaces that archive group above the current
+        issue. ``label`` is ``"This issue"`` for refs into the current
+        articles or the source issue's formatted date + title for
+        archive-sourced refs.
+
+        Inside each group, refs preserve the user's drag order. URL-keyed
+        dedup runs per-group (not globally) so a canonical article can
+        intentionally appear under two different source dates if the
+        editor wants to feature both editions.
+        """
+        groups: list[dict] = []
+        index_by_key: dict = {}
+        IN_ISSUE_KEY = "__in_issue__"
+
         for h in self.highlights:
             if h.article_index is not None:
-                in_issue.append(h)
+                key = IN_ISSUE_KEY
+                if key not in index_by_key:
+                    index_by_key[key] = len(groups)
+                    groups.append(
+                        {
+                            "label": "This issue",
+                            "date": self.issue_date,
+                            "refs": [],
+                        }
+                    )
+                groups[index_by_key[key]]["refs"].append(h)
                 continue
             d = h.cached_issue_date
             if d is None:
-                # Defensive: an archive-sourced ref with no cached date
-                # is malformed — render it under a synthetic "Archive"
-                # bucket rather than dropping it silently.
-                key = (0, 0, 0, "")
+                # Defensive: archive-sourced ref missing the cached date
+                # — bucket under a synthetic "Archive" group keyed by
+                # title so the renderer doesn't drop the row silently.
+                key = ("__archive_undated__", h.cached_issue_title or "")
                 label = "Archive"
             else:
                 key = (d.year, d.month, d.day, h.cached_issue_title or "")
                 label = self._format_group_label(h)
-            bucket = by_archive.setdefault(
-                key,
-                {"label": label, "date": d, "refs": []},
-            )
-            bucket["refs"].append(h)
+            if key not in index_by_key:
+                index_by_key[key] = len(groups)
+                groups.append({"label": label, "date": d, "refs": []})
+            groups[index_by_key[key]]["refs"].append(h)
 
-        # Dedup by URL inside each group so a recap that appears in
-        # multiple archives only renders once. We dedup per-group rather
-        # than globally because a user may intentionally feature the
-        # same canonical article under two different source dates.
-        for bucket in by_archive.values():
+        # Per-group URL dedup so a recap that appears twice in the same
+        # source only renders once. For in-issue refs the URL comes from
+        # display_url (override_label aware); for archive refs we use
+        # cached_url. Either way: preserve the first occurrence so drag
+        # order survives the dedup pass too.
+        for group in groups:
             seen: set[str] = set()
             deduped: list[HighlightRef] = []
-            for ref in bucket["refs"]:
-                url = (ref.cached_url or "").strip()
+            for ref in group["refs"]:
+                if ref.article_index is not None:
+                    url = (ref.display_url(self.articles) or "").strip()
+                else:
+                    url = (ref.cached_url or "").strip()
                 if url and url in seen:
                     continue
                 if url:
                     seen.add(url)
                 deduped.append(ref)
-            bucket["refs"] = deduped
-
-        groups: list[dict] = []
-        if in_issue:
-            # Same per-group URL dedup for the current-issue bucket. We
-            # resolve URLs through `display_url` so an override doesn't
-            # accidentally hide a duplicate.
-            seen = set()
-            deduped = []
-            for ref in in_issue:
-                url = (ref.display_url(self.articles) or "").strip()
-                if url and url in seen:
-                    continue
-                if url:
-                    seen.add(url)
-                deduped.append(ref)
-            groups.append(
-                {
-                    "label": "This issue",
-                    "date": self.issue_date,
-                    "refs": deduped,
-                }
-            )
-        # Sort archive groups newest → oldest.
-        for key in sorted(by_archive.keys(), reverse=True):
-            groups.append(by_archive[key])
+            group["refs"] = deduped
         return groups
 
     def _format_group_label(self, h: "HighlightRef") -> str:

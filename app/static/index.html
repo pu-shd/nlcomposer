@@ -44,7 +44,7 @@
       </svg>
       <span>Compose New</span>
     </button>
-    <button type="button" id="download-eml" class="btn primary">Download</button>
+    <button type="button" id="download-eml" class="btn primary">Download &amp; Archive</button>
   </div>
   <button type="button" id="open-settings" class="btn-icon" aria-haspopup="dialog" aria-label="Settings" title="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -80,7 +80,15 @@
             <input type="text" name="subject" placeholder="auto: 14.09 — BeijingAutoShow">
           </label>
           <label class="span-2">Intro Message
-            <textarea name="intro_html" rows="3" placeholder="<p>Greetings…</p>"></textarea>
+            <div class="rt-field" data-rt-scope>
+              <div class="rt-toolbar" role="toolbar" aria-label="Intro formatting">
+                <button type="button" class="rt-tool" data-rt-action="bold" title="Bold (wrap selection in <strong>)" aria-label="Bold"><strong>B</strong></button>
+                <button type="button" class="rt-tool" data-rt-action="italic" title="Italic (wrap selection in <em>)" aria-label="Italic"><em>I</em></button>
+                <button type="button" class="rt-tool" data-rt-action="link" title="Insert a link" aria-label="Insert link">Link</button>
+              </div>
+              <textarea name="intro_html" rows="3" placeholder="<p>Greetings…</p>"></textarea>
+            </div>
+            <small class="fetch-status" data-role="rt-status"></small>
           </label>
         </div>
       </details>
@@ -234,7 +242,15 @@
         <input type="text" data-field="date_text" placeholder="Apr 27">
       </label>
       <label class="span-2">Pull quote
-        <textarea data-field="pull_quote" rows="2"></textarea>
+        <div class="rt-field" data-rt-scope>
+          <div class="rt-toolbar" role="toolbar" aria-label="Pull quote formatting">
+            <button type="button" class="rt-tool" data-rt-action="bold" title="Bold (wrap selection in <strong>)" aria-label="Bold"><strong>B</strong></button>
+            <button type="button" class="rt-tool" data-rt-action="italic" title="Italic (wrap selection in <em>)" aria-label="Italic"><em>I</em></button>
+            <button type="button" class="rt-tool" data-rt-action="link" title="Insert a link" aria-label="Insert link">Link</button>
+          </div>
+          <textarea data-field="pull_quote" rows="2"></textarea>
+        </div>
+        <small class="fetch-status" data-role="rt-status"></small>
       </label>
       <label hidden>Read-more label
         <input type="text" data-field="read_more_label" placeholder="Read more">
@@ -243,7 +259,15 @@
         <input type="url" data-field="read_more_url">
       </label>
       <label class="span-2">Comment
-        <textarea data-field="alain_comment" rows="2"></textarea>
+        <div class="rt-field" data-rt-scope>
+          <div class="rt-toolbar" role="toolbar" aria-label="Comment formatting">
+            <button type="button" class="rt-tool" data-rt-action="bold" title="Bold (wrap selection in <strong>)" aria-label="Bold"><strong>B</strong></button>
+            <button type="button" class="rt-tool" data-rt-action="italic" title="Italic (wrap selection in <em>)" aria-label="Italic"><em>I</em></button>
+            <button type="button" class="rt-tool" data-rt-action="link" title="Insert a link" aria-label="Insert link">Link</button>
+          </div>
+          <textarea data-field="alain_comment" rows="2"></textarea>
+        </div>
+        <small class="fetch-status" data-role="rt-status"></small>
       </label>
     </div>
   </details>
@@ -650,6 +674,25 @@
     </header>
     <p class="hint" id="media-picker-hint">Click an item to use it. Items missing an Image description are dimmed — set one in Logos &amp; Media before referencing.</p>
     <ul class="templates-list media-list" id="media-picker-list" aria-live="polite"></ul>
+    <!-- Or fetch a brand-new asset by URL. The dialog uses its current
+         kind (logo / image) for the POST, then PUTs the alt-text so
+         the resulting item is immediately pickable (the static-block
+         image-embed path blocks insert on empty alt_text). -->
+    <form id="media-picker-url-form" autocomplete="off" class="templates-create">
+      <h3>Or fetch from a URL</h3>
+      <div class="grid-2">
+        <label class="span-2">Image URL
+          <input type="url" name="url" required placeholder="https://example.com/banner.png">
+        </label>
+        <label class="span-2">Image description (required)
+          <input type="text" name="alt_text" required maxlength="240" placeholder="Briefly describe the image">
+        </label>
+      </div>
+      <footer class="dialog-actions">
+        <small id="media-picker-url-status" class="status" aria-live="polite"></small>
+        <button type="submit" class="btn primary">Fetch &amp; use</button>
+      </footer>
+    </form>
     <footer class="dialog-actions">
       <small id="media-picker-status" class="status" aria-live="polite"></small>
       <button type="button" class="btn ghost" id="media-picker-cancel">Cancel</button>
