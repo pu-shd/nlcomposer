@@ -194,9 +194,11 @@
     // Selection itself is handled by the browser before this fires or
     // via standard event bubbling; we just want to stop the event from
     // reaching anything that might interpret it as a format toggle.
+    // Use capture phase (true) to intercept before Quill or other
+    // listeners see it.
     quill.root.addEventListener('dblclick', (e) => {
       e.stopPropagation();
-    });
+    }, true);
 
     // Sync Quill -> Textarea
     quill.on('text-change', () => {
@@ -229,6 +231,10 @@
     // Seed initial content from textarea (e.g. on page load or template use).
     if (textarea.value) {
       quill.root.innerHTML = textarea.value;
+    } else {
+      // Ensure new text entry doesn't default to bold if the container
+      // inherited a bold weight from the parent.
+      quill.format('bold', false, Quill.sources.SILENT);
     }
     return quill;
   };
