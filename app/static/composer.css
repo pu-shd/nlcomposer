@@ -55,6 +55,24 @@ html, body {
   text-overflow: ellipsis;
 }
 
+/* Autosave status pill — lives in the topbar next to .status. Color
+   reflects state via data-kind so the operator can glance at it and
+   know whether the loop is healthy. Empty state hides the pill so
+   it doesn't take horizontal room when there's nothing to say. */
+.topbar .autosave-status {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+}
+.topbar .autosave-status:empty { display: none; }
+.topbar .autosave-status[data-kind="saving"] { color: var(--accent); }
+.topbar .autosave-status[data-kind="saved"]  { color: #166534; background: rgba(22, 101, 52, 0.08); }
+.topbar .autosave-status[data-kind="error"]  { color: var(--danger); background: rgba(220, 38, 38, 0.08); }
+.topbar .autosave-status[data-kind="disabled"] { font-style: italic; }
+
 .btn {
   appearance: none;
   border: 1px solid var(--border);

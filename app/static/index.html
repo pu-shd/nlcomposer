@@ -28,6 +28,11 @@
   </div>
   <h1>Newsletter Composer</h1>
   <div class="status" id="status" aria-live="polite"></div>
+  <!-- Background-autosave status indicator. JS toggles its text + a
+       data-kind attribute (idle / saving / saved / error / disabled)
+       so CSS can color-code without re-touching the markup. The
+       composer JS owns its lifecycle; this slot is just the surface. -->
+  <div class="autosave-status" id="autosave-status" aria-live="polite" title="Autosave"></div>
   <div class="actions">
     <button type="button" id="open-templates" class="btn ghost" aria-haspopup="dialog" hidden>Templates</button>
     <button type="button" id="compose-new" class="btn ghost btn-with-icon" aria-label="Compose new" title="Compose new (clear current form)">
@@ -463,6 +468,11 @@
       <label class="settings-row">
         <span class="lbl">Preview debounce (ms)</span>
         <input type="number" name="preview_debounce_ms" min="0" max="5000" step="50">
+      </label>
+      <label class="settings-row">
+        <span class="lbl">Autosave interval (sec)</span>
+        <input type="number" name="autosave_interval_seconds" min="0" max="600" step="5">
+        <small class="field-hint">Background save of the in-progress issue as a draft. 0 disables.</small>
       </label>
       <label class="settings-row settings-row-checkbox">
         <span class="lbl">Auto-archive</span>

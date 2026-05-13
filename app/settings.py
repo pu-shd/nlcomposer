@@ -167,6 +167,27 @@ class AppSettings(BaseModel):
         ),
     )
 
+    # ── Autosave loop ─────────────────────────────────────────────────
+    # The composer SPA runs a background tick that periodically
+    # captures the in-progress issue as a draft so a crashed tab /
+    # accidental close / network blip doesn't burn an hour of editing.
+    # The interval is configurable (so power users can dial it down on
+    # slow links) and 0 disables the loop entirely. The actual save
+    # uses the existing POST/PUT /api/drafts endpoints — no new
+    # surface, just a client-side scheduler against them.
+    autosave_interval_seconds: int = Field(
+        default=45,
+        ge=0,
+        le=600,
+        description=(
+            "Seconds between autosave ticks (0 = disabled). The SPA "
+            "only writes when the assembled NewsletterIssue has changed "
+            "since the last save — idle ticks are a no-op against the "
+            "DB. Defaults to 45s; raise this on slow links or when the "
+            "draft table is being inspected concurrently."
+        ),
+    )
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()

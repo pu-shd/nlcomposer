@@ -975,3 +975,101 @@ def test_preview_endpoint_rejects_highlight_with_no_reference(client: TestClient
     }
     res = client.post("/api/preview/html", json=payload)
     assert res.status_code == 422
+
+
+# ───────── Autosave loop ─────────────────────────────────────────────
+
+
+def test_settings_form_exposes_autosave_interval_input(client: TestClient):
+    """The Settings dialog must surface the autosave interval so the
+    user can tune it (or disable it via 0) without editing JSON. The
+    range matches the AppSettings field validator (0..600)."""
+    body = client.get("/").text
+    assert 'name="autosave_interval_seconds"' in body
+    # Min/max attributes mirror the pydantic field bounds so the
+    # browser's number-input doesn't accept values the server will
+    # 422 on.
+    autosave_idx = body.index('name="autosave_interval_seconds"')
+    # Walk back to the opening <input ...>
+    input_start = body.rfind("<input", 0, autosave_idx)
+    input_close = body.index(">", autosave_idx)
+    input_tag = body[input_start : input_close + 1]
+    assert 'min="0"' in input_tag
+    assert 'max="600"' in input_tag
+
+
+def test_composer_js_carries_autosave_helpers(client: TestClient):
+    """The JS scheduler must expose the named hooks the rest of the
+    SPA piggybacks on (loadDraft, manual save) — without them the
+    autosave loop forks a new "Autosave — Untitled" draft every time
+    the user reloads a previously-saved one."""
+    js = client.get("/static/composer.js").text
+    for needle in (
+        "restartAutosave",
+        "stampAutosaveSaved",
+        "resetAutosaveTarget",
+        "_autosaveTick",
+        "/api/drafts",
+        "navigator.sendBeacon",
+    ):
+        assert needle in js, f"composer.js missing autosave hook: {needle}"
+
+
+def test_composer_js_autosave_pauses_while_a_dialog_is_open(client: TestClient):
+    """The autosave loop must skip its tick while ANY native <dialog>
+    is open. Saving mid-modal would either capture a transient form
+    state the user didn't choose to commit (Compose-new confirmation,
+    Save-draft naming) or fight the user for the "Saving…" status pill
+    while they're focused on an error inside the dialog.
+
+    Detection is centralized in ``_isAnyDialogOpen`` and the tick
+    short-circuits via ``dialog[open]`` query. This test asserts both
+    pieces are wired together so a future refactor that splits the
+    helper into per-dialog state doesn't accidentally drop the pause.
+    """
+    js = client.get("/static/composer.js").text
+    assert "_isAnyDialogOpen" in js
+    assert "dialog[open]" in js
+    # The tick body explicitly reads the pause helper before doing any
+    # buildIssue/serialize work.
+    tick_idx = js.index("const _autosaveTick =")
+    tick_end = js.index("};", tick_idx)
+    tick_body = js[tick_idx:tick_end]
+    assert "_isAnyDialogOpen()" in tick_body, (
+        "_autosaveTick must check the dialog-pause helper at the top of "
+        "the tick — without that, the loop saves through modals"
+    )
+
+
+def test_index_renders_autosave_status_pill(client: TestClient):
+    """The autosave-status pill lives in the topbar so the user can
+    glance at it and know whether the loop is healthy."""
+    body = client.get("/").text
+    assert 'id="autosave-status"' in body
+
+
+def test_drafts_put_round_trips_payload_for_autosave(client: TestClient):
+    """The autosave loop relies on PUT /api/drafts/{id} accepting a
+    `{payload}` body and returning the updated draft. This regression
+    net guards the endpoint contract — a future refactor that
+    accidentally requires `{name, payload}` would break autosave's
+    PUT path silently from the SPA's perspective."""
+    # Seed a draft.
+    created = client.post(
+        "/api/drafts",
+        json={"name": "Autosave — Untitled", "payload": {"newsletter_name": "x"}},
+    )
+    assert created.status_code == 201, created.text
+    draft_id = created.json()["id"]
+
+    # PUT a fresh payload — name omitted, just like the autosave loop.
+    updated = client.put(
+        f"/api/drafts/{draft_id}",
+        json={"payload": {"newsletter_name": "x", "issue_title": "Updated"}},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["payload"]["issue_title"] == "Updated"
+
+    # GET reflects the update.
+    got = client.get(f"/api/drafts/{draft_id}").json()
+    assert got["payload"]["issue_title"] == "Updated"

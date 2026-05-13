@@ -2044,6 +2044,10 @@
     'preview_debounce_ms', 'auto_archive_on_download',
     'include_read_more_link', 'confirm_before_delete',
     'embed_all_media',
+    // Autosave loop interval (0 = disabled). Wired up by the
+    // autosave block further down — applySettingsToRuntime kicks
+    // restartAutosave whenever this value changes.
+    'autosave_interval_seconds',
   ];
 
   const setSettingsStatus = (msg, kind = 'info') => {
@@ -2233,6 +2237,14 @@
     if (s.default_footer_html) set('footer_html', s.default_footer_html);
     if (typeof s.preview_debounce_ms === 'number' && s.preview_debounce_ms >= 0) {
       previewDebounceMs = s.preview_debounce_ms;
+    }
+    // Autosave interval lives in settings so a power user can dial it
+    // down on a slow link. restartAutosave handles 0 (disabled) and
+    // re-arms the timer when the interval changes.
+    if (typeof restartAutosave === 'function') {
+      restartAutosave(typeof s.autosave_interval_seconds === 'number'
+        ? s.autosave_interval_seconds
+        : 45);
     }
   };
 
@@ -2785,6 +2797,12 @@
       if (dateEl && !dateEl.value) {
         dateEl.value = new Date().toISOString().slice(0, 10);
       }
+      // Hand the autosave loop the freshly-loaded draft so subsequent
+      // ticks PUT to *this* row instead of forking a separate Autosave
+      // — copy.
+      if (typeof stampAutosaveSaved === 'function') {
+        try { stampAutosaveSaved(draft.id, JSON.stringify(buildIssue())); } catch { /* ignore */ }
+      }
       setDraftsStatus(`Loaded "${draft.name}"`, 'ok');
       setTimeout(closeDraftsDialog, 350);
     } catch (e) {
@@ -2868,6 +2886,16 @@
       }
       draftsCreateForm.reset();
       await refreshDraftsList();
+      // Re-target autosave at the freshly-named draft so the loop
+      // stops PUTing the previous "Autosave — Untitled" row. The
+      // success branch hasn't read the body yet, so this is the first
+      // .json() call on `res`.
+      try {
+        const saved = await res.json();
+        if (typeof stampAutosaveSaved === 'function' && saved?.id != null) {
+          stampAutosaveSaved(saved.id, JSON.stringify(payload));
+        }
+      } catch { /* swallow — autosave will recover on the next tick */ }
       setDraftsStatus('Saved.', 'ok');
     } catch (err) {
       setDraftsStatus('Network error: ' + err.message, 'error');
@@ -3426,11 +3454,256 @@
   );
   updateSectionDragVisibility();
 
+  // ───────── Autosave loop ───────────────────────────────────────────
+  // Periodically captures the in-progress issue as a draft so a tab
+  // close / browser crash / network blip never burns an hour of edits.
+  // Lifecycle:
+  //   - boot: seed _lastSavedSerialized from the current form so the
+  //     first tick is a no-op against a brand-new blank form.
+  //   - tick: every ``autosave_interval_seconds`` (driven from
+  //     AppSettings; 0 disables). buildIssue → JSON.stringify, compare
+  //     to last-saved snapshot. If equal, just stamp the status with
+  //     "Up to date". If different, POST or PUT depending on whether
+  //     we already have an _activeAutosaveDraftId.
+  //   - manual save: when the user uses the Save-draft dialog, the
+  //     manual save path (further down in this file) also stamps
+  //     _activeAutosaveDraftId so subsequent autosaves PUT against
+  //     that draft instead of forking a separate "Autosave —" row.
+  //   - draft load / Compose New: reset _activeAutosaveDraftId so the
+  //     next autosave starts fresh against the loaded draft.
+  //   - beforeunload: sendBeacon a final save if dirty so the keystrokes
+  //     between the last tick and the close don't get lost.
+  const autosaveStatusEl = document.getElementById('autosave-status');
+  let _activeAutosaveDraftId = null;
+  let _lastSavedSerialized = '';
+  let _autosaveTimer = null;
+  let _autosaveIntervalMs = 45_000;
+  let _autosaveInFlight = false;
+  let _autosaveLastWrittenAt = null;
+
+  const setAutosaveStatus = (msg, kind = 'idle') => {
+    if (!autosaveStatusEl) return;
+    autosaveStatusEl.textContent = msg || '';
+    autosaveStatusEl.dataset.kind = kind;
+  };
+
+  // Format "Saved 2 min ago" for the status pill. Tries to match the
+  // cadence the user actually cares about — "just now" vs minutes vs
+  // hours — and rounds down to avoid the slightly-off "0 sec ago".
+  const _humanizeSince = (when) => {
+    if (!when) return '';
+    const sec = Math.max(0, Math.floor((Date.now() - when) / 1000));
+    if (sec < 5) return 'just now';
+    if (sec < 60) return `${sec} sec ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min} min ago`;
+    const hr = Math.floor(min / 60);
+    return `${hr} h ago`;
+  };
+
+  const _serializeForAutosave = () => {
+    try {
+      return JSON.stringify(buildIssue());
+    } catch {
+      return null;
+    }
+  };
+
+  // Public-ish: callers can stamp the "saved" state when they know a
+  // full save just landed (manual draft save, draft load, etc.) so
+  // the next autosave tick sees a clean baseline.
+  const stampAutosaveSaved = (id, serialized) => {
+    if (id != null) _activeAutosaveDraftId = id;
+    if (serialized != null) _lastSavedSerialized = serialized;
+    _autosaveLastWrittenAt = Date.now();
+    setAutosaveStatus(`Saved ${_humanizeSince(_autosaveLastWrittenAt)}`, 'saved');
+  };
+
+  // Called from compose-new and other "blank slate" entry points so
+  // the autosave loop opens a fresh draft instead of overwriting the
+  // previous edit's autosave row.
+  const resetAutosaveTarget = () => {
+    _activeAutosaveDraftId = null;
+    _lastSavedSerialized = _serializeForAutosave() || '';
+    _autosaveLastWrittenAt = null;
+    setAutosaveStatus('', 'idle');
+  };
+
+  // Snapshot refresh: refresh the saved baseline without writing to
+  // the server — used when we want autosave to "consider this state
+  // already saved" (e.g. after loadIssueIntoForm replaces the form).
+  const refreshAutosaveBaseline = () => {
+    _lastSavedSerialized = _serializeForAutosave() || '';
+  };
+
+  // Any open <dialog> means the user is mid-modal (Settings, Drafts,
+  // Logos & Media, Save-draft, Compose-new, confirm-delete, …). The
+  // autosave loop should NOT fire while a dialog is open — the form
+  // beneath may be in a transient state the user wouldn't choose to
+  // freeze into a draft, and triggering a network save while a modal
+  // is on screen can interleave error toasts in confusing ways.
+  const _isAnyDialogOpen = () => !!document.querySelector('dialog[open]');
+
+  const _autosaveTick = async () => {
+    if (_autosaveInFlight) return;
+    if (_isAnyDialogOpen()) {
+      // Surface the pause so the operator isn't surprised when the
+      // "Saved N sec ago" label stops ticking.
+      setAutosaveStatus('Paused (dialog open)', 'disabled');
+      return;
+    }
+    // Bail when the user hasn't actually typed anything yet — a blank
+    // form is the default state and not worth a draft row.
+    const titleEl = form.elements['issue_title'];
+    if (titleEl && !titleEl.value.trim()) return;
+    const serialized = _serializeForAutosave();
+    if (!serialized) {
+      // buildIssue threw (probably a half-typed URL); skip this tick
+      // and try again on the next.
+      return;
+    }
+    if (serialized === _lastSavedSerialized) {
+      // No changes — surface "Up to date" so the operator can see the
+      // loop is alive even when there's nothing to do.
+      if (_autosaveLastWrittenAt) {
+        setAutosaveStatus(`Saved ${_humanizeSince(_autosaveLastWrittenAt)}`, 'saved');
+      }
+      return;
+    }
+    _autosaveInFlight = true;
+    setAutosaveStatus('Saving…', 'saving');
+    try {
+      const payload = JSON.parse(serialized);
+      let res, item;
+      if (_activeAutosaveDraftId != null) {
+        res = await fetch(`/api/drafts/${_activeAutosaveDraftId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payload }),
+        });
+      } else {
+        const title = (titleEl && titleEl.value.trim()) || 'Untitled';
+        const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+        res = await fetch('/api/drafts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: `Autosave — ${title} (${stamp} UTC)`,
+            payload,
+          }),
+        });
+      }
+      if (!res.ok) {
+        // Surface the failure but keep the loop alive — next tick
+        // will retry on the same dirty state, and a manual draft save
+        // is still available.
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        setAutosaveStatus(`Autosave ${res.status}: ${detail || res.statusText}`, 'error');
+        return;
+      }
+      item = await res.json();
+      if (item && item.id != null) _activeAutosaveDraftId = item.id;
+      _lastSavedSerialized = serialized;
+      _autosaveLastWrittenAt = Date.now();
+      setAutosaveStatus(`Saved ${_humanizeSince(_autosaveLastWrittenAt)}`, 'saved');
+    } catch (err) {
+      setAutosaveStatus(`Autosave network error: ${err.message}`, 'error');
+    } finally {
+      _autosaveInFlight = false;
+    }
+  };
+
+  // Refresh the "Saved N sec/min ago" text without doing any actual
+  // work — keeps the pill honest between full ticks.
+  const _autosaveStatusRefresh = () => {
+    if (_autosaveLastWrittenAt) {
+      setAutosaveStatus(`Saved ${_humanizeSince(_autosaveLastWrittenAt)}`, 'saved');
+    }
+  };
+
+  // Public-ish: AppSettings round-trip handler restarts the timer
+  // when the configured interval changes (including 0 → disabled).
+  const restartAutosave = (intervalSeconds) => {
+    if (_autosaveTimer) {
+      clearInterval(_autosaveTimer);
+      _autosaveTimer = null;
+    }
+    if (!intervalSeconds || intervalSeconds <= 0) {
+      setAutosaveStatus('Autosave off', 'disabled');
+      return;
+    }
+    _autosaveIntervalMs = intervalSeconds * 1000;
+    // Two timers: the main tick at the configured interval, and a
+    // lighter status-refresh tick every 30s so the "Saved N min ago"
+    // pill ages correctly without us doing real work each second.
+    _autosaveTimer = setInterval(_autosaveTick, _autosaveIntervalMs);
+    setInterval(_autosaveStatusRefresh, 30_000);
+    setAutosaveStatus('Autosave on', 'idle');
+  };
+
+  // Final-flush before tab close. sendBeacon is the only fire-and-
+  // forget transport that survives unload reliably across browsers.
+  window.addEventListener('beforeunload', () => {
+    if (_autosaveInFlight) return;
+    const serialized = _serializeForAutosave();
+    if (!serialized || serialized === _lastSavedSerialized) return;
+    try {
+      const payload = JSON.parse(serialized);
+      let url, body;
+      if (_activeAutosaveDraftId != null) {
+        // Drafts PUT supports JSON only; sendBeacon supports a Blob
+        // with the right Content-Type to keep the server-side parser
+        // happy. The draft PUT endpoint accepts {payload} on its own
+        // so this is a single-write final flush.
+        url = `/api/drafts/${_activeAutosaveDraftId}`;
+        body = JSON.stringify({ payload });
+      } else {
+        const title = (form.elements['issue_title']?.value || 'Untitled').trim();
+        const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+        url = '/api/drafts';
+        body = JSON.stringify({
+          name: `Autosave — ${title} (${stamp} UTC)`,
+          payload,
+        });
+      }
+      // PUT semantics: sendBeacon sends as POST regardless of the
+      // method intent. We accept this trade-off only for the create
+      // path; for the update path we fall back to fetch with keepalive
+      // which DOES allow PUT.
+      if (_activeAutosaveDraftId != null) {
+        fetch(url, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          keepalive: true,
+        });
+      } else {
+        navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }));
+      }
+    } catch { /* swallow — best-effort */ }
+  });
+
+  // Wire compose-new to clear the autosave target so the next autosave
+  // opens a fresh draft row instead of overwriting the previous edit.
+  const _composeNewBtn = document.getElementById('compose-new');
+  if (_composeNewBtn) {
+    _composeNewBtn.addEventListener('click', () => {
+      // The actual blank-form behavior is wired elsewhere; we just
+      // piggyback to reset the autosave state at the same moment.
+      resetAutosaveTarget();
+    }, { capture: true });
+  }
+
   // Pull settings before the first preview so any saved defaults
   // (from_name/from_email/etc.) end up in the rendered .eml.
   loadSettings().then((s) => {
     if (s) applySettingsToForm(s);
     validateRequired();
     doPreview();
+    // applySettingsToForm called restartAutosave for us; seed the
+    // baseline from the freshly-loaded form so the first tick doesn't
+    // false-positive on the seed-default sections.
+    refreshAutosaveBaseline();
   });
 })();

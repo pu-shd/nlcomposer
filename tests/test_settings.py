@@ -43,6 +43,10 @@ def test_settings_model_has_sane_defaults():
     assert s.media_upload_allowed_types == ["image/png", "image/jpeg"]
     assert s.media_upload_rate_per_minute == 20
     assert s.media_url_imports_enabled is True
+    # Autosave defaults to 45s — long enough that idle ticks don't
+    # spam the draft store, short enough that a tab crash never costs
+    # more than a minute of editing.
+    assert s.autosave_interval_seconds == 45
     # Newsletter brand and email envelope ship empty so a fresh install
     # doesn't print a placeholder identity — the user fills them in
     # Settings before the first preview matters.
@@ -465,3 +469,34 @@ def test_composer_js_includes_embed_all_media_field(client: TestClient):
     """
     js = client.get("/static/composer.js").text
     assert "embed_all_media" in js
+
+
+def test_settings_round_trips_autosave_interval(client: TestClient):
+    """AppSettings.autosave_interval_seconds round-trips through SQLite
+    and through the PUT/GET cycle so the SPA can dial down (or
+    disable) the loop on a per-deployment basis."""
+    res = client.put("/api/settings", json={"autosave_interval_seconds": 90})
+    assert res.status_code == 200, res.text
+    assert res.json()["autosave_interval_seconds"] == 90
+
+    got = client.get("/api/settings").json()
+    assert got["autosave_interval_seconds"] == 90
+
+
+def test_settings_rejects_autosave_interval_out_of_range(client: TestClient):
+    """Field validator bounds the interval at 0..600. Reject 601 with
+    422 so the SPA's number-input doesn't accidentally cause a
+    forever-sleeping loop."""
+    res = client.put(
+        "/api/settings", json={"autosave_interval_seconds": 601}
+    )
+    assert res.status_code == 422
+
+
+def test_settings_zero_disables_autosave_loop(client: TestClient):
+    """Zero is the documented disable sentinel — must survive the
+    round-trip so the SPA's restartAutosave() can pick it up and
+    cancel the timer."""
+    res = client.put("/api/settings", json={"autosave_interval_seconds": 0})
+    assert res.status_code == 200
+    assert res.json()["autosave_interval_seconds"] == 0
