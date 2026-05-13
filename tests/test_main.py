@@ -66,13 +66,6 @@ CONTROLLER_MODULES = (
 )
 
 
-@pytest.fixture
-def client() -> TestClient:
-    """Use the lifespan context manager so init_db runs on startup."""
-    with TestClient(app) as c:
-        yield c
-
-
 def _registered_routes() -> set[tuple[str, str]]:
     pairs: set[tuple[str, str]] = set()
     for r in app.routes:

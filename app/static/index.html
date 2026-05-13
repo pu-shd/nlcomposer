@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Newsletter Composer</title>
 <link rel="stylesheet" href="/static/composer.css">
+<!-- Quill WYSIWYG editor -->
+<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
 </head>
 <body>
 <header class="topbar">
@@ -80,13 +83,9 @@
             <input type="text" name="subject" placeholder="auto: 14.09 — BeijingAutoShow">
           </label>
           <label class="span-2">Intro Message
-            <div class="rt-field" data-rt-scope>
-              <div class="rt-toolbar" role="toolbar" aria-label="Intro formatting">
-                <button type="button" class="rt-tool" data-rt-action="bold" title="Bold (wrap selection in <strong>)" aria-label="Bold"><strong>B</strong></button>
-                <button type="button" class="rt-tool" data-rt-action="italic" title="Italic (wrap selection in <em>)" aria-label="Italic"><em>I</em></button>
-                <button type="button" class="rt-tool" data-rt-action="link" title="Insert a link" aria-label="Insert link">Link</button>
-              </div>
-              <textarea name="intro_html" rows="3" placeholder="<p>Greetings…</p>"></textarea>
+            <div class="rt-field" data-quill-field="intro_html">
+              <div class="quill-container"></div>
+              <textarea name="intro_html" rows="3" placeholder="<p>Greetings…</p>" hidden></textarea>
             </div>
             <small class="fetch-status" data-role="rt-status"></small>
           </label>
@@ -106,7 +105,10 @@
         <summary>Footer</summary>
         <div class="grid-2">
           <label class="span-2">Footer HTML (optional)
-            <textarea name="footer_html" rows="2" placeholder="<p>This list is maintained by …</p>"></textarea>
+            <div class="rt-field" data-quill-field="footer_html">
+              <div class="quill-container"></div>
+              <textarea name="footer_html" rows="2" placeholder="<p>This list is maintained by …</p>" hidden></textarea>
+            </div>
           </label>
           <label class="span-2">Unsubscribe URL
             <input type="url" name="unsubscribe_url" placeholder="https://… (leave empty to suppress the unsubscribe block)">
@@ -242,13 +244,9 @@
         <input type="text" data-field="date_text" placeholder="Apr 27">
       </label>
       <label class="span-2">Pull quote
-        <div class="rt-field" data-rt-scope>
-          <div class="rt-toolbar" role="toolbar" aria-label="Pull quote formatting">
-            <button type="button" class="rt-tool" data-rt-action="bold" title="Bold (wrap selection in <strong>)" aria-label="Bold"><strong>B</strong></button>
-            <button type="button" class="rt-tool" data-rt-action="italic" title="Italic (wrap selection in <em>)" aria-label="Italic"><em>I</em></button>
-            <button type="button" class="rt-tool" data-rt-action="link" title="Insert a link" aria-label="Insert link">Link</button>
-          </div>
-          <textarea data-field="pull_quote" rows="2"></textarea>
+        <div class="rt-field" data-quill-field="pull_quote">
+          <div class="quill-container"></div>
+          <textarea data-field="pull_quote" rows="2" hidden></textarea>
         </div>
         <small class="fetch-status" data-role="rt-status"></small>
       </label>
@@ -259,13 +257,9 @@
         <input type="url" data-field="read_more_url">
       </label>
       <label class="span-2">Comment
-        <div class="rt-field" data-rt-scope>
-          <div class="rt-toolbar" role="toolbar" aria-label="Comment formatting">
-            <button type="button" class="rt-tool" data-rt-action="bold" title="Bold (wrap selection in <strong>)" aria-label="Bold"><strong>B</strong></button>
-            <button type="button" class="rt-tool" data-rt-action="italic" title="Italic (wrap selection in <em>)" aria-label="Italic"><em>I</em></button>
-            <button type="button" class="rt-tool" data-rt-action="link" title="Insert a link" aria-label="Insert link">Link</button>
-          </div>
-          <textarea data-field="alain_comment" rows="2"></textarea>
+        <div class="rt-field" data-quill-field="alain_comment">
+          <div class="quill-container"></div>
+          <textarea data-field="alain_comment" rows="2" hidden></textarea>
         </div>
         <small class="fetch-status" data-role="rt-status"></small>
       </label>
@@ -328,15 +322,9 @@
         Enabled
       </label>
       <label class="span-2">HTML
-        <div class="static-richtext">
-          <div class="static-toolbar" role="toolbar" aria-label="HTML formatting">
-            <button type="button" class="static-tool" data-rt-action="bold" title="Bold (wrap selection in <strong>)" aria-label="Bold"><strong>B</strong></button>
-            <button type="button" class="static-tool" data-rt-action="italic" title="Italic (wrap selection in <em>)" aria-label="Italic"><em>I</em></button>
-            <button type="button" class="static-tool" data-rt-action="heading" title="Heading (wrap selection in <h2>)" aria-label="Heading">H</button>
-            <button type="button" class="static-tool" data-rt-action="link" title="Insert a link" aria-label="Insert link">Link</button>
-            <button type="button" class="static-tool" data-rt-action="image" title="Insert an image from Logos &amp; Media" aria-label="Insert image">Image</button>
-          </div>
-          <textarea data-field="html" rows="4" placeholder='<p>Sponsor blurb…</p>'></textarea>
+        <div class="static-richtext" data-quill-field="html" data-quill-static="true">
+          <div class="quill-container"></div>
+          <textarea data-field="html" rows="4" placeholder='<p>Sponsor blurb…</p>' hidden></textarea>
         </div>
         <small class="fetch-status" data-role="static-rt-status"></small>
       </label>
@@ -502,11 +490,17 @@
       </div>
       <label class="settings-row settings-row-tall">
         <span class="lbl">Default intro HTML</span>
-        <textarea name="default_intro_html" rows="2" placeholder="<p>Greetings…</p>"></textarea>
+        <div class="rt-field" data-quill-field="default_intro_html">
+          <div class="quill-container"></div>
+          <textarea name="default_intro_html" rows="2" placeholder="<p>Greetings…</p>" hidden></textarea>
+        </div>
       </label>
       <label class="settings-row settings-row-tall">
         <span class="lbl">Default footer HTML</span>
-        <textarea name="default_footer_html" rows="2" placeholder="<p>This list is maintained by …</p>"></textarea>
+        <div class="rt-field" data-quill-field="default_footer_html">
+          <div class="quill-container"></div>
+          <textarea name="default_footer_html" rows="2" placeholder="<p>This list is maintained by …</p>" hidden></textarea>
+        </div>
       </label>
       <label class="settings-row">
         <span class="lbl">Preview debounce (ms)</span>

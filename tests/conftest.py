@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
+from fastapi.testclient import TestClient
 
+from app.main import app
 from app.models import (
     Article,
     HighlightRef,
@@ -14,6 +16,20 @@ from app.models import (
     PodcastTimecode,
     StaticBlock,
 )
+
+
+@pytest.fixture
+def client() -> TestClient:
+    """A FastAPI TestClient bound to the app's lifespan.
+
+    Hoisted here so the five test files that used to define an
+    identical fixture no longer have to. The ``with TestClient(app)``
+    context ensures init_db + seed_default_templates run on entry and
+    the DB connection is closed on exit. Pairs with the autouse
+    ``_isolate_data_dir`` fixture so each test gets a fresh data dir.
+    """
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture(autouse=True)

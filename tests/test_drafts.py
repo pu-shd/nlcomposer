@@ -20,13 +20,6 @@ from app.draft_store import (
 from app.main import app
 
 
-@pytest.fixture
-def client() -> TestClient:
-    """Use the lifespan context manager so init_db runs on startup."""
-    with TestClient(app) as c:
-        yield c
-
-
 # ───────── Store-level CRUD ──────────────────────────────────────────
 
 

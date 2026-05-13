@@ -21,13 +21,6 @@ from app.template_store import (
 )
 
 
-@pytest.fixture
-def client() -> TestClient:
-    """Use the lifespan context manager so init_db + seed run on startup."""
-    with TestClient(app) as c:
-        yield c
-
-
 # ───────── Store-level CRUD ──────────────────────────────────────────
 
 

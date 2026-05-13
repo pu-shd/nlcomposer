@@ -98,22 +98,24 @@
     if (cleaned !== input.value) input.value = cleaned;
     return cleaned;
   };
-  const setStatus = (msg, kind = 'info') => {
-    status.textContent = msg || '';
-    status.dataset.kind = kind;
-  };
-
   // ───────── Small shared utilities ──────────────────────────────────
   // statusSetter(el) returns a (msg, kind) → void function that writes
-  // textContent + data-kind on the supplied element. The pattern is
-  // repeated ~20 times across the file; the factory lets new callers
-  // skip the 4-line dance and existing call sites can migrate
-  // incrementally. Null-safe so it can be used before the element
-  // exists in the DOM (the resulting setter is a no-op then).
+  // textContent + data-kind on the supplied element.
   const statusSetter = (el) => (msg, kind = 'info') => {
     if (!el) return;
     el.textContent = msg || '';
     el.dataset.kind = kind;
+  };
+
+  const openDialog = (d) => {
+    if (!d) return;
+    if (typeof d.showModal === 'function') d.showModal();
+    else d.setAttribute('open', '');
+  };
+  const closeDialog = (d) => {
+    if (!d) return;
+    if (typeof d.close === 'function') d.close();
+    else d.removeAttribute('open');
   };
 
   // readJsonDetail(res) → string. Convenience over the repeated
@@ -131,7 +133,110 @@
     }
   };
 
-  // Bind an inline Image-description editor. Caller supplies the
+  /**
+   * Surface a fetch error from /api/media/upload into a status setter.
+   * Handles 429 Retry-After and generic detail extraction.
+   */
+  const surfaceUploadError = async (res, setter) => {
+    const detail = await readJsonDetail(res);
+    if (res.status === 429) {
+      const retry = res.headers.get('Retry-After') || '?';
+      setter(`Rate limited — retry in ${retry}s.`, 'error');
+    } else {
+      setter(`${res.status}: ${detail || res.statusText}`, 'error');
+    }
+  };
+
+  /**
+   * POST a file to /api/media/upload. Returns the MediaItem or throws.
+   */
+  const uploadMedia = async ({ file, kind }) => {
+    const fd = new FormData();
+    fd.append('kind', kind || 'logo');
+    fd.append('file', file);
+    const res = await fetch('/api/media/upload', { method: 'POST', body: fd });
+    if (!res.ok) throw res;
+    return res.json();
+  };
+
+  const setStatus = statusSetter(status);
+
+  const quillInstances = new Map();
+
+  /**
+   * Initialize a Quill editor on a [data-quill-field] scope.
+   * Syncs content back to the hidden sibling textarea on every change.
+   */
+  const wireQuillEditor = (scope) => {
+    if (!scope) return;
+    const container = scope.querySelector('.quill-container');
+    const textarea = scope.querySelector('textarea');
+    if (!container || !textarea) return;
+
+    // Reuse existing Quill instance if we already wired this textarea.
+    if (quillInstances.has(textarea)) return quillInstances.get(textarea);
+
+    const isStatic = scope.dataset.quillStatic === 'true';
+    const toolbarOptions = isStatic
+      ? [['bold', 'italic'], [{ header: 2 }], ['link', 'image']]
+      : [['bold', 'italic'], ['link']];
+
+    const quill = new Quill(container, {
+      theme: 'snow',
+      modules: {
+        toolbar: toolbarOptions,
+      },
+      placeholder: textarea.placeholder || '',
+    });
+
+    // Sync Quill -> Textarea
+    quill.on('text-change', () => {
+      const html = quill.root.innerHTML;
+      // Quill's "empty" is <p><br></p>; treat as blank.
+      const val = html === '<p><br></p>' ? '' : html;
+      if (textarea.value !== val) {
+        textarea.value = val;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+
+    if (isStatic) {
+      const toolbar = quill.getModule('toolbar');
+      toolbar.addHandler('image', () => {
+        openLibraryPicker({
+          kind: 'image',
+          title: 'Insert an image',
+          onPick: (item) => {
+            const range = quill.getSelection(true);
+            const url = item.url || `/api/media/${item.id}/content`;
+            quill.insertEmbed(range.index, 'image', url, Quill.sources.USER);
+            quill.setSelection(range.index + 1, Quill.sources.SILENT);
+          },
+        });
+      });
+    }
+
+    quillInstances.set(textarea, quill);
+    // Seed initial content from textarea (e.g. on page load or template use).
+    if (textarea.value) {
+      quill.root.innerHTML = textarea.value;
+    }
+    return quill;
+  };
+
+  const syncQuillFromTextarea = (textarea) => {
+    const quill = quillInstances.get(textarea);
+    if (quill) {
+      const val = textarea.value || '';
+      const html = val || '<p><br></p>';
+      if (quill.root.innerHTML !== html) {
+        quill.root.innerHTML = html;
+      }
+    }
+  };
+
+  // Bind an inline Image-description editor.
+ Caller supplies the
   // input element, the status hint element, and (optionally) the
   // visibility row + an onSaved hook. The helper wires blur + Enter
   // to PUT /api/media/{id} (the id lives on `input.dataset.mediaId`)
@@ -338,12 +443,9 @@
     }
     wireArticleLogoActions(node);
     wireArticleDragHandle(node);
-    // Bold / Italic / Link toolbars for the two inline rich-text
-    // fields on the article card (Pull quote + Comment). Both render
-    // through the |safe filter in the Jinja template, so the wrapping
-    // <strong> / <em> / <a> the toolbar inserts survives the round-trip.
-    node.querySelectorAll('[data-rt-scope]').forEach((scope) => {
-      wireBasicRichtextToolbar(scope);
+    // Initialize Quill editors for Pull quote and Comment.
+    node.querySelectorAll('[data-quill-field]').forEach((scope) => {
+      wireQuillEditor(scope);
     });
     targetContainer.appendChild(node);
     renumber();
@@ -474,22 +576,7 @@
         uploadBtn.disabled = true;
         setLogoStatus('Uploading…');
         try {
-          const fd = new FormData();
-          fd.append('kind', 'logo');
-          fd.append('file', file);
-          const res = await fetch('/api/media/upload', { method: 'POST', body: fd });
-          if (!res.ok) {
-            let detail = '';
-            try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
-            if (res.status === 429) {
-              const retry = res.headers.get('Retry-After') || '?';
-              setLogoStatus(`Rate limited — retry in ${retry}s.`, 'error');
-            } else {
-              setLogoStatus(`${res.status}: ${detail || res.statusText}`, 'error');
-            }
-            return;
-          }
-          const item = await res.json();
+          const item = await uploadMedia({ file, kind: 'logo' });
           // Stash the Media Library id in the hidden companion field —
           // the URL input would not accept a relative ``/api/media/…``
           // value through Pydantic on the next preview round-trip, so we
@@ -501,7 +588,8 @@
           setLogoStatus('Uploaded — fill the Image description below.', 'ok');
           schedulePreview();
         } catch (err) {
-          setLogoStatus('Network error: ' + err.message, 'error');
+          if (err instanceof Response) await surfaceUploadError(err, setLogoStatus);
+          else setLogoStatus('Network error: ' + err.message, 'error');
         } finally {
           uploadBtn.disabled = false;
           fileInput.value = '';
@@ -620,11 +708,7 @@
     const statusEl = card.querySelector('[data-role="fetch-status"]');
     const button = card.querySelector('[data-action="fetch-article"]');
     const url = sanitizeUrlInput(urlInput);
-    const setFetchStatus = (msg, kind = 'info') => {
-      if (!statusEl) return;
-      statusEl.textContent = msg || '';
-      statusEl.dataset.kind = kind;
-    };
+    const setFetchStatus = statusSetter(statusEl);
     if (!url) {
       setFetchStatus('Enter a URL first.', 'error');
       urlInput?.focus();
@@ -750,11 +834,7 @@
     const statusEl = root.querySelector('[data-role="youtube-fetch-status"]');
     const button = root.querySelector('[data-action="fetch-youtube"]');
     const url = sanitizeUrlInput(urlInput);
-    const setFetchStatus = (msg, kind = 'info') => {
-      if (!statusEl) return;
-      statusEl.textContent = msg || '';
-      statusEl.dataset.kind = kind;
-    };
+    const setFetchStatus = statusSetter(statusEl);
     if (!url) {
       setFetchStatus('Enter a YouTube URL first.', 'error');
       urlInput?.focus();
@@ -871,159 +951,12 @@
       renumber();
       schedulePreview();
     });
-    wireStaticRichtext(node);
+    node.querySelectorAll('[data-quill-field]').forEach((scope) => {
+      wireQuillEditor(scope);
+    });
     targetContainer.appendChild(node);
     renumber();
     return node;
-  };
-
-  // ───────── Static block rich-HTML toolbar ─────────────────────────
-  // Plain selection-wrapping over the existing <textarea>. We don't
-  // promote the field to contenteditable because StaticBlock.html is a
-  // raw HTML string — round-tripping through a richer editor would
-  // either drop attributes (sponsor blurbs use hand-tuned <a>/inline
-  // styles) or require an HTML→nodes parser.
-  const wireStaticRichtext = (card) => {
-    const textarea = card.querySelector('[data-field="html"]');
-    const statusEl = card.querySelector('[data-role="static-rt-status"]');
-    const setRtStatus = (msg, kind = 'info') => {
-      if (!statusEl) return;
-      statusEl.textContent = msg || '';
-      statusEl.dataset.kind = kind;
-    };
-    if (!textarea) return;
-
-    const insertAtSelection = (before, selection, after) => {
-      const start = textarea.selectionStart ?? textarea.value.length;
-      const end = textarea.selectionEnd ?? start;
-      const value = textarea.value;
-      const inserted = `${before}${selection}${after}`;
-      textarea.value = value.slice(0, start) + inserted + value.slice(end);
-      // Place caret AFTER the inserted block so the user can keep typing.
-      const caret = start + inserted.length;
-      textarea.setSelectionRange(caret, caret);
-      textarea.focus();
-      // Emit input event so existing listeners (schedulePreview etc.)
-      // pick up the change without us coupling to them directly.
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    };
-
-    const wrapSelection = (open, close) => {
-      const start = textarea.selectionStart ?? textarea.value.length;
-      const end = textarea.selectionEnd ?? start;
-      const sel = textarea.value.slice(start, end);
-      insertAtSelection(open, sel, close);
-    };
-
-    card.querySelectorAll('[data-rt-action]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const action = btn.dataset.rtAction;
-        if (action === 'bold') wrapSelection('<strong>', '</strong>');
-        else if (action === 'italic') wrapSelection('<em>', '</em>');
-        else if (action === 'heading') wrapSelection('<h2>', '</h2>');
-        else if (action === 'link') {
-          const url = window.prompt('Link URL:', 'https://');
-          if (!url) return;
-          const safe = sanitizeUrl(url.trim());
-          const start = textarea.selectionStart ?? textarea.value.length;
-          const end = textarea.selectionEnd ?? start;
-          const sel = textarea.value.slice(start, end);
-          // Empty selection → use the URL as the visible link text;
-          // selection → wrap that text in the anchor.
-          const text = sel || safe;
-          insertAtSelection(
-            '',
-            `<a href="${escapeHtml(safe)}">${escapeHtml(text)}</a>`,
-            '',
-          );
-          setRtStatus('Link inserted.', 'ok');
-        } else if (action === 'image') {
-          openLibraryPicker({
-            kind: 'image',
-            title: 'Pick an image to embed',
-            onPick: (item) => {
-              if (!item.alt_text) {
-                setRtStatus(
-                  'Insert blocked — set Image description in Logos & Media first.',
-                  'error',
-                );
-                return;
-              }
-              const src = item.url || `/api/media/${item.id}/content`;
-              const tag = `<img src="${escapeHtml(src)}" alt="${escapeHtml(item.alt_text)}" style="max-width:100%;height:auto;">`;
-              insertAtSelection('', tag, '');
-              setRtStatus('Image embedded.', 'ok');
-            },
-          });
-        }
-      });
-    });
-  };
-
-  // (escapeHtml is defined in the dialogs section further down — at
-  // toolbar click time the IIFE has fully run, so the closure resolves
-  // it correctly. No local twin needed.)
-
-  // ───────── Basic rich-text toolbar (intro / pull_quote / comment) ──
-  // Lighter-weight twin of wireStaticRichtext: same Bold / Italic /
-  // Link controls but no Heading or Image action (those make sense in
-  // the static-block sponsor-style body, not in inline copy fields).
-  // Attach by passing the scope element that contains the toolbar +
-  // the textarea. Toolbar clicks wrap the current selection with the
-  // corresponding HTML tag; the template renders the field with
-  // |safe so wrapping survives the round-trip.
-  const wireBasicRichtextToolbar = (scope) => {
-    if (!scope) return;
-    const textarea = scope.querySelector('textarea');
-    if (!textarea) return;
-    const statusEl = scope.parentElement?.querySelector('[data-role="rt-status"]')
-      || scope.querySelector('[data-role="rt-status"]');
-    const setStatus = (msg, kind = 'info') => {
-      if (!statusEl) return;
-      statusEl.textContent = msg || '';
-      statusEl.dataset.kind = kind;
-    };
-    const insertAtSelection = (before, selection, after) => {
-      const start = textarea.selectionStart ?? textarea.value.length;
-      const end = textarea.selectionEnd ?? start;
-      const value = textarea.value;
-      const inserted = `${before}${selection}${after}`;
-      textarea.value = value.slice(0, start) + inserted + value.slice(end);
-      const caret = start + inserted.length;
-      textarea.setSelectionRange(caret, caret);
-      textarea.focus();
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    };
-    const wrapSelection = (open, close) => {
-      const start = textarea.selectionStart ?? textarea.value.length;
-      const end = textarea.selectionEnd ?? start;
-      const sel = textarea.value.slice(start, end);
-      insertAtSelection(open, sel, close);
-    };
-    scope.querySelectorAll('[data-rt-action]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const action = btn.dataset.rtAction;
-        if (action === 'bold') wrapSelection('<strong>', '</strong>');
-        else if (action === 'italic') wrapSelection('<em>', '</em>');
-        else if (action === 'link') {
-          const url = window.prompt('Link URL:', 'https://');
-          if (!url) return;
-          const safe = sanitizeUrl(url.trim());
-          const start = textarea.selectionStart ?? textarea.value.length;
-          const end = textarea.selectionEnd ?? start;
-          const sel = textarea.value.slice(start, end);
-          const text = sel || safe;
-          insertAtSelection(
-            '',
-            `<a href="${escapeHtml(safe)}">${escapeHtml(text)}</a>`,
-            '',
-          );
-          setStatus('Link inserted.', 'ok');
-        }
-      });
-    });
   };
 
   // ───────── Sortable section management ────────────────────────────
@@ -1880,21 +1813,13 @@
   const composeNewDialog = document.getElementById('compose-new-dialog');
   const composeNewForm = document.getElementById('compose-new-form');
   const composeNewStatusEl = document.getElementById('compose-new-status');
-  const setComposeNewStatus = (msg, kind = 'info') => {
-    if (!composeNewStatusEl) return;
-    composeNewStatusEl.textContent = msg || '';
-    composeNewStatusEl.dataset.kind = kind;
-  };
+  const setComposeNewStatus = statusSetter(composeNewStatusEl);
   const openComposeNewDialog = () => {
     if (composeNewForm) composeNewForm.reset();
     setComposeNewStatus('');
-    if (typeof composeNewDialog.showModal === 'function') composeNewDialog.showModal();
-    else composeNewDialog.setAttribute('open', '');
+    openDialog(composeNewDialog);
   };
-  const closeComposeNewDialog = () => {
-    if (typeof composeNewDialog.close === 'function') composeNewDialog.close();
-    else composeNewDialog.removeAttribute('open');
-  };
+  const closeComposeNewDialog = () => closeDialog(composeNewDialog);
   const startFresh = () => {
     closeComposeNewDialog();
     location.reload();
@@ -2150,11 +2075,7 @@
     'autosave_interval_seconds',
   ];
 
-  const setSettingsStatus = (msg, kind = 'info') => {
-    if (!settingsStatus) return;
-    settingsStatus.textContent = msg || '';
-    settingsStatus.dataset.kind = kind;
-  };
+  const setSettingsStatus = statusSetter(settingsStatus);
 
   // Dirty-state tracking — Save is enabled (and Discard surfaced) only
   // when the form values differ from the currentSettings snapshot.
@@ -2187,8 +2108,12 @@
       if (!el) return;
       const v = s[k];
       if (el.type === 'checkbox') el.checked = !!v;
-      else el.value = v == null ? '' : v;
-    });
+      else {
+        el.value = v == null ? '' : v;
+        syncQuillFromTextarea(el);
+      }
+      });
+
     // Hidden masthead-logo media id was just (re-)assigned by the loop;
     // re-render the thumbnail/clear-button affordance from the stored value.
     syncMastheadThumb();
@@ -2295,22 +2220,7 @@
       mastheadUploadBtn.disabled = true;
       setMastheadStatus('Uploading…');
       try {
-        const fd = new FormData();
-        fd.append('kind', 'logo');
-        fd.append('file', file);
-        const res = await fetch('/api/media/upload', { method: 'POST', body: fd });
-        if (!res.ok) {
-          let detail = '';
-          try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
-          if (res.status === 429) {
-            const retry = res.headers.get('Retry-After') || '?';
-            setMastheadStatus(`Rate limited — retry in ${retry}s.`, 'error');
-          } else {
-            setMastheadStatus(`${res.status}: ${detail || res.statusText}`, 'error');
-          }
-          return;
-        }
-        const item = await res.json();
+        const item = await uploadMedia({ file, kind: 'logo' });
         mastheadHidden.value = String(item.id);
         syncMastheadThumb();
         refreshSettingsDirty();
@@ -2328,7 +2238,8 @@
           mastheadAltInput?.focus();
         }
       } catch (err) {
-        setMastheadStatus('Network error: ' + err.message, 'error');
+        if (err instanceof Response) await surfaceUploadError(err, setMastheadStatus);
+        else setMastheadStatus('Network error: ' + err.message, 'error');
       } finally {
         mastheadUploadBtn.disabled = false;
         mastheadFileInput.value = '';
@@ -2376,7 +2287,10 @@
     if (!s) return;
     const set = (name, val) => {
       const el = form.elements[name];
-      if (el && val !== null && val !== undefined) el.value = String(val);
+      if (el && val !== null && val !== undefined) {
+        el.value = String(val);
+        syncQuillFromTextarea(el);
+      }
     };
     if (s.unsubscribe_url) set('unsubscribe_url', s.unsubscribe_url);
     if (s.default_intro_html) set('intro_html', s.default_intro_html);
@@ -2411,20 +2325,10 @@
     setSettingsStatus('');
     if (!currentSettings) await loadSettings();
     if (currentSettings) fillSettingsForm(currentSettings);
-    if (typeof settingsDialog.showModal === 'function') {
-      settingsDialog.showModal();
-    } else {
-      settingsDialog.setAttribute('open', '');
-    }
+    openDialog(settingsDialog);
   };
 
-  const closeSettingsDialog = () => {
-    if (typeof settingsDialog.close === 'function') {
-      settingsDialog.close();
-    } else {
-      settingsDialog.removeAttribute('open');
-    }
-  };
+  const closeSettingsDialog = () => closeDialog(settingsDialog);
 
   // Close-with-unsaved guard: when the form is dirty, ask the user
   // whether to discard. Confirmed → drop their edits and close.
@@ -2514,6 +2418,7 @@
         return;
       }
       el.value = String(v);
+      syncQuillFromTextarea(el);
     });
 
     // Wipe any existing sortable sections so the loaded issue is the
@@ -2639,11 +2544,7 @@
   const templatesCreateForm = document.getElementById('templates-create-form');
   const templatesStatus = document.getElementById('templates-status');
 
-  const setTemplatesStatus = (msg, kind = 'info') => {
-    if (!templatesStatus) return;
-    templatesStatus.textContent = msg || '';
-    templatesStatus.dataset.kind = kind;
-  };
+  const setTemplatesStatus = statusSetter(templatesStatus);
 
   const escapeHtml = (s) =>
     String(s == null ? '' : s).replace(/[<>&"']/g, (c) =>
@@ -2671,8 +2572,7 @@
   const confirmDeleteSkip = document.getElementById('confirm-delete-skip');
   let confirmDeleteResolve = null;
   const closeConfirmDeleteDialog = (result) => {
-    if (typeof confirmDeleteDialog.close === 'function') confirmDeleteDialog.close();
-    else confirmDeleteDialog.removeAttribute('open');
+    closeDialog(confirmDeleteDialog);
     if (confirmDeleteResolve) {
       const r = confirmDeleteResolve;
       confirmDeleteResolve = null;
@@ -2821,20 +2721,10 @@
     setTemplatesStatus('');
     templatesCreateForm.reset();
     await refreshTemplatesList();
-    if (typeof templatesDialog.showModal === 'function') {
-      templatesDialog.showModal();
-    } else {
-      templatesDialog.setAttribute('open', '');
-    }
+    openDialog(templatesDialog);
   };
 
-  const closeTemplatesDialog = () => {
-    if (typeof templatesDialog.close === 'function') {
-      templatesDialog.close();
-    } else {
-      templatesDialog.removeAttribute('open');
-    }
-  };
+  const closeTemplatesDialog = () => closeDialog(templatesDialog);
 
   templatesCreateForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2883,11 +2773,7 @@
   const draftsCreateForm = document.getElementById('drafts-create-form');
   const draftsStatus = document.getElementById('drafts-status');
 
-  const setDraftsStatus = (msg, kind = 'info') => {
-    if (!draftsStatus) return;
-    draftsStatus.textContent = msg || '';
-    draftsStatus.dataset.kind = kind;
-  };
+  const setDraftsStatus = statusSetter(draftsStatus);
 
   const formatDraftTimestamp = (iso) => {
     if (!iso) return '';
@@ -2991,20 +2877,10 @@
     setDraftsStatus('');
     draftsCreateForm.reset();
     await refreshDraftsList();
-    if (typeof draftsDialog.showModal === 'function') {
-      draftsDialog.showModal();
-    } else {
-      draftsDialog.setAttribute('open', '');
-    }
+    openDialog(draftsDialog);
   };
 
-  const closeDraftsDialog = () => {
-    if (typeof draftsDialog.close === 'function') {
-      draftsDialog.close();
-    } else {
-      draftsDialog.removeAttribute('open');
-    }
-  };
+  const closeDraftsDialog = () => closeDialog(draftsDialog);
 
   draftsCreateForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -3062,11 +2938,7 @@
   const archiveList = document.getElementById('archive-list');
   const archiveStatus = document.getElementById('archive-status');
 
-  const setArchiveStatus = (msg, kind = 'info') => {
-    if (!archiveStatus) return;
-    archiveStatus.textContent = msg || '';
-    archiveStatus.dataset.kind = kind;
-  };
+  const setArchiveStatus = statusSetter(archiveStatus);
 
   const formatBytes = (n) => {
     if (typeof n !== 'number' || !Number.isFinite(n)) return '';
@@ -3167,20 +3039,10 @@
   const openArchiveDialog = async () => {
     setArchiveStatus('');
     await refreshArchiveList();
-    if (typeof archiveDialog.showModal === 'function') {
-      archiveDialog.showModal();
-    } else {
-      archiveDialog.setAttribute('open', '');
-    }
+    openDialog(archiveDialog);
   };
 
-  const closeArchiveDialog = () => {
-    if (typeof archiveDialog.close === 'function') {
-      archiveDialog.close();
-    } else {
-      archiveDialog.removeAttribute('open');
-    }
-  };
+  const closeArchiveDialog = () => closeDialog(archiveDialog);
 
   document.getElementById('open-archive').addEventListener('click', openArchiveDialog);
   document.getElementById('archive-close').addEventListener('click', (e) => {
@@ -3205,16 +3067,8 @@
   const mediaUploadStatus = document.getElementById('media-upload-status');
   const mediaTabs = document.querySelectorAll('#media-dialog .media-tab');
 
-  const setMediaStatus = (msg, kind = 'info') => {
-    if (!mediaStatus) return;
-    mediaStatus.textContent = msg || '';
-    mediaStatus.dataset.kind = kind;
-  };
-  const setMediaUploadStatus = (msg, kind = 'info') => {
-    if (!mediaUploadStatus) return;
-    mediaUploadStatus.textContent = msg || '';
-    mediaUploadStatus.dataset.kind = kind;
-  };
+  const setMediaStatus = statusSetter(mediaStatus);
+  const setMediaUploadStatus = statusSetter(mediaUploadStatus);
 
   // Tab strip — exactly one Add form is visible at a time. Hidden
   // forms keep their state so a half-typed URL survives a tab switch.
@@ -3356,20 +3210,10 @@
     if (mediaUploadForm) mediaUploadForm.reset();
     selectMediaTab('url');
     await refreshMediaList();
-    if (typeof mediaDialog.showModal === 'function') {
-      mediaDialog.showModal();
-    } else {
-      mediaDialog.setAttribute('open', '');
-    }
+    openDialog(mediaDialog);
   };
 
-  const closeMediaDialog = () => {
-    if (typeof mediaDialog.close === 'function') {
-      mediaDialog.close();
-    } else {
-      mediaDialog.removeAttribute('open');
-    }
-  };
+  const closeMediaDialog = () => closeDialog(mediaDialog);
 
   mediaCreateForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -3422,24 +3266,7 @@
     setMediaUploadStatus('Uploading…');
     if (mediaUploadTrigger) mediaUploadTrigger.disabled = true;
     try {
-      const fd = new FormData();
-      fd.append('kind', kind);
-      fd.append('file', file);
-      const res = await fetch('/api/media/upload', {
-        method: 'POST',
-        body: fd,
-      });
-      if (!res.ok) {
-        let detail = '';
-        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
-        if (res.status === 429) {
-          const retry = res.headers.get('Retry-After') || '?';
-          setMediaUploadStatus(`Rate limited — retry in ${retry}s.`, 'error');
-        } else {
-          setMediaUploadStatus(`Upload ${res.status}: ${detail || res.statusText}`, 'error');
-        }
-        return;
-      }
+      await uploadMedia({ file, kind });
       // Reset the file input so the same file can be re-picked if the
       // user actually wants to re-upload (without `.value = ''` the
       // change event won't fire on a same-file pick).
@@ -3447,7 +3274,8 @@
       await refreshMediaList();
       setMediaUploadStatus('Uploaded — fill in the Image description before use.', 'ok');
     } catch (err) {
-      setMediaUploadStatus('Network error: ' + err.message, 'error');
+      if (err instanceof Response) await surfaceUploadError(err, setMediaUploadStatus);
+      else setMediaUploadStatus('Network error: ' + err.message, 'error');
     } finally {
       if (mediaUploadTrigger) mediaUploadTrigger.disabled = false;
     }
@@ -3493,19 +3321,11 @@
   const mediaPickerTitle = document.getElementById('media-picker-title');
   const mediaPickerUrlForm = document.getElementById('media-picker-url-form');
   const mediaPickerUrlStatus = document.getElementById('media-picker-url-status');
-  const setMediaPickerUrlStatus = (msg, kind = 'info') => {
-    if (!mediaPickerUrlStatus) return;
-    mediaPickerUrlStatus.textContent = msg || '';
-    mediaPickerUrlStatus.dataset.kind = kind;
-  };
+  const setMediaPickerUrlStatus = statusSetter(mediaPickerUrlStatus);
 
   let _pickerCallback = null;
 
-  const setMediaPickerStatus = (msg, kind = 'info') => {
-    if (!mediaPickerStatus) return;
-    mediaPickerStatus.textContent = msg || '';
-    mediaPickerStatus.dataset.kind = kind;
-  };
+  const setMediaPickerStatus = statusSetter(mediaPickerStatus);
 
   const renderPickerList = (items, kindFilter) => {
     const filtered = items.filter((m) => !kindFilter || m.kind === kindFilter);
@@ -3564,21 +3384,13 @@
       setMediaPickerStatus('Network error: ' + err.message, 'error');
       renderPickerList([], kind);
     }
-    if (typeof mediaPickerDialog.showModal === 'function') {
-      mediaPickerDialog.showModal();
-    } else {
-      mediaPickerDialog.setAttribute('open', '');
-    }
+    openDialog(mediaPickerDialog);
   };
 
   const closeLibraryPicker = () => {
     _pickerCallback = null;
     _pickerKind = null;
-    if (typeof mediaPickerDialog.close === 'function') {
-      mediaPickerDialog.close();
-    } else {
-      mediaPickerDialog.removeAttribute('open');
-    }
+    closeDialog(mediaPickerDialog);
   };
 
   mediaPickerList.addEventListener('click', async (e) => {
@@ -3742,11 +3554,7 @@
   let _autosaveInFlight = false;
   let _autosaveLastWrittenAt = null;
 
-  const setAutosaveStatus = (msg, kind = 'idle') => {
-    if (!autosaveStatusEl) return;
-    autosaveStatusEl.textContent = msg || '';
-    autosaveStatusEl.dataset.kind = kind;
-  };
+  const setAutosaveStatus = statusSetter(autosaveStatusEl);
 
   // Format "Saved 2 min ago" for the status pill. Tries to match the
   // cadence the user actually cares about — "just now" vs minutes vs
@@ -3959,10 +3767,13 @@
   // Wire the static-form rich-text toolbars (Intro Message lives in
   // Issue Details — not cloned from a template, so addArticle's
   // querySelectorAll loop won't pick it up). Anything inside the
-  // composer <form> that carries data-rt-scope and a sibling textarea
+  // composer <form> that carries data-quill-field and a sibling textarea
   // gets the same toolbar wiring.
-  form.querySelectorAll('[data-rt-scope]').forEach((scope) => {
-    wireBasicRichtextToolbar(scope);
+  form.querySelectorAll('[data-quill-field]').forEach((scope) => {
+    wireQuillEditor(scope);
+  });
+  settingsForm.querySelectorAll('[data-quill-field]').forEach((scope) => {
+    wireQuillEditor(scope);
   });
 
   // Pull settings before the first preview so any saved defaults

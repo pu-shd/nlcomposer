@@ -20,6 +20,7 @@ from ..template_store import (
     list_templates,
     update_template,
 )
+from .utils import or_404
 
 
 router = APIRouter(prefix="/api/templates")
@@ -38,10 +39,7 @@ def api_get_template(
     template_id: int,
     conn: sqlite3.Connection = Depends(get_db),
 ) -> Template:
-    t = get_template(conn, template_id)
-    if t is None:
-        raise HTTPException(status_code=404, detail="Template not found")
-    return t
+    return or_404(get_template(conn, template_id), "Template")
 
 
 @router.post("", response_model=Template, status_code=201)

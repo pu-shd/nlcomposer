@@ -15,12 +15,6 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-@pytest.fixture
-def client() -> TestClient:
-    with TestClient(app) as c:
-        yield c
-
-
 def test_index_includes_media_button_and_dialog(client: TestClient):
     body = client.get("/").text
     assert 'id="open-media"' in body
@@ -158,24 +152,21 @@ def test_media_picker_dialog_present(client: TestClient):
 
 
 def test_static_template_carries_richtext_toolbar(client: TestClient):
-    """Static block now wraps its <textarea> with a toolbar offering
-    bold / italic / heading / link / image. The Image button reuses
-    the library picker (kind=image)."""
+    """Static block now uses Quill for rich-HTML editing."""
     body = client.get("/").text
     tpl_start = body.index('id="static-template"')
     tpl_end = body.index("</template>", tpl_start)
     tpl = body[tpl_start:tpl_end]
-    assert 'class="static-toolbar"' in tpl
-    for action in ("bold", "italic", "heading", "link", "image"):
-        assert f'data-rt-action="{action}"' in tpl, f"static toolbar missing {action}"
+    assert 'data-quill-field="html"' in tpl
+    assert 'class="quill-container"' in tpl
     # The textarea is still the source of truth.
     assert 'data-field="html"' in tpl
 
 
 def test_composer_js_wires_static_richtext_toolbar(client: TestClient):
     js = client.get("/static/composer.js").text
-    assert "wireStaticRichtext" in js
-    # Image action calls openLibraryPicker filtered to kind=image.
+    assert "wireQuillEditor" in js
+    # Image action handler uses openLibraryPicker filtered to kind=image.
     assert "kind: 'image'" in js or 'kind: "image"' in js
     # Toolbar emits a synthetic input event so the existing schedulePreview
     # listener picks up the change without us coupling to it directly.

@@ -18,6 +18,7 @@ from ..archive_store import (
     list_archive,
 )
 from ..db import get_db
+from .utils import or_404
 
 
 router = APIRouter(prefix="/api/archive")
@@ -158,10 +159,7 @@ def api_get_archive(
     archive_id: int,
     conn: sqlite3.Connection = Depends(get_db),
 ) -> ArchiveEntry:
-    entry = get_archive(conn, archive_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Archive entry not found")
-    return entry
+    return or_404(get_archive(conn, archive_id), "Archive entry")
 
 
 @router.get("/{archive_id}/download")
@@ -170,10 +168,7 @@ def api_download_archive(
     conn: sqlite3.Connection = Depends(get_db),
 ) -> Response:
     """Stream the stored ``.eml`` bytes back to the user as a download."""
-    found = get_archive_eml(conn, archive_id)
-    if found is None:
-        raise HTTPException(status_code=404, detail="Archive entry not found")
-    filename, eml_bytes = found
+    filename, eml_bytes = or_404(get_archive_eml(conn, archive_id), "Archive entry")
     return Response(
         content=eml_bytes,
         media_type="message/rfc822",

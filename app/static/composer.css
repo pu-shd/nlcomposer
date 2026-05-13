@@ -1489,39 +1489,6 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   background: white;
   overflow: hidden;
 }
-#composer .static-toolbar {
-  display: flex;
-  gap: 2px;
-  padding: 4px 6px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-}
-#composer .static-tool {
-  appearance: none;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  padding: 2px 8px;
-  font: inherit;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
-  min-width: 28px;
-}
-#composer .static-tool:hover {
-  background: white;
-  border-color: var(--border);
-  color: var(--accent);
-}
-#composer .static-tool:active {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-#composer .static-richtext textarea {
-  border: 0;
-  border-radius: 0;
-  width: 100%;
-}
 
 /* Lighter twin of .static-richtext used by Intro Message / Pull quote
    / Comment toolbars. Same Bold / Italic / Link buttons but a more
@@ -1533,39 +1500,6 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-radius: 5px;
   background: white;
   overflow: hidden;
-}
-#composer .rt-toolbar {
-  display: flex;
-  gap: 2px;
-  padding: 3px 5px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-}
-#composer .rt-tool {
-  appearance: none;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  padding: 2px 8px;
-  font: inherit;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
-  min-width: 26px;
-}
-#composer .rt-tool:hover {
-  background: white;
-  border-color: var(--border);
-  color: var(--accent);
-}
-#composer .rt-tool:active {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-#composer .rt-field textarea {
-  border: 0;
-  border-radius: 0;
-  width: 100%;
 }
 
 /* Library picker — same row chrome as the main media list, but each
@@ -1620,9 +1554,34 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-top: 1px solid var(--border);
   margin-top: 0;
 }
-/* File input visual match with the other dialog text inputs. */
-#media-dialog .templates-create input[type="file"] {
+/* Quill WYSIWYG editor integration ───────────────────────────────── */
+.ql-container {
+  font-family: inherit;
+  font-size: 13px;
+  background: white;
+}
+.ql-editor {
+  min-height: 60px;
+  padding: 8px 12px;
+}
+.ql-editor, .ql-container {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.static-richtext .ql-editor {
+  min-height: 120px;
+}
+.ql-toolbar.ql-snow {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  padding: 4px 8px;
+}
+.ql-container.ql-snow {
+  border: none;
+}
+.ql-editor.ql-blank::before {
+  color: var(--muted);
+  font-style: italic;
   font-size: 12px;
-  padding: 4px 6px;
 }
 

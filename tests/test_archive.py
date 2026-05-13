@@ -20,13 +20,6 @@ from app.main import app
 from app.settings import AppSettings, save_settings
 
 
-@pytest.fixture
-def client() -> TestClient:
-    """Use the lifespan context manager so init_db runs on startup."""
-    with TestClient(app) as c:
-        yield c
-
-
 SAMPLE_EML_BYTES = (
     b"From: alice@example.com\r\nTo: bob@example.com\r\n"
     b'Subject: SmartDrivingCars 14.09 \xe2\x80\x94 BeijingAutoShow\r\n\r\n'

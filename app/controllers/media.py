@@ -51,6 +51,7 @@ from ..media_store import (
 from ..models import SanitizedHttpUrl
 from ..rate_limit import configure_for, upload_limiter
 from ..settings import AppSettings, load_settings
+from .utils import or_404
 
 
 router = APIRouter(prefix="/api/media")
@@ -264,8 +265,7 @@ def api_get_media_content(
     Returns 404 when the row does not exist or while bytes are still
     pending — callers fall back to the source URL in that case.
     """
-    if get_media(conn, media_id) is None:
-        raise HTTPException(status_code=404, detail="Media not found")
+    or_404(get_media(conn, media_id), "Media")
     payload = get_media_bytes(conn, media_id)
     if payload is None:
         raise HTTPException(status_code=404, detail="Media bytes not cached")

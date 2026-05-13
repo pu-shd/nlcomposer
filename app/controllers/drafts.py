@@ -18,6 +18,7 @@ from ..draft_store import (
     list_drafts,
     update_draft,
 )
+from .utils import or_404
 
 
 router = APIRouter(prefix="/api/drafts")
@@ -56,10 +57,7 @@ def api_update_draft(
     body: DraftUpdate,
     conn: sqlite3.Connection = Depends(get_db),
 ) -> Draft:
-    updated = update_draft(conn, draft_id, body)
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Draft not found")
-    return updated
+    return or_404(update_draft(conn, draft_id, body), "Draft")
 
 
 @router.delete("/{draft_id}", status_code=204)

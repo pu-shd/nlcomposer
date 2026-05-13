@@ -14,13 +14,6 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-@pytest.fixture
-def client() -> TestClient:
-    """Use the lifespan context manager so init_db runs on startup."""
-    with TestClient(app) as c:
-        yield c
-
-
 def test_index_serves_composer_page(client: TestClient):
     res = client.get("/")
     assert res.status_code == 200
@@ -1265,58 +1258,40 @@ def test_logos_and_media_upload_tab_uses_button_then_picker_flow(client: TestCli
 
 
 def test_basic_richtext_toolbars_wrap_intro_pull_quote_and_comment(client: TestClient):
-    """The composer surfaces a basic rich-text toolbar (Bold / Italic /
-    Link) next to every textarea whose content should accept inline
-    HTML — Intro Message in Issue Details, plus Pull quote and Comment
-    inside each article card. Without these the user has to type raw
-    <strong>/<em>/<a> tags by hand."""
+    """The composer surfaces a Quill editor for every textarea whose content
+    should accept inline HTML — Intro Message in Issue Details, plus Pull
+    quote and Comment inside each article card."""
     body = client.get("/").text
 
     # Intro Message inside Issue Details
     intro_idx = body.index('name="intro_html"')
-    intro_wrap_open = body.rfind('data-rt-scope', 0, intro_idx)
-    assert intro_wrap_open >= 0, (
-        "Intro Message textarea must sit inside a data-rt-scope wrapper "
-        "that the basic rich-text toolbar binds to"
-    )
-    # All three actions must be present in the toolbar around the intro.
-    intro_toolbar_end = body.index('</div>', intro_wrap_open)
-    intro_toolbar = body[intro_wrap_open:intro_toolbar_end]
-    for action in ('bold', 'italic', 'link'):
-        assert f'data-rt-action="{action}"' in intro_toolbar, (
-            f"Intro Message toolbar missing {action}"
-        )
+    intro_wrap_open = body.rfind('data-quill-field="intro_html"', 0, intro_idx)
+    assert intro_wrap_open >= 0
 
     # Pull quote + Comment inside the article template
     article_tpl_start = body.index('id="article-template"')
     article_tpl_end = body.index('</template>', article_tpl_start)
     article_tpl = body[article_tpl_start:article_tpl_end]
-    # Each textarea sits in its own data-rt-scope.
-    pull_quote_idx = article_tpl.index('data-field="pull_quote"')
-    pq_scope_idx = article_tpl.rfind('data-rt-scope', 0, pull_quote_idx)
-    assert pq_scope_idx >= 0, "Pull quote textarea must live in a data-rt-scope"
-    comment_idx = article_tpl.index('data-field="alain_comment"')
-    cm_scope_idx = article_tpl.rfind('data-rt-scope', 0, comment_idx)
-    assert cm_scope_idx >= 0, "Comment textarea must live in a data-rt-scope"
+    # Each textarea sits in its own data-quill-field.
+    assert 'data-quill-field="pull_quote"' in article_tpl
+    assert 'data-quill-field="alain_comment"' in article_tpl
 
     # JS exposes the generalized helper and binds it on init and per-card.
     js = client.get("/static/composer.js").text
-    assert "wireBasicRichtextToolbar" in js
+    assert "wireQuillEditor" in js
     # Wired from the form-level init (Intro Message lives in the static
     # form, not the article template).
-    assert "form.querySelectorAll('[data-rt-scope]'" in js
+    assert "form.querySelectorAll('[data-quill-field]'" in js
     # Wired per article card so cloned Pull-quote + Comment scopes get
     # picked up too.
-    assert "node.querySelectorAll('[data-rt-scope]'" in js
+    assert "node.querySelectorAll('[data-quill-field]'" in js
 
 
 def test_basic_richtext_toolbar_css_helpers_are_styled(client: TestClient):
-    """The new .rt-field / .rt-toolbar / .rt-tool classes need styling
-    so the toolbars actually look like buttons. Mirror the existing
-    .static-* treatment so the form feels consistent."""
+    """Quill's toolbar and container get custom styling to match our UI."""
     css = client.get("/static/composer.css").text
-    for cls in ('.rt-field', '.rt-toolbar', '.rt-tool'):
-        assert cls in css, f"composer.css missing styling for {cls}"
+    assert '.ql-toolbar' in css
+    assert '.ql-container' in css
 
 
 def test_media_picker_dialog_carries_url_fetch_form(client: TestClient):
@@ -1359,16 +1334,9 @@ def test_image_embed_picker_via_static_block_can_accept_url_fetch(client: TestCl
     # The static-block Image action still calls openLibraryPicker
     # with kind=image — that picker now carries the URL form.
     assert "openLibraryPicker({" in js
-    image_action_idx = js.index("data-rt-action: 'image'") if "data-rt-action: 'image'" in js else None
-    # The actual handler dispatches via "if (action === 'image')" — assert
-    # that block still calls openLibraryPicker so the URL form is reachable.
-    img_handler = js.index("action === 'image'")
-    next_brace = js.index("}", img_handler)
-    handler_block = js[img_handler:next_brace]
-    assert "openLibraryPicker" in handler_block, (
-        "static-block Image action must route through openLibraryPicker — "
-        "that's the dialog now carrying the URL-fetch form"
-    )
+    # The actual handler is now inside wireQuillEditor.
+    assert "toolbar.addHandler('image'" in js or 'toolbar.addHandler("image"' in js
+    assert "openLibraryPicker" in js
 
 
 # ───────── Inline masthead Image-description editor ──────────────────

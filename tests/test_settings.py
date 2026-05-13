@@ -10,13 +10,6 @@ from app.main import app
 from app.settings import AppSettings, load_settings, save_settings
 
 
-@pytest.fixture
-def client() -> TestClient:
-    # Use the lifespan ctx manager so the DB is initialized on startup.
-    with TestClient(app) as c:
-        yield c
-
-
 # ───────── Model defaults ────────────────────────────────────────────
 
 

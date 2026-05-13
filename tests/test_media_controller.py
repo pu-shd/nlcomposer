@@ -24,12 +24,6 @@ def _reset_upload_limiter():
     upload_limiter.reset()
 
 
-@pytest.fixture
-def client() -> TestClient:
-    with TestClient(app) as c:
-        yield c
-
-
 def _upload_logo(client: TestClient, filename: str = "alain.png") -> dict:
     res = client.post(
         "/api/media/upload",
