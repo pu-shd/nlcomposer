@@ -206,14 +206,22 @@
       // Quill's "empty" is <p><br></p>; treat as blank.
       if (html === '<p><br></p>') html = '';
 
+      if (html) {
+        // Clean up repetitive <br> tags that Quill sometimes inserts or
+        // that accumulate during paste/edit.
+        html = html.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
+      }
+
       if (scope.dataset.quillUnwrap === 'true' && html) {
         // Unwrap paragraphs for inline fields (Pull quote / Comment).
-        // Convert internal <p> tags to <br><br> and strip the outer wrap.
-        // e.g. <p>A</p><p>B</p> -> A<br><br>B
+        // Convert internal <p> tags to <br> to preserve the line break
+        // without the vertical margin of a paragraph block.
         html = html
           .replace(/^<p>/i, '')
           .replace(/<\/p>$/i, '')
-          .replace(/<\/p><p>/gi, '<br><br>');
+          .replace(/<\/p><p>/gi, '<br>');
+        // Final pass: ensure no triple-br even after unwrap.
+        html = html.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
       }
 
       if (textarea.value !== html) {
