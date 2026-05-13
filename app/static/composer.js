@@ -235,8 +235,7 @@
     }
   };
 
-  // Bind an inline Image-description editor.
- Caller supplies the
+  // Bind an inline Image-description editor. Caller supplies the
   // input element, the status hint element, and (optionally) the
   // visibility row + an onSaved hook. The helper wires blur + Enter
   // to PUT /api/media/{id} (the id lives on `input.dataset.mediaId`)
