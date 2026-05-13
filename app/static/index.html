@@ -362,10 +362,30 @@
 </template>
 
 <template id="highlight-template">
-  <div class="row">
-    <select data-field="article_index" required></select>
-    <input type="text" data-field="override_label" placeholder="Override label (optional)">
+  <div class="row highlight-row">
+    <span class="drag-handle highlight-drag-handle" aria-label="Drag to reorder" title="Drag to reorder" draggable="false">
+      <svg viewBox="0 0 16 22" aria-hidden="true" focusable="false"><circle cx="5" cy="4"  r="1.6"/><circle cx="5" cy="11" r="1.6"/><circle cx="5" cy="18" r="1.6"/><circle cx="11" cy="4"  r="1.6"/><circle cx="11" cy="11" r="1.6"/><circle cx="11" cy="18" r="1.6"/></svg>
+    </span>
+    <div class="highlight-search">
+      <input type="text" class="highlight-search-input" data-role="highlight-search" placeholder="Search article headline (this issue + last year of archives)…" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false">
+      <ul class="highlight-suggestions" data-role="highlight-suggestions" role="listbox" hidden></ul>
+      <small class="highlight-meta" data-role="highlight-meta"></small>
+    </div>
+    <input type="text" data-field="override_label" placeholder="Override label (optional)" class="highlight-override">
     <button type="button" class="btn-remove" aria-label="Remove">×</button>
+    <!-- Hidden round-trip fields. Exactly one of article_index OR
+         (source_archive_id + source_article_index) gets a value at any
+         time; the others stay empty and Pydantic's HighlightRef
+         validator enforces that on the server side. -->
+    <input type="hidden" data-field="article_index">
+    <input type="hidden" data-field="source_archive_id">
+    <input type="hidden" data-field="source_article_index">
+    <input type="hidden" data-field="cached_headline">
+    <input type="hidden" data-field="cached_url">
+    <input type="hidden" data-field="cached_issue_date">
+    <input type="hidden" data-field="cached_issue_year">
+    <input type="hidden" data-field="cached_issue_number">
+    <input type="hidden" data-field="cached_issue_title">
   </div>
 </template>
 

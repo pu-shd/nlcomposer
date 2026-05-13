@@ -184,3 +184,55 @@ def test_filename_is_filesystem_safe(sample_issue):
     assert "2026-05-03" in fname
     assert " " not in fname
     assert "/" not in fname
+
+
+# ───────── Bottom highlights grouping (mixed sources) ────────────────
+
+
+def test_render_html_groups_mixed_highlights_with_subheadings(sample_issue):
+    """When highlights pull from both the current issue and the archive,
+    the rendered HTML should group them under per-source headings so the
+    reader can tell at a glance which week each link is from."""
+    from datetime import date
+
+    issue = sample_issue.model_copy(
+        update={
+            "highlights": [
+                # Current issue ref by index
+                __import__("app.models", fromlist=["HighlightRef"]).HighlightRef(
+                    article_index=0
+                ),
+                # Archive ref with cached metadata
+                __import__("app.models", fromlist=["HighlightRef"]).HighlightRef(
+                    source_archive_id=42,
+                    source_article_index=1,
+                    cached_headline="From last month",
+                    cached_url="https://example.com/last-month",
+                    cached_issue_date=date(2026, 4, 5),
+                    cached_issue_title="LastMonthIssue",
+                ),
+            ]
+        }
+    )
+    html = render_html(issue)
+    # Outer block
+    assert ">Highlights<" in html
+    # Per-source headings appear when more than one group is present
+    assert "This issue" in html
+    assert "LastMonthIssue" in html
+    # The archive ref's URL is rendered straight from cached_url so the
+    # mail client can fetch the historical article.
+    assert "https://example.com/last-month" in html
+
+
+def test_render_html_omits_subheadings_when_only_current_issue(sample_issue):
+    """A regular all-current-issue draft keeps the simple one-list look
+    — no per-group sub-headings cluttering the bottom block."""
+    from app.models import HighlightRef
+    issue = sample_issue.model_copy(
+        update={"highlights": [HighlightRef(article_index=0)]}
+    )
+    html = render_html(issue)
+    assert ">Highlights<" in html
+    # No "This issue" sub-heading when there's only one group.
+    assert ">This issue<" not in html

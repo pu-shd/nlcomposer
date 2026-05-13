@@ -719,3 +719,118 @@ def test_composer_js_simulated_drag_reorders_section_dom():
     # exercise happens through the API round-trip tests in test_drafts.py
     # (which simulates a draft saved after a drag reorder).
     assert True
+
+
+# ───────── Highlights overhaul: template + JS wiring smoke checks ────
+
+
+def test_highlight_template_carries_search_and_hidden_cache_fields(client: TestClient):
+    """The highlight row template must expose every hidden cache field
+    the new search-driven picker populates, plus the per-row drag
+    handle. Without these the SPA can't round-trip an archive-sourced
+    highlight through preview/eml."""
+    body = client.get("/").text
+    tpl_start = body.index('id="highlight-template"')
+    tpl_end = body.index("</template>", tpl_start)
+    tpl = body[tpl_start:tpl_end]
+
+    # Search input + dropdown + meta hint
+    assert 'data-role="highlight-search"' in tpl
+    assert 'data-role="highlight-suggestions"' in tpl
+    assert 'data-role="highlight-meta"' in tpl
+
+    # Drag handle (per-row, separate from the article card's)
+    assert "highlight-drag-handle" in tpl
+
+    # Hidden reference fields — both flavors must round-trip.
+    for field in (
+        "article_index",
+        "source_archive_id",
+        "source_article_index",
+        "cached_headline",
+        "cached_url",
+        "cached_issue_date",
+        "cached_issue_year",
+        "cached_issue_number",
+        "cached_issue_title",
+    ):
+        assert f'data-field="{field}"' in tpl, (
+            f"highlight template missing hidden field for {field}"
+        )
+
+
+def test_composer_js_wires_archive_candidates_endpoint(client: TestClient):
+    """The JS must reach /api/archive/highlight-candidates with a `q=`
+    and drive the drop-down via wireHighlightRow / wireHighlightDrag."""
+    js = client.get("/static/composer.js").text
+    assert "/api/archive/highlight-candidates" in js
+    assert "wireHighlightRow" in js
+    assert "wireHighlightDrag" in js
+    # The picker must explicitly support both flavors of HighlightRef.
+    assert "source_archive_id" in js
+    assert "cached_headline" in js
+
+
+def test_highlight_row_styles_are_present(client: TestClient):
+    """CSS sanity: the new row chrome + suggestions dropdown have to be
+    styled so the form looks right after the rewrite."""
+    css = client.get("/static/composer.css").text
+    assert "highlight-row" in css
+    assert "highlight-drag-handle" in css
+    assert "highlight-suggestions" in css
+
+
+def test_preview_endpoint_accepts_new_highlight_shape(client: TestClient):
+    """Round-trip an archive-sourced highlight through /api/preview/html
+    so the renderer's grouping + display_url + display_label all run
+    against a realistic payload."""
+    payload = {
+        "newsletter_name": "Test",
+        "issue_year": 14,
+        "issue_number": 9,
+        "issue_title": "Demo",
+        "issue_date": "2026-05-03",
+        "from_name": "x",
+        "from_email": "x@example.com",
+        "to_email": "y@example.com",
+        "articles": [
+            {"headline": "Local A", "url": "https://example.com/a"},
+        ],
+        "highlights": [
+            {
+                "source_archive_id": 1,
+                "source_article_index": 0,
+                "cached_headline": "Featured From Last Month",
+                "cached_url": "https://example.com/feat",
+                "cached_issue_date": "2026-04-05",
+                "cached_issue_title": "AprilEdition",
+            },
+            {"article_index": 0},
+        ],
+    }
+    res = client.post("/api/preview/html", json=payload)
+    assert res.status_code == 200, res.text
+    html = res.text
+    assert "Featured From Last Month" in html
+    assert "This issue" in html
+    assert "AprilEdition" in html
+
+
+def test_preview_endpoint_rejects_highlight_with_no_reference(client: TestClient):
+    """The model validator should reject a highlights row that points
+    at nothing — protects against the SPA silently saving a row before
+    the user picked a candidate."""
+    payload = {
+        "newsletter_name": "Test",
+        "issue_year": 14,
+        "issue_number": 9,
+        "issue_title": "Demo",
+        "issue_date": "2026-05-03",
+        "from_name": "x",
+        "from_email": "x@example.com",
+        "to_email": "y@example.com",
+        "articles": [{"headline": "x", "url": "https://example.com/x"}],
+        "highlights": [{"override_label": "no reference"}],
+    }
+    res = client.post("/api/preview/html", json=payload)
+    assert res.status_code == 422

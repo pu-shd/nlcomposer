@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date as _date
 from typing import Annotated, Optional
 
-from pydantic import AnyHttpUrl, BaseModel, BeforeValidator, Field
+from pydantic import AnyHttpUrl, BaseModel, BeforeValidator, Field, model_validator
 
 from .links import sanitize_url
 
@@ -107,17 +107,131 @@ class StaticBlock(BaseModel):
 class HighlightRef(BaseModel):
     """Reference to an article that should be repeated in the bottom highlights.
 
-    Bottom highlights are rendered without icons or commentary, possibly in a
-    different order than the main body.
+    Bottom highlights are rendered without icons or commentary, optionally
+    grouped under the issue date the article was originally featured in.
+    Two flavors of reference are supported:
+
+    * **In-issue** — ``article_index`` points at one of the current
+      issue's ``articles``. This is the original behavior and what every
+      pre-archive-sourcing draft contains.
+    * **Archive-sourced** — ``source_archive_id`` + ``source_article_index``
+      reference an article from a previously-published issue stored in the
+      ``archive`` table. The candidate-search endpoint resolves the
+      reference once on pick and the JS round-trips the metadata via the
+      ``cached_*`` fields, so the renderer never queries the archive at
+      render time. The cached fields also let the template group
+      highlights by source-issue date without any extra DB hop.
+
+    Exactly one referencing kind must be set; the validator below enforces
+    that. ``override_label`` continues to apply to either flavor.
     """
 
-    article_index: int = Field(
+    # In-issue reference — historical shape; still the default for the
+    # most common case where the editor recaps articles from THIS issue.
+    article_index: Optional[int] = Field(
+        default=None,
         description="Zero-based index into NewsletterIssue.articles.",
     )
+
+    # Archive-sourced reference. Both ids must be set together; the JS
+    # populates source_archive_id + source_article_index at pick time
+    # alongside the cached_* fields below.
+    source_archive_id: Optional[int] = Field(
+        default=None,
+        description="archive.id of the source issue (cross-issue highlight).",
+    )
+    source_article_index: Optional[int] = Field(
+        default=None,
+        description="Zero-based index into archive.payload.articles.",
+    )
+
+    # Renderable snapshot — populated by the SPA when an archive
+    # candidate is picked, so the template needs no DB access to render
+    # cross-issue highlights and groupings survive a draft save/load.
+    cached_headline: Optional[str] = Field(
+        default=None,
+        description="Headline text for archive-sourced refs.",
+    )
+    cached_url: Optional[str] = Field(
+        default=None,
+        description="Article URL for archive-sourced refs.",
+    )
+    cached_issue_date: Optional[_date] = Field(
+        default=None,
+        description="Date of the source issue (used as the group heading).",
+    )
+    cached_issue_year: Optional[int] = Field(
+        default=None,
+        description="`issue_year` of the source issue.",
+    )
+    cached_issue_number: Optional[int] = Field(
+        default=None,
+        description="`issue_number` of the source issue.",
+    )
+    cached_issue_title: Optional[str] = Field(
+        default=None,
+        description="`issue_title` of the source issue (for display next to date).",
+    )
+
     override_label: Optional[str] = Field(
         default=None,
         description="If set, replaces the headline text in the highlights list.",
     )
+
+    @model_validator(mode="after")
+    def _exactly_one_referencing_kind(self) -> "HighlightRef":
+        """Reject refs that point nowhere — or point in two directions at once.
+
+        Draft loading is the realistic culprit: an old draft that only
+        sets ``article_index`` is still valid. A new draft that sets
+        ``source_archive_id`` + ``source_article_index`` is valid. A row
+        with neither (e.g. a half-filled form) is rejected so the server
+        responds 422 with a clear pointer instead of rendering a blank
+        list item; a row with both is ambiguous so it's rejected too.
+        """
+        has_in_issue = self.article_index is not None
+        has_archive = (
+            self.source_archive_id is not None
+            and self.source_article_index is not None
+        )
+        partial_archive = (
+            (self.source_archive_id is None) != (self.source_article_index is None)
+        )
+        if partial_archive:
+            raise ValueError(
+                "source_archive_id and source_article_index must be set together"
+            )
+        if has_in_issue and has_archive:
+            raise ValueError(
+                "highlight cannot reference both an in-issue article_index "
+                "and a source_archive_id — pick one"
+            )
+        if not has_in_issue and not has_archive:
+            raise ValueError(
+                "highlight needs either article_index or source_archive_id+"
+                "source_article_index"
+            )
+        return self
+
+    def display_url(self, articles: "list[Article]") -> Optional[str]:
+        """Return the URL to link the highlight to.
+
+        Cross-issue refs lean on ``cached_url`` (captured at pick time);
+        in-issue refs resolve through the current ``articles`` list so
+        the URL stays in sync if the editor edits the article between
+        adding the highlight and exporting the issue.
+        """
+        if self.article_index is not None and 0 <= self.article_index < len(articles):
+            return str(articles[self.article_index].url)
+        return self.cached_url
+
+    def display_label(self, articles: "list[Article]") -> Optional[str]:
+        """Return the visible link text, honoring ``override_label``."""
+        if self.override_label:
+            return self.override_label
+        if self.article_index is not None and 0 <= self.article_index < len(articles):
+            return articles[self.article_index].headline
+        return self.cached_headline
 
 
 class NewsletterIssue(BaseModel):
@@ -215,6 +329,97 @@ class NewsletterIssue(BaseModel):
             f"{self.issue_year}.{self.issue_number}-{self.issue_title}-"
             f"{d.month}.{d.day:02d}.{d.year % 100:02d}"
         )
+
+    def highlights_grouped(self) -> list[dict]:
+        """Group bottom highlights by source issue date for the template.
+
+        Returns a list of ``{label, date, refs}`` dicts ordered by date
+        descending (newest issue first) so the current week sits at the
+        top of the rendered Highlights block. ``label`` is the heading
+        text — ``"This issue"`` for refs into the current articles,
+        otherwise the source issue's formatted date plus its title.
+        Inside each group, refs preserve the order the editor arranged
+        them with the drag handle. URL-keyed dedup keeps the first
+        occurrence of each article so a recap that appears in multiple
+        archive editions only renders once.
+        """
+        in_issue: list[HighlightRef] = []
+        # ``(year, month, day, title)`` sort key so older years sink
+        # toward the bottom of the rendered block; in-issue group is
+        # synthesized separately and always emitted first.
+        by_archive: dict[tuple, dict] = {}
+        for h in self.highlights:
+            if h.article_index is not None:
+                in_issue.append(h)
+                continue
+            d = h.cached_issue_date
+            if d is None:
+                # Defensive: an archive-sourced ref with no cached date
+                # is malformed — render it under a synthetic "Archive"
+                # bucket rather than dropping it silently.
+                key = (0, 0, 0, "")
+                label = "Archive"
+            else:
+                key = (d.year, d.month, d.day, h.cached_issue_title or "")
+                label = self._format_group_label(h)
+            bucket = by_archive.setdefault(
+                key,
+                {"label": label, "date": d, "refs": []},
+            )
+            bucket["refs"].append(h)
+
+        # Dedup by URL inside each group so a recap that appears in
+        # multiple archives only renders once. We dedup per-group rather
+        # than globally because a user may intentionally feature the
+        # same canonical article under two different source dates.
+        for bucket in by_archive.values():
+            seen: set[str] = set()
+            deduped: list[HighlightRef] = []
+            for ref in bucket["refs"]:
+                url = (ref.cached_url or "").strip()
+                if url and url in seen:
+                    continue
+                if url:
+                    seen.add(url)
+                deduped.append(ref)
+            bucket["refs"] = deduped
+
+        groups: list[dict] = []
+        if in_issue:
+            # Same per-group URL dedup for the current-issue bucket. We
+            # resolve URLs through `display_url` so an override doesn't
+            # accidentally hide a duplicate.
+            seen = set()
+            deduped = []
+            for ref in in_issue:
+                url = (ref.display_url(self.articles) or "").strip()
+                if url and url in seen:
+                    continue
+                if url:
+                    seen.add(url)
+                deduped.append(ref)
+            groups.append(
+                {
+                    "label": "This issue",
+                    "date": self.issue_date,
+                    "refs": deduped,
+                }
+            )
+        # Sort archive groups newest → oldest.
+        for key in sorted(by_archive.keys(), reverse=True):
+            groups.append(by_archive[key])
+        return groups
+
+    def _format_group_label(self, h: "HighlightRef") -> str:
+        """Heading text for an archive-sourced group: date + edition."""
+        d = h.cached_issue_date
+        if d is None:
+            return h.cached_issue_title or "Archive"
+        # Match the human-friendly format used by ``effective_display_date``.
+        base = d.strftime("%B %-d, %Y")
+        if h.cached_issue_title:
+            return f"{base} · {h.cached_issue_title}"
+        return base
 
 
 def _ordinal_suffix(n: int) -> str:

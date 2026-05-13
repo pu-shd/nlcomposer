@@ -231,3 +231,142 @@ def test_composer_js_calls_archive_endpoint(client: TestClient):
     js = client.get("/static/composer.js").text
     assert "/api/archive" in js
     assert "openArchiveDialog" in js
+
+
+# ───────── /api/archive/highlight-candidates ─────────────────────────
+
+
+def _seed_archive_with_issue(client, *, slug, articles, issue_year=14, issue_number=9,
+                              issue_title="DemoIssue", issue_date="2026-04-01"):
+    """Helper: POST an issue to /api/eml so the archive table gets a row
+    with the supplied articles. This is the natural seeding path — the
+    composer never inserts archive rows directly.
+
+    Returns the freshly-created archive id (from the list endpoint).
+    """
+    payload = {
+        "newsletter_name": "Test",
+        "issue_year": issue_year,
+        "issue_number": issue_number,
+        "issue_title": issue_title,
+        "issue_date": issue_date,
+        "from_name": "x",
+        "from_email": "x@example.com",
+        "to_email": "y@example.com",
+        "articles": articles,
+    }
+    # /api/eml writes the archive row when auto_archive_on_download=True
+    # (the default).
+    res = client.post("/api/eml", json=payload)
+    assert res.status_code == 200, res.text
+    lst = client.get("/api/archive").json()
+    return lst[0]["id"]
+
+
+def test_highlight_candidates_empty_archive_returns_empty_list(client: TestClient):
+    res = client.get("/api/archive/highlight-candidates")
+    assert res.status_code == 200
+    assert res.json() == []
+
+
+def test_highlight_candidates_surfaces_articles_from_archive(client: TestClient):
+    _seed_archive_with_issue(
+        client,
+        slug="14.9-DemoIssue-4.01.26",
+        articles=[
+            {"headline": "Beijing Auto Show", "url": "https://example.com/beijing"},
+            {"headline": "Why Are We Still Driving?", "url": "https://example.com/why"},
+        ],
+    )
+    res = client.get("/api/archive/highlight-candidates")
+    assert res.status_code == 200
+    items = res.json()
+    headlines = {c["headline"] for c in items}
+    assert "Beijing Auto Show" in headlines
+    assert "Why Are We Still Driving?" in headlines
+    # Issue-level metadata propagates onto every candidate so the SPA
+    # can populate cached_* fields without a second fetch.
+    for c in items:
+        assert c["issue_title"] == "DemoIssue"
+        assert c["issue_year"] == 14
+        assert c["issue_number"] == 9
+        assert c["issue_date"] == "2026-04-01"
+
+
+def test_highlight_candidates_filters_by_query_case_insensitive(client: TestClient):
+    _seed_archive_with_issue(
+        client,
+        slug="14.9-DemoIssue-4.01.26",
+        articles=[
+            {"headline": "Beijing Auto Show", "url": "https://example.com/beijing"},
+            {"headline": "Why Are We Still Driving?", "url": "https://example.com/why"},
+        ],
+    )
+    res = client.get("/api/archive/highlight-candidates?q=BEIJING")
+    items = res.json()
+    assert len(items) == 1
+    assert items[0]["headline"] == "Beijing Auto Show"
+
+
+def test_highlight_candidates_dedups_by_url_keeping_newest(client: TestClient):
+    """The same article URL surfacing in TWO archived editions should
+    appear once — the newer occurrence wins so the cached metadata
+    points at the most recent feature."""
+    # Older edition first — its archive row gets created earlier.
+    _seed_archive_with_issue(
+        client,
+        slug="14.8-Older-3.25.26",
+        issue_number=8,
+        issue_title="Older",
+        issue_date="2026-03-25",
+        articles=[
+            {"headline": "Recurring article", "url": "https://example.com/recur"},
+        ],
+    )
+    # Tiny sleep so the second created_at is strictly newer.
+    time.sleep(0.01)
+    _seed_archive_with_issue(
+        client,
+        slug="14.9-Newer-4.01.26",
+        issue_number=9,
+        issue_title="Newer",
+        issue_date="2026-04-01",
+        articles=[
+            {"headline": "Recurring article (reposted)", "url": "https://example.com/recur"},
+        ],
+    )
+    items = client.get("/api/archive/highlight-candidates").json()
+    by_url = [c for c in items if c["url"] == "https://example.com/recur"]
+    assert len(by_url) == 1, f"expected 1 deduped, got: {by_url}"
+    # Newest archive entry wins; the candidate carries that one's metadata.
+    assert by_url[0]["issue_title"] == "Newer"
+
+
+def test_highlight_candidates_respects_days_window(client: TestClient):
+    """`days=0`-ish requests should not surface arbitrarily old archives.
+    Use the smallest legal window (1 day) and seed with a 'today' issue
+    so it lands inside the window — the endpoint clamps days ≥ 1."""
+    _seed_archive_with_issue(
+        client,
+        slug="recent",
+        articles=[{"headline": "Recent", "url": "https://example.com/recent"}],
+    )
+    res = client.get("/api/archive/highlight-candidates?days=1")
+    assert res.status_code == 200
+    assert any(c["headline"] == "Recent" for c in res.json())
+
+
+def test_highlight_candidates_route_does_not_collide_with_parametric_archive(
+    client: TestClient,
+):
+    """Regression for the FastAPI route-order bug: /highlight-candidates
+    must be matched before /{archive_id} or Starlette 422s on the int
+    parse before falling through. The presence of this test guards the
+    declaration order in app/controllers/archive.py."""
+    res = client.get("/api/archive/highlight-candidates")
+    assert res.status_code == 200
+    # Sanity: the parametric route still 404s normally on a real int that
+    # doesn't exist (would 422 if the literal route were placed wrong and
+    # int parsing already happened).
+    res2 = client.get("/api/archive/9999")
+    assert res2.status_code == 404

@@ -1044,49 +1044,286 @@
   };
 
   // ───────── Highlights ──────────────────────────────────────────────
-  // Highlight <select> options carry the article's stable `data-article-id`
-  // as the option value; the printed label still shows "#N — headline" with
-  // N being the article's *current* DOM position. This keeps a highlight
-  // bound to its referenced article through reorder/insert/remove without
-  // numeric-index drift. The saved-issue JSON still uses numeric
-  // `article_index` (model contract); we map IDs <-> indices at the
-  // load/build boundaries (loadIssueIntoForm + buildIssue).
+  // A highlight row is either a pointer to one of THIS issue's articles
+  // (article_index carries a stable DOM id; we remap to numeric position
+  // in buildIssue so reorders don't drift) OR a pointer to an article
+  // from a previously-archived issue (source_archive_id +
+  // source_article_index + cached_* fields). The hidden field set is
+  // exhaustive — the row carries whichever subset applies — and the
+  // pydantic HighlightRef validator on the server enforces the
+  // exactly-one-flavor rule. The search input below combines both:
+  // current-issue articles surface as the first group of suggestions,
+  // archive candidates come from /api/archive/highlight-candidates.
   const _escAttr = (s) =>
     String(s == null ? '' : s).replace(/[<>&"']/g, (c) =>
       ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
+  const _escHtml = _escAttr;
 
-  const refreshHighlightOptions = () => {
-    const articles = allArticleCards();
-    const optionsHtml = articles.map((a, i) => {
-      const headline = a.querySelector('[data-field="headline"]').value || `(article #${i + 1})`;
-      const truncated = headline.length > 60 ? headline.slice(0, 57) + '…' : headline;
-      const id = a.dataset.articleId || '';
-      return `<option value="${_escAttr(id)}">#${i + 1} — ${_escAttr(truncated)}</option>`;
-    }).join('');
-    highlightsContainer.querySelectorAll('select[data-field="article_index"]').forEach((sel) => {
-      const prev = sel.value;
-      sel.innerHTML = optionsHtml;
-      // Preserve selection by article id; if the referenced article was
-      // removed, the select falls through to the first option.
-      if (prev && [...sel.options].some((o) => o.value === prev)) {
-        sel.value = prev;
-      }
+  // In-flight archive-candidate request per row, so a fast typist
+  // doesn't have stale dropdowns racing the current one.
+  const _highlightSearchSeq = new WeakMap();
+
+  // Get every current-issue article as {id, headline, url, index_within_form}.
+  const _currentArticlesAsCandidates = () =>
+    allArticleCards().map((card, i) => {
+      const headline = card.querySelector('[data-field="headline"]')?.value || '';
+      const url = card.querySelector('[data-field="url"]')?.value || '';
+      return {
+        kind: 'in_issue',
+        article_id: card.dataset.articleId,
+        index_within_form: i,
+        headline: headline.trim(),
+        url: url.trim(),
+      };
+    });
+
+  // Fetch archive candidates with simple debounce + abort-on-restart.
+  const _highlightFetchDebounce = new Map();
+  const fetchArchiveCandidates = (q) => {
+    return new Promise((resolve) => {
+      const key = '__candidate_fetch__';
+      const prev = _highlightFetchDebounce.get(key);
+      if (prev) clearTimeout(prev);
+      _highlightFetchDebounce.set(
+        key,
+        setTimeout(async () => {
+          try {
+            const params = new URLSearchParams({ days: '365', limit: '50' });
+            if (q) params.set('q', q);
+            const res = await fetch(`/api/archive/highlight-candidates?${params}`);
+            if (!res.ok) {
+              resolve([]);
+              return;
+            }
+            const items = await res.json();
+            // Tag the source kind so the row can decide how to populate
+            // hidden fields when the user picks one.
+            resolve(items.map((c) => ({ kind: 'archive', ...c })));
+          } catch {
+            resolve([]);
+          }
+        }, 180),
+      );
     });
   };
+
+  const wireHighlightRow = (row) => {
+    const searchInput = row.querySelector('[data-role="highlight-search"]');
+    const dropdown = row.querySelector('[data-role="highlight-suggestions"]');
+    const meta = row.querySelector('[data-role="highlight-meta"]');
+    const articleIdInput = row.querySelector('[data-field="article_index"]');
+    const archiveIdInput = row.querySelector('[data-field="source_archive_id"]');
+    const archiveIndexInput = row.querySelector('[data-field="source_article_index"]');
+    const cachedHeadline = row.querySelector('[data-field="cached_headline"]');
+    const cachedUrl = row.querySelector('[data-field="cached_url"]');
+    const cachedDate = row.querySelector('[data-field="cached_issue_date"]');
+    const cachedYear = row.querySelector('[data-field="cached_issue_year"]');
+    const cachedNumber = row.querySelector('[data-field="cached_issue_number"]');
+    const cachedTitle = row.querySelector('[data-field="cached_issue_title"]');
+
+    const clearRefFields = () => {
+      [articleIdInput, archiveIdInput, archiveIndexInput,
+       cachedHeadline, cachedUrl, cachedDate, cachedYear,
+       cachedNumber, cachedTitle].forEach((el) => { if (el) el.value = ''; });
+    };
+
+    const setMeta = (label) => {
+      if (meta) meta.textContent = label || '';
+    };
+
+    const pickCandidate = (candidate) => {
+      clearRefFields();
+      if (candidate.kind === 'in_issue') {
+        articleIdInput.value = candidate.article_id;
+        searchInput.value = candidate.headline || `(article #${candidate.index_within_form + 1})`;
+        setMeta('This issue');
+      } else {
+        archiveIdInput.value = String(candidate.archive_id);
+        archiveIndexInput.value = String(candidate.article_index);
+        cachedHeadline.value = candidate.headline || '';
+        cachedUrl.value = candidate.url || '';
+        cachedDate.value = candidate.issue_date || '';
+        cachedYear.value = candidate.issue_year != null ? String(candidate.issue_year) : '';
+        cachedNumber.value = candidate.issue_number != null ? String(candidate.issue_number) : '';
+        cachedTitle.value = candidate.issue_title || '';
+        searchInput.value = candidate.headline || '';
+        const parts = [];
+        if (candidate.issue_date) parts.push(candidate.issue_date);
+        if (candidate.issue_title) parts.push(candidate.issue_title);
+        setMeta(parts.length ? `From ${parts.join(' · ')}` : 'From archive');
+      }
+      hideDropdown();
+      schedulePreview();
+    };
+
+    const renderSuggestions = (candidates) => {
+      if (!dropdown) return;
+      if (!candidates.length) {
+        dropdown.innerHTML = '<li class="hint">No matches — try fewer letters.</li>';
+        dropdown.hidden = false;
+        searchInput.setAttribute('aria-expanded', 'true');
+        return;
+      }
+      dropdown.innerHTML = candidates.map((c, i) => {
+        const tag = c.kind === 'in_issue' ? 'this issue'
+          : (c.issue_date ? c.issue_date : 'archive');
+        return `<li role="option" data-i="${i}"><span class="hl-sugg-title">${_escHtml(c.headline)}</span><span class="hl-sugg-tag">${_escHtml(tag)}</span></li>`;
+      }).join('');
+      dropdown.hidden = false;
+      searchInput.setAttribute('aria-expanded', 'true');
+      // Capture the array on the dropdown so click handler can pick it
+      // out by index — avoids a per-li listener.
+      dropdown._candidates = candidates;
+    };
+
+    const hideDropdown = () => {
+      if (!dropdown) return;
+      dropdown.hidden = true;
+      dropdown._candidates = null;
+      searchInput.setAttribute('aria-expanded', 'false');
+    };
+
+    const refreshSuggestions = async () => {
+      const q = searchInput.value.trim();
+      const seq = (_highlightSearchSeq.get(searchInput) || 0) + 1;
+      _highlightSearchSeq.set(searchInput, seq);
+      const inIssue = _currentArticlesAsCandidates().filter((c) => {
+        if (!c.headline) return false;
+        if (!q) return true;
+        return c.headline.toLowerCase().includes(q.toLowerCase());
+      });
+      const archive = await fetchArchiveCandidates(q);
+      if (seq !== _highlightSearchSeq.get(searchInput)) return; // stale
+      // Dedup by URL across both sources — the current issue wins when
+      // an article happens to be both this week AND in a recent archive.
+      const seen = new Set();
+      const merged = [];
+      for (const c of [...inIssue, ...archive]) {
+        const key = (c.url || `art:${c.article_id || ''}`).toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(c);
+      }
+      renderSuggestions(merged.slice(0, 50));
+    };
+
+    if (searchInput) {
+      searchInput.addEventListener('input', refreshSuggestions);
+      searchInput.addEventListener('focus', refreshSuggestions);
+      searchInput.addEventListener('blur', () => {
+        // Delay so the click on a suggestion lands before the blur hides it.
+        setTimeout(hideDropdown, 120);
+      });
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          hideDropdown();
+        }
+      });
+    }
+    if (dropdown) {
+      dropdown.addEventListener('mousedown', (e) => {
+        const li = e.target.closest('li[role="option"]');
+        if (!li || !dropdown._candidates) return;
+        e.preventDefault();
+        const idx = Number(li.dataset.i);
+        const cand = dropdown._candidates[idx];
+        if (cand) pickCandidate(cand);
+      });
+    }
+
+    // Expose a tiny seed helper the rehydrate path uses to populate a
+    // row from saved-draft JSON without re-fetching.
+    row._seedHighlight = (data) => {
+      // Old-shape (in-issue) seeding: data.article_index is a NUMERIC
+      // index into the loaded articles list. Resolve to the matching
+      // card's DOM id, set article_index input to the id, display the
+      // headline in the search field. Same idToOutIdx pattern as the
+      // legacy select.
+      if (data.article_index !== undefined && data.article_index !== null
+          && data.source_archive_id == null) {
+        const cards = allArticleCards();
+        const card = cards[Number(data.article_index)];
+        if (card && card.dataset.articleId) {
+          articleIdInput.value = card.dataset.articleId;
+          const headline = card.querySelector('[data-field="headline"]')?.value || '';
+          searchInput.value = headline;
+          setMeta('This issue');
+        }
+        return;
+      }
+      // New-shape (archive) seeding: every cached_* field is populated
+      // by the server; just paint them into the row.
+      if (data.source_archive_id != null && data.source_article_index != null) {
+        archiveIdInput.value = String(data.source_archive_id);
+        archiveIndexInput.value = String(data.source_article_index);
+        cachedHeadline.value = data.cached_headline || '';
+        cachedUrl.value = data.cached_url || '';
+        cachedDate.value = data.cached_issue_date || '';
+        cachedYear.value = data.cached_issue_year != null ? String(data.cached_issue_year) : '';
+        cachedNumber.value = data.cached_issue_number != null ? String(data.cached_issue_number) : '';
+        cachedTitle.value = data.cached_issue_title || '';
+        searchInput.value = data.cached_headline || '';
+        const parts = [];
+        if (data.cached_issue_date) parts.push(data.cached_issue_date);
+        if (data.cached_issue_title) parts.push(data.cached_issue_title);
+        setMeta(parts.length ? `From ${parts.join(' · ')}` : 'From archive');
+      }
+    };
+    return { pickCandidate };
+  };
+
+  // Wire row drag-and-drop reorder. Highlight rows live in #highlights
+  // (a flat container, no nested sections) so the dnd is simpler than
+  // the article-card flow — just reorder within one parent.
+  const wireHighlightDrag = (row) => {
+    const handle = row.querySelector('.highlight-drag-handle');
+    if (!handle) return;
+    handle.addEventListener('mousedown', () => { row.draggable = true; });
+    handle.addEventListener('mouseup', () => { row.draggable = false; });
+    handle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+    row.addEventListener('dragstart', (e) => {
+      if (!row.draggable) return;
+      row.classList.add('dragging');
+      try { e.dataTransfer.setData('text/plain', ''); } catch { /* ignore */ }
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      row.draggable = false;
+      schedulePreview();
+    });
+  };
+  if (highlightsContainer) {
+    highlightsContainer.addEventListener('dragover', (e) => {
+      const dragging = highlightsContainer.querySelector('.dragging');
+      if (!dragging) return;
+      e.preventDefault();
+      const rows = [...highlightsContainer.querySelectorAll('.row:not(.dragging)')];
+      const after = rows.find((r) => {
+        const box = r.getBoundingClientRect();
+        return e.clientY < box.top + box.height / 2;
+      });
+      if (after) {
+        highlightsContainer.insertBefore(dragging, after);
+      } else {
+        highlightsContainer.appendChild(dragging);
+      }
+    });
+  }
+
+  // refreshHighlightOptions used to keep <select> options in sync with
+  // the current articles list. With the new search-driven UI there is
+  // nothing to repopulate proactively — the search input does its own
+  // lookup at focus / keystroke. We keep the name so existing callers
+  // (article add/remove/reorder, headline edits) still hit something.
+  const refreshHighlightOptions = () => { /* no-op — search-driven */ };
 
   const addHighlight = (data = {}) => {
     const node = highlightTpl.content.firstElementChild.cloneNode(true);
     highlightsContainer.appendChild(node);
-    refreshHighlightOptions();
-    // `data.article_index` is the saved numeric DOM position from
-    // template/draft JSON. Resolve it to the corresponding card's id.
-    if (data.article_index !== undefined && data.article_index !== null) {
-      const cards = allArticleCards();
-      const card = cards[Number(data.article_index)];
-      if (card && card.dataset.articleId) {
-        node.querySelector('[data-field="article_index"]').value = card.dataset.articleId;
-      }
-    }
+    wireHighlightRow(node);
+    wireHighlightDrag(node);
+    if (Object.keys(data).length) node._seedHighlight(data);
     if (data.override_label) {
       node.querySelector('[data-field="override_label"]').value = data.override_label;
     }
@@ -1228,13 +1465,34 @@
     if (collectedPodcast) issue.podcast = collectedPodcast;
     issue.form_sections = formSections;
 
-    // Highlights — selects carry the article's stable id; resolve to the
-    // post-filter article indices (numbered globally across all Articles
-    // sections) and drop refs whose article was removed or is still
-    // incomplete (no headline+url).
+    // Highlights — two flavors:
+    //   In-issue: article_index input carries the article's stable DOM id;
+    //     resolve to the post-filter article position (numbered globally
+    //     across all Articles sections) and drop refs whose article was
+    //     removed or is still incomplete (no headline+url).
+    //   Archive: source_archive_id + source_article_index identify the
+    //     source article, cached_* fields carry the snapshot the
+    //     renderer + grouping helper need. We round-trip every cached
+    //     field so the bottom-highlights block renders consistently
+    //     across draft save/load + preview cycles.
     issue.highlights = [...highlightsContainer.querySelectorAll('.row')]
       .map((row) => {
         const fields = collectFields(row);
+        const archiveId = fields.source_archive_id;
+        if (archiveId !== '' && archiveId != null) {
+          const out = {
+            source_archive_id: Number(archiveId),
+            source_article_index: Number(fields.source_article_index),
+          };
+          if (fields.cached_headline) out.cached_headline = fields.cached_headline;
+          if (fields.cached_url) out.cached_url = fields.cached_url;
+          if (fields.cached_issue_date) out.cached_issue_date = fields.cached_issue_date;
+          if (fields.cached_issue_year) out.cached_issue_year = Number(fields.cached_issue_year);
+          if (fields.cached_issue_number) out.cached_issue_number = Number(fields.cached_issue_number);
+          if (fields.cached_issue_title) out.cached_issue_title = fields.cached_issue_title;
+          if (fields.override_label) out.override_label = fields.override_label;
+          return out;
+        }
         const id = fields.article_index;
         if (id === '' || id === null || id === undefined) return null;
         const remapped = idToOutIdx.get(String(id));

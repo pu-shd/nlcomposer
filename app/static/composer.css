@@ -598,6 +598,107 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   min-width: 0;
 }
 
+/* Highlight row: per-row drag handle, search-driven picker with a
+   suggestion dropdown, override label, and a remove button. The
+   .highlight-search div holds the input + dropdown + a small meta
+   line describing the picked source so the editor can see at a glance
+   whether a row is from the current issue or an archived one. */
+#composer .highlight-row {
+  align-items: stretch;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  position: relative;
+}
+#composer .highlight-row.dragging {
+  opacity: 0.55;
+  border-style: dashed;
+}
+#composer .highlight-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  cursor: grab;
+  padding: 2px 4px;
+  border-radius: 4px;
+  user-select: none;
+  flex: 0 0 auto;
+}
+#composer .highlight-drag-handle:hover { background: rgba(26, 68, 128, 0.12); color: var(--accent); }
+#composer .highlight-drag-handle:active { cursor: grabbing; }
+#composer .highlight-drag-handle svg { width: 14px; height: 18px; display: block; }
+
+#composer .highlight-search {
+  position: relative;
+  flex: 1 1 60%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+#composer .highlight-search-input {
+  width: 100%;
+  min-width: 0;
+}
+#composer .highlight-meta {
+  font-size: 11px;
+  color: var(--muted);
+  min-height: 12px;
+}
+#composer .highlight-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 4px 0 0 0;
+  padding: 4px 0;
+  list-style: none;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  max-height: 240px;
+  overflow-y: auto;
+}
+#composer .highlight-suggestions[hidden] { display: none; }
+#composer .highlight-suggestions li {
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+#composer .highlight-suggestions li.hint {
+  color: var(--muted);
+  cursor: default;
+}
+#composer .highlight-suggestions li:hover:not(.hint),
+#composer .highlight-suggestions li:focus:not(.hint) {
+  background: rgba(26, 68, 128, 0.08);
+}
+#composer .highlight-suggestions .hl-sugg-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#composer .highlight-suggestions .hl-sugg-tag {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+#composer .highlight-override {
+  flex: 0 1 28%;
+  min-width: 8em;
+}
+
 #composer fieldset.card {
   border: 1px solid var(--border);
   border-radius: 6px;

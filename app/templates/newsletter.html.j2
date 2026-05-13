@@ -129,17 +129,27 @@
   {%- endfor %}
 
   {# ── BOTTOM HIGHLIGHTS REPEAT ────────────────────────────────────── #}
-  {%- if issue.highlights %}
+  {%- set _groups = issue.highlights_grouped() %}
+  {%- if _groups %}
   <tr><td class="highlights-pad" style="padding:28px 16px 0 16px;border-top:1px solid #ddd;">
     <h3 class="highlights-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:16px;margin:12px 0 8px 0;">Highlights</h3>
-    <ul class="highlights-list" style="margin:0;padding-left:20px;font-size:14px;line-height:1.5;">
-      {%- for h in issue.highlights %}
-        {%- if h.article_index < issue.articles | length %}
-          {%- set a = issue.articles[h.article_index] %}
-          <li><a href="{{ a.url }}" style="color:#1a4480;">{{ h.override_label or a.headline }}</a></li>
-        {%- endif %}
-      {%- endfor %}
-    </ul>
+    {%- for group in _groups %}
+      {# Sub-heading per source issue. With a single group the inner
+         heading is redundant with the outer "Highlights" — only emit
+         it when the user actually pulled from more than one source. #}
+      {%- if _groups | length > 1 %}
+        <h4 class="highlights-h4" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:14px;margin:14px 0 4px 0;color:#555;font-weight:600;">{{ group.label }}</h4>
+      {%- endif %}
+      <ul class="highlights-list" style="margin:0 0 8px 0;padding-left:20px;font-size:14px;line-height:1.5;">
+        {%- for h in group.refs %}
+          {%- set _url = h.display_url(issue.articles) %}
+          {%- set _label = h.display_label(issue.articles) %}
+          {%- if _url and _label %}
+            <li><a href="{{ _url }}" style="color:#1a4480;">{{ _label }}</a></li>
+          {%- endif %}
+        {%- endfor %}
+      </ul>
+    {%- endfor %}
   </td></tr>
   {%- endif %}
 
