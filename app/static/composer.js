@@ -207,15 +207,17 @@
       if (html === '<p><br></p>') html = '';
 
       if (html) {
-        // Clean up repetitive <br> tags that Quill sometimes inserts or
-        // that accumulate during paste/edit.
-        html = html.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
+        // Strip browser-inserted whitespace between block-level tags.
+        // This prevents "newline inflation" where saving </p>\n<p>
+        // reloads as an extra paragraph block in Quill.
+        html = html.replace(/>\s+</g, '><');
       }
 
       if (scope.dataset.quillUnwrap === 'true' && html) {
         // Unwrap paragraphs for inline fields (Pull quote / Comment).
         // Convert internal <p> tags to <br> to preserve the line break
         // without the vertical margin of a paragraph block.
+        // We already stripped inter-tag whitespace above, so this is clean.
         html = html
           .replace(/^<p>/i, '')
           .replace(/<\/p>$/i, '')
@@ -268,7 +270,10 @@
     if (quill) {
       const val = textarea.value || '';
       const html = val || '<p><br></p>';
-      if (quill.root.innerHTML !== html) {
+      // Normalize both sides to ignore browser-inserted inter-tag whitespace.
+      const currentNormalized = quill.root.innerHTML.replace(/>\s+</g, '><');
+      const targetNormalized = html.replace(/>\s+</g, '><');
+      if (currentNormalized !== targetNormalized) {
         quill.root.innerHTML = html;
         if (!val || val === '<p><br></p>') {
           quill.format('bold', false, Quill.sources.SILENT);
