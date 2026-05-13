@@ -1913,7 +1913,9 @@
   const closeComposeNewDialog = () => closeDialog(composeNewDialog);
   const startFresh = () => {
     closeComposeNewDialog();
-    location.reload();
+    const url = new URL(location.href);
+    url.searchParams.set('fresh', '1');
+    location.href = url.toString();
   };
 
   document.getElementById('compose-new').addEventListener('click', (e) => {
@@ -3910,9 +3912,16 @@
   // Pull settings before the first preview so any saved defaults
   // (from_name/from_email/etc.) end up in the rendered .eml.
   loadSettings().then(async (s) => {
+    const isFresh = new URLSearchParams(location.search).get('fresh') === '1';
+    if (isFresh) {
+      // Clear the param so a subsequent manual reload DOES load the draft
+      // if the user has that preference enabled.
+      history.replaceState({}, document.title, location.pathname);
+    }
+
     if (s) {
       applySettingsToForm(s);
-      if (s.load_last_draft_on_login) {
+      if (s.load_last_draft_on_login && !isFresh) {
         await loadLatestDraft();
       }
     }
