@@ -487,6 +487,19 @@
           <small id="masthead-upload-status" class="field-hint"></small>
         </div>
       </div>
+      <!-- Inline Image-description editor for the uploaded masthead logo.
+           Mirrors the article-card alt-text editor: PUTs /api/media/{id}
+           on blur so the operator never has to leave Settings to satisfy
+           the alt-text gate that the save validator enforces. Hidden
+           until a Logos & Media item is referenced (URL-only masthead
+           and the no-logo case don't need an alt-text row). -->
+      <div class="settings-row masthead-alt-row" data-role="masthead-alt-row" hidden>
+        <span class="lbl">Image description</span>
+        <div class="masthead-alt-controls">
+          <input type="text" id="masthead-alt-input" data-role="masthead-alt-text" maxlength="240" placeholder="Briefly describe the masthead (e.g. 'SmartDrivingCars masthead')">
+          <small id="masthead-alt-status" class="field-hint"></small>
+        </div>
+      </div>
       <label class="settings-row settings-row-tall">
         <span class="lbl">Default intro HTML</span>
         <textarea name="default_intro_html" rows="2" placeholder="<p>Greetings…</p>"></textarea>

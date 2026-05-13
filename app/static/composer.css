@@ -1056,6 +1056,36 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   flex-basis: 100%;
   margin: 0;
 }
+
+/* Inline Image-description editor for the uploaded masthead. Same
+   shape as the .masthead-upload-row above so the two rows visually
+   anchor together. The input occupies the value column; the status
+   line drops to a second row of the flex container. */
+#settings-dialog .masthead-alt-row[hidden] { display: none; }
+#settings-dialog .masthead-alt-row { align-items: start; }
+#settings-dialog .masthead-alt-row > .lbl { padding-top: 7px; }
+#settings-dialog .masthead-alt-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+#settings-dialog .masthead-alt-controls > input[type="text"] {
+  flex: 1 1 100%;
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: white;
+  color: var(--text);
+}
+#settings-dialog #masthead-alt-status {
+  flex-basis: 100%;
+  margin: 0;
+}
+#settings-dialog #masthead-alt-status[data-kind="error"] { color: var(--danger); }
+#settings-dialog #masthead-alt-status[data-kind="ok"]    { color: var(--ok, #1f7a3a); }
 #settings-dialog .settings-row-checkbox > .settings-checkbox-field,
 #compose-new-dialog .settings-row-checkbox > .settings-checkbox-field,
 #confirm-delete-dialog .settings-row-checkbox > .settings-checkbox-field {

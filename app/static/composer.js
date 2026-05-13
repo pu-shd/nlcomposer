@@ -103,6 +103,94 @@
     status.dataset.kind = kind;
   };
 
+  // ───────── Small shared utilities ──────────────────────────────────
+  // statusSetter(el) returns a (msg, kind) → void function that writes
+  // textContent + data-kind on the supplied element. The pattern is
+  // repeated ~20 times across the file; the factory lets new callers
+  // skip the 4-line dance and existing call sites can migrate
+  // incrementally. Null-safe so it can be used before the element
+  // exists in the DOM (the resulting setter is a no-op then).
+  const statusSetter = (el) => (msg, kind = 'info') => {
+    if (!el) return;
+    el.textContent = msg || '';
+    el.dataset.kind = kind;
+  };
+
+  // readJsonDetail(res) → string. Convenience over the repeated
+  //   let detail = ''; try { detail = (await res.json()).detail || ''; } catch {}
+  // pattern at non-OK fetch sites. Swallows JSON parse errors (the
+  // server might respond with a plain-text body) and returns '' so the
+  // caller can use `detail || res.statusText` for the user-facing
+  // message.
+  const readJsonDetail = async (res) => {
+    try {
+      const body = await res.json();
+      return (body && body.detail) || '';
+    } catch {
+      return '';
+    }
+  };
+
+  // Bind an inline Image-description editor. Caller supplies the
+  // input element, the status hint element, and (optionally) the
+  // visibility row + an onSaved hook. The helper wires blur + Enter
+  // to PUT /api/media/{id} (the id lives on `input.dataset.mediaId`)
+  // and surfaces a Saved / Required / error status on every change.
+  // Returns `{ show(item), persist() }` so the caller can paint the
+  // editor from a freshly-fetched MediaItem or trigger a save
+  // programmatically.
+  const bindAltTextEditor = ({ input, statusEl, rowEl = null, onSaved = null }) => {
+    if (!input) return { show: () => {}, persist: async () => {} };
+    const setStatusOnly = statusSetter(statusEl);
+    const show = (item) => {
+      if (rowEl) rowEl.hidden = item == null;
+      if (item == null) {
+        input.value = '';
+        delete input.dataset.mediaId;
+        setStatusOnly('');
+        return;
+      }
+      input.value = item.alt_text || '';
+      input.dataset.mediaId = String(item.id);
+      setStatusOnly(
+        item.alt_text ? 'Saved.' : 'Required before this logo can be used.',
+        item.alt_text ? 'ok' : 'error',
+      );
+    };
+    const persist = async () => {
+      const id = input?.dataset?.mediaId;
+      if (!id) return;
+      const value = input.value.trim();
+      try {
+        const res = await fetch(`/api/media/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ alt_text: value }),
+        });
+        if (!res.ok) {
+          const detail = await readJsonDetail(res);
+          setStatusOnly(`${res.status}: ${detail || res.statusText}`, 'error');
+          return;
+        }
+        setStatusOnly(
+          value ? 'Saved.' : 'Required before this logo can be used.',
+          value ? 'ok' : 'error',
+        );
+        if (onSaved) onSaved({ value, id });
+      } catch (err) {
+        setStatusOnly('Network error: ' + err.message, 'error');
+      }
+    };
+    input.addEventListener('blur', persist);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.blur();
+      }
+    });
+    return { show, persist };
+  };
+
   // Hoisted up so updateYearDisplay (defined just below) can read the
   // initial_publication_date without hitting the temporal dead zone.
   let currentSettings = null;
@@ -310,76 +398,20 @@
     const setLogoMedia = (id) => {
       if (mediaIdInput) mediaIdInput.value = id == null ? '' : String(id);
     };
-    const setLogoStatus = (msg, kind = 'info') => {
-      if (!statusEl) return;
-      statusEl.textContent = msg || '';
-      statusEl.dataset.kind = kind;
-    };
-    const setAltStatus = (msg, kind = 'info') => {
-      if (!altStatusEl) return;
-      altStatusEl.textContent = msg || '';
-      altStatusEl.dataset.kind = kind;
-    };
-    // Show or hide the inline alt-text editor. Pass a MediaItem to bind
-    // the editor to a specific library row; pass null to clear it (e.g.
-    // when the article switches to a plain URL with no library backing).
-    const showAltEditor = (item) => {
-      if (!altRow || !altInput) return;
-      if (item == null) {
-        altRow.hidden = true;
-        altInput.value = '';
-        delete altInput.dataset.mediaId;
-        setAltStatus('');
-        return;
-      }
-      altRow.hidden = false;
-      altInput.value = item.alt_text || '';
-      altInput.dataset.mediaId = String(item.id);
-      setAltStatus(
-        item.alt_text ? 'Saved.' : 'Required before this logo can be used.',
-        item.alt_text ? 'ok' : 'error',
-      );
-    };
-    // PUT /api/media/{id} when the alt text loses focus. Sends an empty
-    // string when cleared so the gate flips back to "required" and the
-    // Logos & Media list reflects the user's intent.
-    const persistAltText = async () => {
-      const id = altInput?.dataset?.mediaId;
-      if (!id) return;
-      const value = altInput.value.trim();
-      try {
-        const res = await fetch(`/api/media/${encodeURIComponent(id)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ alt_text: value }),
-        });
-        if (!res.ok) {
-          let detail = '';
-          try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
-          setAltStatus(`${res.status}: ${detail || res.statusText}`, 'error');
-          return;
-        }
-        setAltStatus(
-          value ? 'Saved.' : 'Required before this logo can be used.',
-          value ? 'ok' : 'error',
-        );
-        // Other surfaces (Settings masthead validation, preview) read
-        // alt_text on the next request — schedule a preview refresh so
-        // the editor sees the change reflected without a manual reload.
-        schedulePreview();
-      } catch (err) {
-        setAltStatus('Network error: ' + err.message, 'error');
-      }
-    };
-    if (altInput) {
-      altInput.addEventListener('blur', persistAltText);
-      altInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          altInput.blur();
-        }
-      });
-    }
+    const setLogoStatus = statusSetter(statusEl);
+    // Shared inline alt-text editor — Article logos and Settings →
+    // Masthead use the same bindAltTextEditor surface so the
+    // "Saved." / "Required before this logo can be used." / PUT
+    // contract stays in one place. The onSaved hook fires a preview
+    // re-render so other surfaces (e.g. the masthead-Save validator)
+    // pick up the new alt_text on the next round-trip.
+    const altEditor = bindAltTextEditor({
+      input: altInput,
+      statusEl: altStatusEl,
+      rowEl: altRow,
+      onSaved: () => schedulePreview(),
+    });
+    const showAltEditor = altEditor.show;
 
     const registerBtn = card.querySelector('[data-action="register-logo"]');
     if (registerBtn) {
@@ -2161,6 +2193,10 @@
     // re-render the thumbnail/clear-button affordance from the stored value.
     syncMastheadThumb();
     setMastheadStatus('');
+    // Fetch the referenced media item (if any) and (re)populate the
+    // inline alt-text editor so reopening Settings on an existing
+    // upload picks up wherever the description was last left.
+    syncMastheadAltEditor();
     // Re-baseline + reset Save state once the form mirrors settings.
     _settingsBaseline = _snapshotSettingsForm();
     refreshSettingsDirty();
@@ -2187,12 +2223,25 @@
   const mastheadClearBtn = document.getElementById('masthead-clear-btn');
   const mastheadFileInput = document.getElementById('masthead-upload-file');
   const mastheadStatusEl = document.getElementById('masthead-upload-status');
+  const mastheadAltRow = document.querySelector('[data-role="masthead-alt-row"]');
+  const mastheadAltInput = document.getElementById('masthead-alt-input');
+  const mastheadAltStatusEl = document.getElementById('masthead-alt-status');
 
-  const setMastheadStatus = (msg, kind = 'info') => {
-    if (!mastheadStatusEl) return;
-    mastheadStatusEl.textContent = msg || '';
-    mastheadStatusEl.dataset.kind = kind;
-  };
+  const setMastheadStatus = statusSetter(mastheadStatusEl);
+
+  // Shared inline alt-text editor — same helper as the Article-card
+  // path uses. onSaved swaps the upload-row status from the
+  // "Save-will-be-rejected" warning to "Image described — press Save
+  // to apply." once the description lands.
+  const mastheadAltEditor = bindAltTextEditor({
+    input: mastheadAltInput,
+    statusEl: mastheadAltStatusEl,
+    rowEl: mastheadAltRow,
+    onSaved: ({ value }) => {
+      if (value) setMastheadStatus('Image described — press Save to apply.', 'ok');
+    },
+  });
+  const showMastheadAltEditor = mastheadAltEditor.show;
 
   // Reflect the hidden input's current value into the thumbnail + clear
   // button visibility. Called whenever the value changes (programmatic
@@ -2211,6 +2260,27 @@
       mastheadThumb.removeAttribute('src');
       mastheadThumb.hidden = true;
       mastheadClearBtn.hidden = true;
+    }
+  };
+
+  // Refresh the alt-text editor whenever the masthead media id changes
+  // (open dialog rehydrate, fresh upload, clear). Fetches the media
+  // item to populate alt_text in the input. Hidden when no id.
+  const syncMastheadAltEditor = async () => {
+    const id = mastheadHidden?.value;
+    if (!id) {
+      showMastheadAltEditor(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/media/${encodeURIComponent(id)}`);
+      if (!res.ok) {
+        showMastheadAltEditor(null);
+        return;
+      }
+      showMastheadAltEditor(await res.json());
+    } catch {
+      showMastheadAltEditor(null);
     }
   };
 
@@ -2244,12 +2314,19 @@
         mastheadHidden.value = String(item.id);
         syncMastheadThumb();
         refreshSettingsDirty();
-        setMastheadStatus(
-          item.alt_text
-            ? 'Uploaded — press Save to apply.'
-            : 'Uploaded. Set its Image description in Logos & Media first; Save will be rejected without one.',
-          item.alt_text ? 'ok' : 'error',
-        );
+        // Surface the inline alt-text editor directly so the user can
+        // satisfy the Save-time alt-text gate without leaving Settings.
+        // The status message points at the (now-visible) input rather
+        // than asking the user to detour through Logos & Media.
+        showMastheadAltEditor(item);
+        if (item.alt_text) {
+          setMastheadStatus('Uploaded — press Save to apply.', 'ok');
+        } else {
+          setMastheadStatus('Uploaded. Fill the Image description below before Save.', 'error');
+          // Pull focus into the alt-text input so the editor can just
+          // start typing — no extra click required.
+          mastheadAltInput?.focus();
+        }
       } catch (err) {
         setMastheadStatus('Network error: ' + err.message, 'error');
       } finally {
@@ -2264,6 +2341,7 @@
       e.preventDefault();
       mastheadHidden.value = '';
       syncMastheadThumb();
+      showMastheadAltEditor(null);
       refreshSettingsDirty();
       setMastheadStatus('Cleared. The Logos & Media item remains; only the reference is removed.');
     });

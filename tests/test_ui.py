@@ -1369,3 +1369,57 @@ def test_image_embed_picker_via_static_block_can_accept_url_fetch(client: TestCl
         "static-block Image action must route through openLibraryPicker — "
         "that's the dialog now carrying the URL-fetch form"
     )
+
+
+# ───────── Inline masthead Image-description editor ──────────────────
+
+
+def test_settings_renders_inline_masthead_alt_text_editor(client: TestClient):
+    """The Settings dialog must expose an inline Image-description
+    editor for the uploaded masthead logo so the operator never has to
+    detour through Logos & Media to satisfy the alt-text gate the
+    server enforces at Save time."""
+    body = client.get("/").text
+    # The row is hidden by default (no media id selected yet) — but
+    # the markup must be present so the JS can show it after upload.
+    assert 'data-role="masthead-alt-row"' in body
+    assert 'data-role="masthead-alt-text"' in body
+    assert 'id="masthead-alt-input"' in body
+    assert 'id="masthead-alt-status"' in body
+    # Server PUTs alt_text through this input — confirm the JS wiring
+    # is present so a future refactor doesn't drop the surface. The
+    # masthead path uses a shared bindAltTextEditor helper that's
+    # also driving the Article-card flow.
+    js = client.get("/static/composer.js").text
+    assert "bindAltTextEditor" in js, (
+        "composer.js must expose a shared alt-text editor helper — "
+        "previously two near-identical persistAlt/showAltEditor blocks "
+        "lived in the file"
+    )
+    assert "mastheadAltEditor" in js, (
+        "Settings masthead must bind the shared editor via "
+        "bindAltTextEditor — not roll its own"
+    )
+    assert "syncMastheadAltEditor" in js
+    # The upload success path must surface the editor instead of
+    # printing the old "set it in Logos & Media first" error.
+    assert "Fill the Image description below before Save" in js
+    # The shared editor body PUTs /api/media/{id} — guard the
+    # contract end-to-end.
+    helper_idx = js.index("const bindAltTextEditor =")
+    # The arrow function's closing brace is on its own line so we can
+    # locate the helper body by walking forward to the next blank-line
+    # boundary in the IIFE.
+    helper_end = js.index("\n  };", helper_idx)
+    helper_body = js[helper_idx:helper_end]
+    assert "/api/media/" in helper_body
+    assert "method: 'PUT'" in helper_body
+
+
+def test_legacy_masthead_alt_text_error_string_is_gone(client: TestClient):
+    """The old "Set its Image description in Logos & Media first" line
+    pushed the user out of Settings unnecessarily. With the inline
+    editor, that wording is replaced by an in-place hint pointing at
+    the new input."""
+    js = client.get("/static/composer.js").text
+    assert "Set its Image description in Logos & Media first" not in js
