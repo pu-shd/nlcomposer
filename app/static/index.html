@@ -426,125 +426,118 @@
     </header>
     <p class="hint" id="settings-dirty-warning" hidden role="alert">Unsaved changes — Save or Discard before closing.</p>
     <div class="settings-fields">
-      <label class="settings-row">
-        <span class="lbl">Newsletter name</span>
-        <input type="text" name="newsletter_name" placeholder="MyNewsletter">
-      </label>
-      <label class="settings-row">
-        <span class="lbl">Inception Date</span>
-        <input type="date" name="initial_publication_date">
-      </label>
-      <label class="settings-row" hidden>
-        <span class="lbl">From name</span>
-        <input type="text" name="from_name">
-      </label>
-      <label class="settings-row">
-        <span class="lbl">From</span>
-        <input type="email" name="from_email" placeholder="sender@example.com">
-      </label>
-      <label class="settings-row">
-        <span class="lbl">To</span>
-        <input type="email" name="to_email" placeholder="list@example.com">
-      </label>
-      <label class="settings-row">
-        <span class="lbl">Reply-To</span>
-        <input type="email" name="reply_to" placeholder="optional">
-      </label>
-      <label class="settings-row">
-        <span class="lbl">Unsubscribe URL</span>
-        <input type="url" name="unsubscribe_url" placeholder="https://...">
-      </label>
-      <label class="settings-row">
-        <span class="lbl">Masthead logo URL</span>
-        <input type="url" name="masthead_logo_url" placeholder="https://...">
-      </label>
-      <div class="settings-row masthead-upload-row">
-        <span class="lbl">Or upload logo</span>
-        <div class="masthead-upload-controls">
-          <img id="masthead-thumb" class="masthead-thumb" alt="Masthead preview" hidden>
-          <button type="button" id="masthead-upload-btn" class="btn-secondary">Upload…</button>
-          <button type="button" id="masthead-clear-btn" class="btn-secondary" hidden>Clear</button>
-          <!-- `class="visually-hidden-file"` instead of the `hidden`
-               attribute: hidden inputs are display:none, and some
-               browsers refuse to open the OS picker via programmatic
-               .click() on a display:none element. Keeping the input
-               in the layout tree (off-screen, zero opacity) is the
-               reliable cross-browser pattern. -->
-          <input type="file" id="masthead-upload-file" class="visually-hidden-file" accept="image/png,image/jpeg" tabindex="-1" aria-hidden="true">
-          <input type="hidden" name="masthead_logo_media_id">
-          <small id="masthead-upload-status" class="field-hint"></small>
-        </div>
+      <div class="settings-column">
+        <label class="settings-row">
+          <span class="lbl">Newsletter name</span>
+          <input type="text" name="newsletter_name" placeholder="MyNewsletter">
+        </label>
+        <label class="settings-row">
+          <span class="lbl">Inception Date</span>
+          <input type="date" name="initial_publication_date">
+        </label>
+        <label class="settings-row" hidden>
+          <span class="lbl">From name</span>
+          <input type="text" name="from_name">
+        </label>
+        <label class="settings-row">
+          <span class="lbl">From</span>
+          <input type="email" name="from_email" placeholder="sender@example.com">
+        </label>
+        <label class="settings-row">
+          <span class="lbl">To</span>
+          <input type="email" name="to_email" placeholder="list@example.com">
+        </label>
+        <label class="settings-row">
+          <span class="lbl">Reply-To</span>
+          <input type="email" name="reply_to" placeholder="optional">
+        </label>
+        <label class="settings-row">
+          <span class="lbl">Unsubscribe URL</span>
+          <input type="url" name="unsubscribe_url" placeholder="https://...">
+        </label>
       </div>
-      <!-- Inline Image-description editor for the uploaded masthead logo.
-           Mirrors the article-card alt-text editor: PUTs /api/media/{id}
-           on blur so the operator never has to leave Settings to satisfy
-           the alt-text gate that the save validator enforces. Hidden
-           until a Logos & Media item is referenced (URL-only masthead
-           and the no-logo case don't need an alt-text row). -->
-      <div class="settings-row masthead-alt-row" data-role="masthead-alt-row" hidden>
-        <span class="lbl">Image description</span>
-        <div class="masthead-alt-controls">
-          <input type="text" id="masthead-alt-input" data-role="masthead-alt-text" maxlength="240" placeholder="Briefly describe the masthead (e.g. 'SmartDrivingCars masthead')">
-          <small id="masthead-alt-status" class="field-hint"></small>
+
+      <div class="settings-column">
+        <label class="settings-row">
+          <span class="lbl">Masthead URL</span>
+          <input type="url" name="masthead_logo_url" placeholder="https://...">
+        </label>
+        <div class="settings-row masthead-upload-row">
+          <span class="lbl">Or upload logo</span>
+          <div class="masthead-upload-controls">
+            <img id="masthead-thumb" class="masthead-thumb" alt="Masthead preview" hidden>
+            <button type="button" id="masthead-upload-btn" class="btn-secondary">Upload…</button>
+            <button type="button" id="masthead-clear-btn" class="btn-secondary" hidden>Clear</button>
+            <input type="file" id="masthead-upload-file" class="visually-hidden-file" accept="image/png,image/jpeg" tabindex="-1" aria-hidden="true">
+            <input type="hidden" name="masthead_logo_media_id">
+            <small id="masthead-upload-status" class="field-hint"></small>
+          </div>
         </div>
+        <div class="settings-row masthead-alt-row" data-role="masthead-alt-row" hidden>
+          <span class="lbl">Image description</span>
+          <div class="masthead-alt-controls">
+            <input type="text" id="masthead-alt-input" data-role="masthead-alt-text" maxlength="240" placeholder="Briefly describe the masthead">
+            <small id="masthead-alt-status" class="field-hint"></small>
+          </div>
+        </div>
+        <label class="settings-row">
+          <span class="lbl">Debounce (ms)</span>
+          <input type="number" name="preview_debounce_ms" min="0" max="5000" step="50">
+        </label>
+        <label class="settings-row">
+          <span class="lbl">Autosave (sec)</span>
+          <input type="number" name="autosave_interval_seconds" min="0" max="600" step="5">
+        </label>
+        <label class="settings-row settings-row-checkbox">
+          <span class="lbl">Restoration</span>
+          <span class="settings-checkbox-field">
+            <input type="checkbox" name="load_last_draft_on_login">
+            <span>Load last saved draft on login</span>
+          </span>
+        </label>
+        <label class="settings-row settings-row-checkbox">
+          <span class="lbl">Archive</span>
+          <span class="settings-checkbox-field">
+            <input type="checkbox" name="auto_archive_on_download">
+            <span>Auto-archive on download</span>
+          </span>
+        </label>
+        <label class="settings-row settings-row-checkbox">
+          <span class="lbl">Read more</span>
+          <span class="settings-checkbox-field">
+            <input type="checkbox" name="include_read_more_link">
+            <span>Render link below articles</span>
+          </span>
+        </label>
+        <label class="settings-row settings-row-checkbox">
+          <span class="lbl">Confirm</span>
+          <span class="settings-checkbox-field">
+            <input type="checkbox" name="confirm_before_delete">
+            <span>Ask before deleting</span>
+          </span>
+        </label>
+        <label class="settings-row settings-row-checkbox">
+          <span class="lbl">Media</span>
+          <span class="settings-checkbox-field">
+            <input type="checkbox" name="embed_all_media">
+            <span>Embed all library media</span>
+          </span>
+        </label>
       </div>
-      <label class="settings-row settings-row-tall">
+
+      <label class="settings-row settings-row-tall settings-row-full">
         <span class="lbl">Default intro HTML</span>
         <div class="rt-field" data-quill-field="default_intro_html">
           <div class="quill-container"></div>
           <textarea name="default_intro_html" rows="2" placeholder="<p>Greetings…</p>" hidden></textarea>
         </div>
       </label>
-      <label class="settings-row settings-row-tall">
+      <label class="settings-row settings-row-tall settings-row-full">
         <span class="lbl">Default footer HTML</span>
         <div class="rt-field" data-quill-field="default_footer_html">
           <div class="quill-container"></div>
           <textarea name="default_footer_html" rows="2" placeholder="<p>This list is maintained by …</p>" hidden></textarea>
         </div>
-      </label>
-      <label class="settings-row">
-        <span class="lbl">Preview debounce (ms)</span>
-        <input type="number" name="preview_debounce_ms" min="0" max="5000" step="50">
-      </label>
-      <label class="settings-row">
-        <span class="lbl">Autosave interval (sec)</span>
-        <input type="number" name="autosave_interval_seconds" min="0" max="600" step="5">
-      </label>
-      <label class="settings-row settings-row-checkbox">
-        <span class="lbl">Session restoration</span>
-        <span class="settings-checkbox-field">
-          <input type="checkbox" name="load_last_draft_on_login">
-          <span>Load last saved draft on login</span>
-        </span>
-      </label>
-
-      <label class="settings-row settings-row-checkbox">
-        <span class="lbl">Auto-archive</span>
-        <span class="settings-checkbox-field">
-          <input type="checkbox" name="auto_archive_on_download">
-          <span>On .eml download</span>
-        </span>
-      </label>
-      <label class="settings-row settings-row-checkbox">
-        <span class="lbl">Read more link</span>
-        <span class="settings-checkbox-field">
-          <input type="checkbox" name="include_read_more_link">
-          <span>Render "Read more" link below each article</span>
-        </span>
-      </label>
-      <label class="settings-row settings-row-checkbox">
-        <span class="lbl">Confirm deletes</span>
-        <span class="settings-checkbox-field">
-          <input type="checkbox" name="confirm_before_delete">
-          <span>Ask before deleting drafts, templates, and archived issues</span>
-        </span>
-      </label>
-      <label class="settings-row settings-row-checkbox">
-        <span class="lbl">Embed all media</span>
-        <span class="settings-checkbox-field">
-          <input type="checkbox" name="embed_all_media">
-          <span>Embed Article Logos and Static-block images from Logos &amp; Media; fall back to source URL when cache is unavailable</span>
-        </span>
       </label>
     </div>
     <footer class="dialog-actions">

@@ -896,6 +896,9 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   background: var(--panel);
   color: var(--text);
 }
+#settings-dialog {
+  width: min(960px, calc(100vw - 32px));
+}
 #confirm-delete-dialog {
   width: min(460px, calc(100vw - 32px));
 }
@@ -969,16 +972,29 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   text-align: left;
   min-width: 0;
 }
-/* Settings dialog: each row is a [label | field] grid so the labels
-   line up vertically and the fields share a left edge — easier to scan
-   than a wrapped 2-column flow of stacked label/input pairs. */
-#settings-dialog .settings-fields,
+/* Settings dialog: two-column grid for better viewport fit at high zoom.
+   The layout groups identity/delivery on the left and behavior/media on
+   the right, with tall HTML blocks spanning full-width at the bottom. */
+#settings-dialog .settings-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 24px;
+}
 #compose-new-dialog .settings-fields,
 #confirm-delete-dialog .settings-fields {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
+#settings-dialog .settings-row-full {
+  grid-column: span 2;
+}
+#settings-dialog .settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 #settings-dialog .settings-row,
 #compose-new-dialog .settings-row,
 #confirm-delete-dialog .settings-row {
