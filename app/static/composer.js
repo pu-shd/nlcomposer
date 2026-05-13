@@ -207,10 +207,11 @@
       if (html === '<p><br></p>') html = '';
 
       if (html) {
-        // Strip browser-inserted whitespace between block-level tags.
-        // This prevents "newline inflation" where saving </p>\n<p>
-        // reloads as an extra paragraph block in Quill.
-        html = html.replace(/>\s+</g, '><');
+        // Strip browser-inserted newlines/indentation between block-level
+        // tags. This prevents "newline inflation" on reload while
+        // preserving intentional spaces between inline tags (like
+        // formatted words).
+        html = html.replace(/>\s*[\r\n]\s*</g, '><');
       }
 
       if (scope.dataset.quillUnwrap === 'true' && html) {
@@ -254,7 +255,11 @@
 
     // Seed initial content from textarea (e.g. on page load or template use).
     if (textarea.value) {
-      quill.root.innerHTML = textarea.value;
+      const val = textarea.value;
+      // For unwrapped fields, re-wrap in a <p> during the set so Quill
+      // doesn't try to "fix" the naked text/breaks by splitting them
+      // into multiple paragraphs.
+      quill.root.innerHTML = (scope.dataset.quillUnwrap === 'true') ? `<p>${val}</p>` : val;
     }
 
     // Always ensure the editor doesn't think it's bold if it's empty.
@@ -269,12 +274,15 @@
     const quill = quillInstances.get(textarea);
     if (quill) {
       const val = textarea.value || '';
-      const html = val || '<p><br></p>';
-      // Normalize both sides to ignore browser-inserted inter-tag whitespace.
-      const currentNormalized = quill.root.innerHTML.replace(/>\s+</g, '><');
-      const targetNormalized = html.replace(/>\s+</g, '><');
+      const isUnwrap = textarea.parentElement?.dataset?.quillUnwrap === 'true';
+      const targetHtml = (isUnwrap && val) ? `<p>${val}</p>` : (val || '<p><br></p>');
+
+      // Normalize both sides to ignore browser-inserted inter-tag newlines.
+      const currentNormalized = quill.root.innerHTML.replace(/>\s*[\r\n]\s*</g, '><');
+      const targetNormalized = targetHtml.replace(/>\s*[\r\n]\s*</g, '><');
+
       if (currentNormalized !== targetNormalized) {
-        quill.root.innerHTML = html;
+        quill.root.innerHTML = targetHtml;
         if (!val || val === '<p><br></p>') {
           quill.format('bold', false, Quill.sources.SILENT);
         }
