@@ -216,13 +216,12 @@
 
       if (scope.dataset.quillUnwrap === 'true' && html) {
         // Unwrap paragraphs for inline fields (Pull quote / Comment).
-        // Convert internal <p> tags to <br> to preserve the line break
-        // without the vertical margin of a paragraph block.
-        // We already stripped inter-tag whitespace above, so this is clean.
+        // Convert internal <p> tags to <br><br> to preserve the paragraph
+        // break look without the vertical margin of a paragraph block.
         html = html
           .replace(/^<p>/i, '')
           .replace(/<\/p>$/i, '')
-          .replace(/<\/p><p>/gi, '<br>');
+          .replace(/<\/p><p>/gi, '<br><br>');
         // Final pass: ensure no triple-br even after unwrap.
         html = html.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
       }
