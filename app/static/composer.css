@@ -1559,12 +1559,18 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   font-family: inherit;
   font-size: 13px;
   background: white;
-  font-weight: normal;
+  font-weight: 400 !important;
 }
 .ql-editor {
   min-height: 60px;
   padding: 8px 12px;
-  font-weight: normal;
+  font-weight: 400 !important;
+}
+.ql-editor p {
+  font-weight: 400 !important;
+}
+.ql-editor strong, .ql-editor b {
+  font-weight: 700 !important;
 }
 .ql-editor, .ql-container {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;

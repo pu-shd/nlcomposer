@@ -239,14 +239,19 @@
     }
 
     quillInstances.set(textarea, quill);
+    // Force normal weight on the root element to override inheritance.
+    quill.root.style.fontWeight = '400';
+
     // Seed initial content from textarea (e.g. on page load or template use).
     if (textarea.value) {
       quill.root.innerHTML = textarea.value;
-    } else {
-      // Ensure new text entry doesn't default to bold if the container
-      // inherited a bold weight from the parent.
+    }
+
+    // Always ensure the editor doesn't think it's bold if it's empty.
+    if (!textarea.value || textarea.value === '<p><br></p>') {
       quill.format('bold', false, Quill.sources.SILENT);
     }
+
     return quill;
   };
 
@@ -257,6 +262,9 @@
       const html = val || '<p><br></p>';
       if (quill.root.innerHTML !== html) {
         quill.root.innerHTML = html;
+        if (!val || val === '<p><br></p>') {
+          quill.format('bold', false, Quill.sources.SILENT);
+        }
       }
     }
   };
