@@ -214,18 +214,6 @@
         html = html.replace(/>\s*[\r\n]\s*</g, '><');
       }
 
-      if (scope.dataset.quillUnwrap === 'true' && html) {
-        // Unwrap paragraphs for inline fields (Pull quote / Comment).
-        // Convert internal <p> tags to <br><br> to preserve the paragraph
-        // break look without the vertical margin of a paragraph block.
-        html = html
-          .replace(/^<p>/i, '')
-          .replace(/<\/p>$/i, '')
-          .replace(/<\/p><p>/gi, '<br><br>');
-        // Final pass: ensure no triple-br even after unwrap.
-        html = html.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
-      }
-
       if (textarea.value !== html) {
         textarea.value = html;
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -254,11 +242,7 @@
 
     // Seed initial content from textarea (e.g. on page load or template use).
     if (textarea.value) {
-      const val = textarea.value;
-      // For unwrapped fields, re-wrap in a <p> during the set so Quill
-      // doesn't try to "fix" the naked text/breaks by splitting them
-      // into multiple paragraphs.
-      quill.root.innerHTML = (scope.dataset.quillUnwrap === 'true') ? `<p>${val}</p>` : val;
+      quill.root.innerHTML = textarea.value;
     }
 
     // Always ensure the editor doesn't think it's bold if it's empty.
@@ -273,15 +257,14 @@
     const quill = quillInstances.get(textarea);
     if (quill) {
       const val = textarea.value || '';
-      const isUnwrap = textarea.parentElement?.dataset?.quillUnwrap === 'true';
-      const targetHtml = (isUnwrap && val) ? `<p>${val}</p>` : (val || '<p><br></p>');
+      const html = val || '<p><br></p>';
 
       // Normalize both sides to ignore browser-inserted inter-tag newlines.
       const currentNormalized = quill.root.innerHTML.replace(/>\s*[\r\n]\s*</g, '><');
-      const targetNormalized = targetHtml.replace(/>\s*[\r\n]\s*</g, '><');
+      const targetNormalized = html.replace(/>\s*[\r\n]\s*</g, '><');
 
       if (currentNormalized !== targetNormalized) {
-        quill.root.innerHTML = targetHtml;
+        quill.root.innerHTML = html;
         if (!val || val === '<p><br></p>') {
           quill.format('bold', false, Quill.sources.SILENT);
         }
@@ -1713,7 +1696,16 @@
   // mid-edit; the inline field errors (under each input) tell them
   // exactly which value to provide.
   const renderRequiredFieldsPlaceholder = () => {
-    preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:48px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f2430;background:#fafbfc;line-height:1.55;">
+    const previewStyles = `
+      body { margin:0; padding:48px 32px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; color:#1f2430; background:#fafbfc; line-height:1.55; }
+      p { margin: 0 0 1em 0; }
+      p:last-child { margin-bottom: 0; }
+      .rt-inline p { display: inline; margin: 0; }
+      .rt-inline p + p::before { content: "\\A\\A"; white-space: pre-wrap; }
+    `;
+
+    preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>${previewStyles}</style></head><body>${html}</body></html>`;
+
       <div style="max-width:480px;">
         <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;margin-bottom:6px;">Preview paused</div>
         <h2 style="color:#1a4480;margin:0 0 12px;font-size:18px;font-weight:600;">A couple of details are needed first</h2>

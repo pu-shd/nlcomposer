@@ -27,6 +27,9 @@
     .highlights-list { font-size: 15px !important; line-height: 1.55 !important; }
     .footer-pad    { padding: 26px 14px 18px 14px !important; }
   }
+  .article-body span { display: inline; }
+  .rt-inline p { display: inline; margin: 0; }
+  .rt-inline p + p::before { content: "\A\A"; white-space: pre-wrap; }
 </style>
 </head>
 <body style="margin:0;padding:0;background:#ffffff;font-family:'Times New Roman',Times,Georgia,serif;color:#222222;">
@@ -86,17 +89,13 @@
           {%- if article.date_text %}{% set _ = parts.append(article.date_text) %}{% endif %}
           {%- if parts %}<span>{{ parts | join(', ') }},</span> {% endif %}
           {%- if article.pull_quote %}
-            {# pull_quote accepts inline HTML (bold/italic/link via the
-               composer's rich-text toolbar). Curly quotes wrap the
-               content, which itself is honored as-is. #}
-            <span>&ldquo;{{ article.pull_quote | safe }}&rdquo;</span>
+            <span class="rt-inline">&ldquo;{{ article.pull_quote | safe }}&rdquo;</span>
           {%- endif %}
           {%- if issue.include_read_more_link %}
           <a href="{{ article.effective_read_more_url() }}" style="color:#1a4480;">{{ article.read_more_label }}</a>
           {%- endif %}
           {%- if article.alain_comment %}
-            {# alain_comment is also rich-text — same toolbar wraps. #}
-            <span style="color:#b91c1c;font-style:italic;"> Hmmmm&hellip; {{ article.alain_comment | safe }} Alain</span>
+            <span class="rt-inline" style="color:#b91c1c;font-style:italic;"> Hmmmm&hellip; {{ article.alain_comment | safe }} Alain</span>
           {%- endif %}
         </div>
       </td></tr>
