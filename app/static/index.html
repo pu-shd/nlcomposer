@@ -452,7 +452,13 @@
           <img id="masthead-thumb" class="masthead-thumb" alt="Masthead preview" hidden>
           <button type="button" id="masthead-upload-btn" class="btn-secondary">Upload…</button>
           <button type="button" id="masthead-clear-btn" class="btn-secondary" hidden>Clear</button>
-          <input type="file" id="masthead-upload-file" accept="image/png,image/jpeg" hidden>
+          <!-- `class="visually-hidden-file"` instead of the `hidden`
+               attribute: hidden inputs are display:none, and some
+               browsers refuse to open the OS picker via programmatic
+               .click() on a display:none element. Keeping the input
+               in the layout tree (off-screen, zero opacity) is the
+               reliable cross-browser pattern. -->
+          <input type="file" id="masthead-upload-file" class="visually-hidden-file" accept="image/png,image/jpeg" tabindex="-1" aria-hidden="true">
           <input type="hidden" name="masthead_logo_media_id">
           <small id="masthead-upload-status" class="field-hint"></small>
         </div>
@@ -620,13 +626,17 @@
             <option value="image">Static-block Image</option>
           </select>
         </label>
-        <label class="span-2">File (PNG / JPG)
-          <input type="file" name="file" accept="image/png,image/jpeg" required>
-        </label>
+        <!-- Hidden file input — clicking the visible Upload button
+             below triggers .click() on this input which opens the OS
+             picker; selecting a file fires `change` which kicks off
+             the POST automatically. No separate "Upload" submit step.
+             Visually-hidden (not display:none) so programmatic .click()
+             reliably opens the picker on every browser we support. -->
+        <input type="file" id="media-upload-file" name="file" accept="image/png,image/jpeg" class="visually-hidden-file" tabindex="-1" aria-hidden="true">
       </div>
       <footer class="dialog-actions">
         <small id="media-upload-status" class="status" aria-live="polite"></small>
-        <button type="submit" class="btn primary">Upload</button>
+        <button type="button" id="media-upload-trigger" class="btn primary">Upload…</button>
       </footer>
     </form>
   </div>

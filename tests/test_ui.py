@@ -1073,3 +1073,104 @@ def test_drafts_put_round_trips_payload_for_autosave(client: TestClient):
     # GET reflects the update.
     got = client.get(f"/api/drafts/{draft_id}").json()
     assert got["payload"]["issue_title"] == "Updated"
+
+
+# ───────── Upload buttons trigger the OS file picker ─────────────────
+
+
+def test_masthead_upload_uses_visually_hidden_file_input(client: TestClient):
+    """The Settings masthead Upload button opens the OS picker via a
+    programmatic .click() on the file input. That only works reliably
+    when the input is still in the layout tree — `hidden` (display:none)
+    breaks the call on some browser+OS combos. Assert we use the
+    .visually-hidden-file pattern instead so programmatic clicks always
+    open the picker."""
+    body = client.get("/").text
+    upload_start = body.index('id="masthead-upload-file"')
+    # Walk back to the opening <input ...> so we read attrs on this tag only.
+    input_start = body.rfind("<input", 0, upload_start)
+    input_close = body.index(">", upload_start)
+    input_tag = body[input_start : input_close + 1]
+    assert 'class="visually-hidden-file"' in input_tag, (
+        "masthead file input must use visually-hidden-file (not the "
+        "`hidden` attribute) so programmatic .click() opens the picker"
+    )
+    # `hidden` attribute should NOT be on this input.
+    assert " hidden" not in input_tag, (
+        "masthead file input must not carry the `hidden` HTML attribute "
+        "— it triggers display:none which breaks input.click()"
+    )
+
+    css = client.get("/static/composer.css").text
+    assert ".visually-hidden-file" in css, (
+        "composer.css must define the .visually-hidden-file helper"
+    )
+    # The helper must keep the input in the layout tree (position
+    # off-screen rather than display:none) — otherwise we're back to
+    # the same .click() issue.
+    helper_idx = css.index(".visually-hidden-file")
+    helper_end = css.index("}", helper_idx)
+    helper_body = css[helper_idx:helper_end]
+    assert "position:" in helper_body and "absolute" in helper_body, (
+        "visually-hidden-file must position the input off-screen, not "
+        "remove it from the layout tree"
+    )
+    assert "display: none" not in helper_body, (
+        "visually-hidden-file must NOT use display:none (would break "
+        "input.click())"
+    )
+
+
+def test_logos_and_media_upload_tab_uses_button_then_picker_flow(client: TestClient):
+    """The Upload tab in Logos & Media should match the Settings
+    masthead pattern: a visible Upload… button + a hidden file input.
+    Clicking the button programmatically clicks the input, which opens
+    the OS picker, and the picker's `change` event auto-POSTs. No
+    separate submit step.
+    """
+    body = client.get("/").text
+    # Upload tab form is present.
+    upload_form_start = body.index('id="media-upload-form"')
+    upload_form_end = body.index("</form>", upload_form_start)
+    form = body[upload_form_start:upload_form_end]
+
+    # Visible trigger button (type=button so it doesn't submit).
+    assert 'id="media-upload-trigger"' in form, (
+        "Logos & Media upload form must expose a media-upload-trigger button"
+    )
+    trigger_idx = form.index('id="media-upload-trigger"')
+    btn_start = form.rfind("<button", 0, trigger_idx)
+    btn_close = form.index(">", trigger_idx)
+    btn_tag = form[btn_start : btn_close + 1]
+    assert 'type="button"' in btn_tag, (
+        "media-upload-trigger must be type=button (not submit) so the "
+        "click opens the picker rather than submitting the form"
+    )
+
+    # File input is the visually-hidden flavor, not display:none.
+    assert 'id="media-upload-file"' in form
+    upload_input_idx = form.index('id="media-upload-file"')
+    input_start = form.rfind("<input", 0, upload_input_idx)
+    input_close = form.index(">", upload_input_idx)
+    input_tag = form[input_start : input_close + 1]
+    assert 'class="visually-hidden-file"' in input_tag, (
+        "Logos & Media file input must use visually-hidden-file so "
+        "programmatic .click() opens the picker"
+    )
+
+    # JS wires the trigger to the file input + auto-runs the upload
+    # on the file picker's `change` event.
+    js = client.get("/static/composer.js").text
+    assert "mediaUploadTrigger" in js
+    assert "mediaUploadFileInput" in js
+    assert "_runMediaUpload" in js
+    # The trigger's click handler clears + clicks the hidden input —
+    # both calls must be present so the upload retriggers on the
+    # picker's change event.
+    trigger_idx = js.index("mediaUploadTrigger.addEventListener('click'")
+    block_end = js.index("});", trigger_idx)
+    trigger_block = js[trigger_idx:block_end]
+    assert "mediaUploadFileInput.click()" in trigger_block, (
+        "media-upload-trigger click handler must call .click() on the "
+        "hidden file input — that's what opens the OS picker"
+    )

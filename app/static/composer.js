@@ -3255,42 +3255,76 @@
     }
   });
 
-  if (mediaUploadForm) {
-    mediaUploadForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fd = new FormData(mediaUploadForm);
-      const file = fd.get('file');
-      if (!file || !(file instanceof File) || file.size === 0) {
-        setMediaUploadStatus('Choose a PNG or JPG file first.', 'error');
+  // Logos & Media upload flow is now button-driven (matches Settings
+  // masthead): the visible "Upload…" button opens the OS file picker
+  // via the hidden file input's .click(); the picker's selection
+  // event drives the actual POST. No separate submit step — the user
+  // picks `kind`, clicks Upload, picks a file, and the row appears in
+  // the list above. Keeping the form submit handler as a fallback
+  // (in case someone presses Enter while focused inside the form)
+  // keeps the original UX path alive.
+  const mediaUploadTrigger = document.getElementById('media-upload-trigger');
+  const mediaUploadFileInput = document.getElementById('media-upload-file');
+  const _runMediaUpload = async () => {
+    const file = mediaUploadFileInput?.files?.[0];
+    if (!file || file.size === 0) {
+      setMediaUploadStatus('Choose a PNG or JPG file first.', 'error');
+      return;
+    }
+    const kindEl = mediaUploadForm?.elements?.kind;
+    const kind = kindEl ? kindEl.value : 'logo';
+    setMediaUploadStatus('Uploading…');
+    if (mediaUploadTrigger) mediaUploadTrigger.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append('kind', kind);
+      fd.append('file', file);
+      const res = await fetch('/api/media/upload', {
+        method: 'POST',
+        body: fd,
+      });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
+        if (res.status === 429) {
+          const retry = res.headers.get('Retry-After') || '?';
+          setMediaUploadStatus(`Rate limited — retry in ${retry}s.`, 'error');
+        } else {
+          setMediaUploadStatus(`Upload ${res.status}: ${detail || res.statusText}`, 'error');
+        }
         return;
       }
-      // Surface the configured cap inline before posting — saves a
-      // round-trip when the file is obviously oversized. We don't
-      // know the server-side cap exactly without a settings fetch,
-      // so this is a soft check; the controller is authoritative.
-      setMediaUploadStatus('Uploading…');
-      try {
-        const res = await fetch('/api/media/upload', {
-          method: 'POST',
-          body: fd,
-        });
-        if (!res.ok) {
-          let detail = '';
-          try { detail = (await res.json()).detail || ''; } catch { /* ignore */ }
-          if (res.status === 429) {
-            const retry = res.headers.get('Retry-After') || '?';
-            setMediaUploadStatus(`Rate limited — retry in ${retry}s.`, 'error');
-          } else {
-            setMediaUploadStatus(`Upload ${res.status}: ${detail || res.statusText}`, 'error');
-          }
-          return;
-        }
-        mediaUploadForm.reset();
-        await refreshMediaList();
-        setMediaUploadStatus('Uploaded — fill in the Image description before use.', 'ok');
-      } catch (err) {
-        setMediaUploadStatus('Network error: ' + err.message, 'error');
-      }
+      // Reset the file input so the same file can be re-picked if the
+      // user actually wants to re-upload (without `.value = ''` the
+      // change event won't fire on a same-file pick).
+      if (mediaUploadFileInput) mediaUploadFileInput.value = '';
+      await refreshMediaList();
+      setMediaUploadStatus('Uploaded — fill in the Image description before use.', 'ok');
+    } catch (err) {
+      setMediaUploadStatus('Network error: ' + err.message, 'error');
+    } finally {
+      if (mediaUploadTrigger) mediaUploadTrigger.disabled = false;
+    }
+  };
+  if (mediaUploadTrigger && mediaUploadFileInput) {
+    mediaUploadTrigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Clear so the change event fires even when the user re-picks
+      // the same file after a failed upload.
+      mediaUploadFileInput.value = '';
+      mediaUploadFileInput.click();
+    });
+    mediaUploadFileInput.addEventListener('change', () => {
+      if (!mediaUploadFileInput.files?.[0]) return;
+      _runMediaUpload();
+    });
+  }
+  if (mediaUploadForm) {
+    mediaUploadForm.addEventListener('submit', (e) => {
+      // Keep submit as a fallback (Enter key inside the form, etc.) —
+      // route through the same upload runner.
+      e.preventDefault();
+      _runMediaUpload();
     });
   }
 

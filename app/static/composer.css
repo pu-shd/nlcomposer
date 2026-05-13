@@ -73,6 +73,26 @@ html, body {
 .topbar .autosave-status[data-kind="error"]  { color: var(--danger); background: rgba(220, 38, 38, 0.08); }
 .topbar .autosave-status[data-kind="disabled"] { font-style: italic; }
 
+/* Visually-hidden helper for file inputs that get clicked
+   programmatically. Using ``display: none`` (the ``hidden`` HTML
+   attribute) breaks ``input.click()`` on some browser+OS
+   combinations because the input falls out of the layout tree. The
+   pattern below keeps the input in the tree (so the picker opens
+   reliably from a button click) while staying invisible and out of
+   tab order. */
+.visually-hidden-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .btn {
   appearance: none;
   border: 1px solid var(--border);
