@@ -15,7 +15,7 @@
     .article-pad   { padding: 14px 14px 0 14px !important; }
     .article-h3    { font-size: 17px !important; line-height: 1.3 !important; }
     .article-body  { font-size: 15px !important; line-height: 1.55 !important; }
-    .pub-icon      { width: 18px !important; height: 18px !important; }
+    .pub-icon      { width: auto !important; height: 18px !important; }
     .podcast-pad   { padding: 20px 14px 0 14px !important; }
     .podcast-h3    { font-size: 17px !important; }
     .podcast-title,
@@ -74,9 +74,9 @@
           {%- if article.publication_logo_media_id %}
             {# Preview-time render of an uploaded article logo. Mail-client
                inline embedding is the planned `embed_all_media` work. #}
-            <img class="pub-icon" src="/api/media/{{ article.publication_logo_media_id }}/content" alt="" width="20" height="20" style="vertical-align:middle;margin-right:6px;border:0;">
+            <img class="pub-icon" src="/api/media/{{ article.publication_logo_media_id }}/content" alt="" height="20" style="vertical-align:middle;margin-right:6px;border:0;width:auto;">
           {%- elif article.publication_logo_url %}
-            <img class="pub-icon" src="{{ article.publication_logo_url }}" alt="" width="20" height="20" style="vertical-align:middle;margin-right:6px;border:0;">
+            <img class="pub-icon" src="{{ article.publication_logo_url }}" alt="" height="20" style="vertical-align:middle;margin-right:6px;border:0;width:auto;">
           {%- endif %}
           <a href="{{ article.url }}" style="color:#1a4480;text-decoration:none;">{{ article.headline }}</a>
         </h3>
