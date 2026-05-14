@@ -10,6 +10,22 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+def test_layout_structure_and_scrolling(client: TestClient):
+    """Verify that the body and layout are configured to prevent page-level scroll."""
+    css = client.get("/static/composer.css").text
+    
+    # Body is a flex container and hides overflow
+    assert "overflow: hidden" in css[css.index("html, body {"):]
+    assert "display: flex" in css[css.index("body {"):]
+    assert "flex-direction: column" in css[css.index("body {"):]
+
+    # Layout fills the remaining height
+    assert ".layout {" in css
+    layout_block = css[css.index(".layout {"):]
+    assert "flex: 1" in layout_block[:200]
+    assert "min-height: 0" in layout_block[:200]
+
+
 def test_article_card_overlap_protection(client: TestClient):
     """Verify CSS rules that prevent input fields from overlapping in article cards."""
     css = client.get("/static/composer.css").text

@@ -19,17 +19,21 @@ html, body {
   color: var(--text);
   font-size: 15px;
   zoom: 1.1;
+  overflow: hidden; /* Only internal panes should scroll */
+}
+body {
+  display: flex;
+  flex-direction: column;
 }
 
 .topbar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 16px;
   padding: 10px 16px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
   z-index: 10;
 }
 
@@ -168,7 +172,8 @@ html, body {
   display: grid;
   grid-template-columns: var(--form-pane-width, 1fr) 6px 1fr;
   gap: 0;
-  height: calc(100vh - 50px);
+  flex: 1;
+  min-height: 0;
 }
 
 .layout-resizer {
@@ -885,9 +890,9 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 
 @media (max-width: 900px) {
-  .layout { grid-template-columns: 1fr; height: auto; }
+  .layout { grid-template-columns: 1fr; }
   .form-pane { border-right: 0; border-bottom: 1px solid var(--border); }
-  .preview-pane { min-height: 60vh; }
+  .preview-pane { min-height: 40vh; }
 }
 
 /* Settings / compose-new / confirm-delete dialogs ───────────────────
