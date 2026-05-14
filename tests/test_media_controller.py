@@ -197,6 +197,46 @@ def test_content_404_for_missing_id(client: TestClient):
     assert res.status_code == 404
 
 
+def test_content_on_demand_fetch_success(client: TestClient, monkeypatch):
+    """Missing bytes are fetched synchronously if a URL is available."""
+    # 1. Insert a pending row
+    item = client.post(
+        "/api/media",
+        json={"kind": "logo", "url": "https://example.com/ondemand.png"},
+    ).json()
+
+    # 2. Mock httpx.Client.get surgically.
+    # We can't mock the whole class because TestClient uses it.
+    # We'll mock the 'send' method or just the 'get' on a per-instance basis
+    # if we can, but monkeypatching the class is easier if we filter.
+    import httpx
+    original_get = httpx.Client.get
+
+    def mock_get(self, url, *args, **kwargs):
+        if str(url) == "https://example.com/ondemand.png":
+            class MockResponse:
+                def __init__(self):
+                    self.content = PNG_BYTES
+                    self.status_code = 200
+                def raise_for_status(self):
+                    pass
+            return MockResponse()
+        return original_get(self, url, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "get", mock_get)
+
+    # 3. GET /content should trigger the fetch and return the bytes
+    res = client.get(f"/api/media/{item['id']}/content")
+    assert res.status_code == 200
+    assert res.content == PNG_BYTES
+    assert res.headers["content-type"] == "image/png"
+
+    # 4. Verify the DB row is now 'ready'
+    updated = client.get(f"/api/media/{item['id']}").json()
+    assert updated["status"] == "ready"
+    assert updated["has_bytes"] is True
+
+
 def test_list_returns_recently_updated_first(client: TestClient):
     a = client.post(
         "/api/media", json={"kind": "logo", "url": "https://example.com/a.png"}

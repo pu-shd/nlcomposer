@@ -262,13 +262,44 @@ def api_get_media_content(
 ) -> Response:
     """Stream the cached PNG/JPG bytes.
 
-    Returns 404 when the row does not exist or while bytes are still
-    pending — callers fall back to the source URL in that case.
+    If the bytes are not yet cached but a source URL is available,
+    this endpoint attempts to fetch them synchronously and persist
+    them before returning.
     """
-    or_404(get_media(conn, media_id), "Media")
+    item = or_404(get_media(conn, media_id), "Media")
     payload = get_media_bytes(conn, media_id)
+
+    if payload is None and item.url:
+        # On-demand fetch for URL-sourced items that are still pending.
+        # This makes registered article logos work immediately without
+        # waiting for a background worker.
+        try:
+            import httpx
+            from ..media_store import mark_failed, mark_ready, sniff_image_kind
+
+            with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+                res = client.get(str(item.url))
+                res.raise_for_status()
+                content_bytes = res.content
+                content_type = sniff_image_kind(content_bytes)
+
+                if content_type:
+                    mark_ready(
+                        conn,
+                        media_id,
+                        content_type=content_type,
+                        content_bytes=content_bytes,
+                    )
+                    payload = (content_bytes, content_type)
+                else:
+                    mark_failed(conn, media_id, error="Unsupported or invalid image format")
+        except Exception as e:
+            from ..media_store import mark_failed
+            mark_failed(conn, media_id, error=f"Fetch failed: {e}")
+
     if payload is None:
         raise HTTPException(status_code=404, detail="Media bytes not cached")
+
     body, ctype = payload
     return Response(
         content=body,
