@@ -81,6 +81,22 @@ def test_add_section_fab_pinning(client: TestClient):
     assert "overflow-y: auto" in composer_block[:150]
 
 
+def test_required_stars_are_wrapped_in_spans(client: TestClient):
+    """Verify that label text and required stars are wrapped in a <span> to keep them inline."""
+    body = client.get("/").text
+    
+    # Check a few prominent ones
+    assert '<span>Issue Title <span class="required-star">*</span></span>' in body
+    assert '<span>Issue Number <span class="required-star">*</span></span>' in body
+    
+    # Check the article template
+    article_tpl_start = body.index('id="article-template"')
+    article_tpl_end = body.index("</template>", article_tpl_start)
+    tpl = body[article_tpl_start:article_tpl_end]
+    assert '<span>Headline <span class="required-star">*</span></span>' in tpl
+    assert '<span>Article Link <span class="required-star">*</span></span>' in tpl
+
+
 def test_toggle_preview_pinning(client: TestClient):
     """Verify that the preview header (and its toggle button) is pinned during scroll."""
     css = client.get("/static/composer.css").text
