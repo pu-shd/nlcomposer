@@ -75,6 +75,11 @@ def test_add_section_fab_pinning(client: TestClient):
     assert "align-self: end" in fab_block[:100]
     assert "justify-self: end" in fab_block[:100]
 
+    # 4. CSS: Verify the form handles its own scroll.
+    assert "#composer {" in css
+    composer_block = css[css.index("#composer {"):]
+    assert "overflow-y: auto" in composer_block[:150]
+
 
 def test_toggle_preview_pinning(client: TestClient):
     """Verify that the preview header (and its toggle button) is pinned during scroll."""
@@ -87,3 +92,8 @@ def test_toggle_preview_pinning(client: TestClient):
     assert "top: 0" in header_block[:400]
     # Background must be opaque to hide scrolling text behind it
     assert "background:" in header_block[:400]
+
+    # 2. CSS: Verify the content frame scrolls.
+    assert ".preview-frame {" in css
+    frame_block = css[css.index(".preview-frame {"):]
+    assert "overflow: auto" in frame_block[:150]

@@ -564,14 +564,14 @@ def test_form_pane_has_floating_add_section_fab(client: TestClient):
     """A "+" floating action button hovers in the lower-right of the
     form-pane and opens a menu with three add-section options."""
     body = client.get("/").text
-    # The FAB lives inside .form-pane (so the sticky positioning anchors
-    # to the scrolling form column, not the global viewport).
+    # The FAB lives inside .form-pane (so the grid-stack alignment anchors
+    # to the form-pane viewport, not the global viewport).
     fab_idx = body.index('id="add-section-fab"')
     pane_start = body.index('class="form-pane"')
     pane_end = body.index("</section>", pane_start)
     assert pane_start < fab_idx < pane_end, (
         "Add-section FAB must live inside the .form-pane so it anchors "
-        "to the form-pane's scroll viewport, not the global page."
+        "to the form-pane corner, not the global page."
     )
     # Menu contains exactly the three sortable section types.
     assert 'id="add-section-menu"' in body
