@@ -216,17 +216,11 @@
           <button type="button" class="btn ghost btn-fetch" data-action="register-logo" title="Register this URL in Logos &amp; Media">Fetch</button>
           <button type="button" class="btn ghost btn-fetch" data-action="upload-logo" title="Upload a PNG/JPG and use it as this article's logo">Upload</button>
           <button type="button" class="btn ghost btn-fetch" data-action="pick-logo" title="Pick from Logos &amp; Media">Library</button>
+          <img class="logo-thumb" data-role="logo-thumb" alt="Logo preview" hidden>
           <button type="button" class="btn ghost btn-fetch" data-action="clear-logo" title="Clear this logo" hidden>Clear</button>
           <input type="file" class="logo-upload-input" data-role="logo-upload" accept="image/png,image/jpeg" hidden>
-
-          <!-- Hidden Media Library id companion to the URL field. Set by the
-               Upload action (and by Library when the picked item has no
-               URL of its own). Keeping it separate means the URL field
-               never holds a relative ``/api/media/...`` value — that path
-               failed Pydantic on the issue's round-trip through the
-               preview/eml endpoints and broke uploaded article logos. -->
-          <input type="hidden" data-field="publication_logo_media_id">
         </div>
+        <input type="hidden" data-field="publication_logo_media_id">
         <small class="fetch-status" data-role="logo-status"></small>
       </label>
       <!-- Inline alt-text editor. Shown whenever the article holds a

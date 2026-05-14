@@ -555,6 +555,29 @@
     const uploadBtn = card.querySelector('[data-action="upload-logo"]');
     const pickBtn = card.querySelector('[data-action="pick-logo"]');
     const clearBtn = card.querySelector('[data-action="clear-logo"]');
+    const thumbImg = card.querySelector('[data-role="logo-thumb"]');
+
+    const syncLogoThumb = (mediaItem = null) => {
+      if (!thumbImg) return;
+      if (mediaItem) {
+        const src = mediaItem.url || `/api/media/${mediaItem.id}/content`;
+        thumbImg.src = src;
+        thumbImg.hidden = false;
+        return;
+      }
+      const url = logoInput?.value;
+      const mediaId = mediaIdInput?.value;
+      if (mediaId) {
+        thumbImg.src = `/api/media/${mediaId}/content`;
+        thumbImg.hidden = false;
+      } else if (url) {
+        thumbImg.src = url;
+        thumbImg.hidden = false;
+      } else {
+        thumbImg.src = '';
+        thumbImg.hidden = true;
+      }
+    };
 
     const refreshLogoUI = () => {
       const hasLogo = !!(logoInput?.value || mediaIdInput?.value);
@@ -563,6 +586,7 @@
       if (uploadBtn) uploadBtn.hidden = hasLogo;
       if (pickBtn) pickBtn.hidden = hasLogo;
       if (clearBtn) clearBtn.hidden = !hasLogo;
+      syncLogoThumb();
     };
 
     if (clearBtn) {
@@ -572,6 +596,7 @@
         setLogoMedia(null);
         showAltEditor(null);
         setLogoStatus('');
+        syncLogoThumb(null);
         refreshLogoUI();
         schedulePreview();
       });
@@ -616,6 +641,7 @@
               : 'Registered — fill the Image description below.',
             'ok',
           );
+          syncLogoThumb(item);
           refreshLogoUI();
           schedulePreview();
         } catch (err) {
@@ -647,6 +673,7 @@
           setLogoMedia(item.id);
           showAltEditor(item);
           setLogoStatus('Uploaded — fill the Image description below.', 'ok');
+          syncLogoThumb(item);
           refreshLogoUI();
           schedulePreview();
         } catch (err) {
@@ -683,6 +710,7 @@
             }
             showAltEditor(item);
             setLogoStatus(`Using "${item.alt_text || 'library item'}".`, 'ok');
+            syncLogoThumb(item);
             refreshLogoUI();
             schedulePreview();
           },
@@ -692,6 +720,7 @@
 
     // Initial state
     refreshLogoUI();
+    syncLogoThumb();
 
     // Listen for manual URL edits or programmatic changes triggered
     // via dispatchEvent.
