@@ -196,27 +196,30 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
    made it drift up with the footer instead of staying pinned. */
 .form-pane {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-areas: "stack";
   border-right: 1px solid var(--border);
   background: var(--bg);
   min-height: 0;
 }
 #composer {
-  flex: 1;
+  grid-area: stack;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   padding: 16px;
   min-height: 0;
 }
 
 /* Floating "+" Add-section button + menu ─────────────────────────────
-   Pinned to the form-pane's bottom-right corner regardless of how
-   short or tall the form is. Sits OUTSIDE the scrolling #composer so
-   it never participates in scroll content layout. */
+   Pinned to the form-pane's bottom-right corner via grid alignment.
+   The stack grid-area lets it sit on top of the scrolling form without
+   participating in its flow, ensuring it's never out of view. */
 .fab-row {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
+  grid-area: stack;
+  align-self: end;
+  justify-self: end;
+  margin: 0 16px 16px 0;
   display: flex;
   justify-content: flex-end;
   pointer-events: none;
