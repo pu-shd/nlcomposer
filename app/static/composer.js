@@ -1704,15 +1704,15 @@
       .rt-inline p + p::before { content: "\\A\\A"; white-space: pre-wrap; }
     `;
 
-    preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>${previewStyles}</style></head><body>${html}</body></html>`;
-
+    const html = `
       <div style="max-width:480px;">
         <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;margin-bottom:6px;">Preview paused</div>
         <h2 style="color:#1a4480;margin:0 0 12px;font-size:18px;font-weight:600;">A couple of details are needed first</h2>
         <p style="margin:0 0 8px;font-size:13px;color:#1f2430;">Fill in <strong>Issue Number</strong> and <strong>Issue Title</strong> in the <em>Issue Details</em> section to render the newsletter preview.</p>
         <p style="margin:8px 0 0;font-size:12px;color:#6b7280;">The Download button is disabled until both are set.</p>
-      </div>
-    </body></html>`;
+      </div>`;
+
+    preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>${previewStyles}</style></head><body>${html}</body></html>`;
     previewMeta.textContent = '';
   };
 
