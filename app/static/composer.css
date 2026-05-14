@@ -1044,6 +1044,9 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   padding: 12px;
   min-width: 0;
 }
+#composer .article-card .grid-2 > * {
+  min-width: 0;
+}
 #composer .article-card input[type="text"],
 #composer .article-card input[type="url"] {
   width: 100%;
@@ -1530,6 +1533,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border: 1px solid var(--border);
   border-radius: 5px;
   background: white;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* Lighter twin of .static-richtext used by Intro Message / Pull quote
@@ -1541,6 +1546,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border: 1px solid var(--border);
   border-radius: 5px;
   background: white;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* Library picker — same row chrome as the main media list, but each
@@ -1628,9 +1635,15 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-bottom: 1px solid var(--border);
   background: var(--bg);
   padding: 4px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .ql-container.ql-snow {
   border: none;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .ql-editor.ql-blank::before {
   color: var(--muted);
