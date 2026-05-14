@@ -1049,6 +1049,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #composer .article-card .grid-2 > * {
   min-width: 0;
+  min-height: 0;
 }
 #composer .article-card input[type="text"],
 #composer .article-card input[type="url"] {
@@ -1539,6 +1540,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Lighter twin of .static-richtext used by Intro Message / Pull quote
@@ -1553,6 +1556,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Library picker — same row chrome as the main media list, but each
@@ -1613,15 +1618,18 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   font-size: 13px;
   background: white;
   font-weight: 400 !important;
+  height: auto !important;
+  min-height: 0;
 }
 .ql-editor {
-  min-height: 60px;
-  padding: 8px 12px;
+  min-height: 32px;
+  padding: 4px 10px;
   font-weight: 400 !important;
+  height: auto !important;
 }
 .ql-editor p {
   font-weight: 400 !important;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .ql-editor p:last-child {
   margin-bottom: 0;
@@ -1633,7 +1641,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 .static-richtext .ql-editor {
-  min-height: 120px;
+  min-height: 80px;
 }
 .ql-toolbar.ql-snow {
   border: none;
@@ -1644,11 +1652,13 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   flex-wrap: wrap;
   min-width: 0;
   box-sizing: border-box;
+  flex: 0 0 auto;
 }
 .ql-container.ql-snow {
   border: none;
   min-width: 0;
   box-sizing: border-box;
+  flex: 1 0 auto;
 }
 .ql-editor.ql-blank::before {
   color: var(--muted);
