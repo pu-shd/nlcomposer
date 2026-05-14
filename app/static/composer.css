@@ -367,6 +367,10 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 8;
 }
 .preview-header > #preview-meta { margin-left: auto; }
 
