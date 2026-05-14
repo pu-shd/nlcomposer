@@ -609,6 +609,9 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   grid-template-columns: 1fr 1fr;
   gap: 8px 10px;
 }
+#composer .grid-2 > * {
+  min-width: 0;
+}
 
 #composer .span-2 { grid-column: 1 / -1; }
 
@@ -1534,6 +1537,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-radius: 5px;
   background: white;
   min-width: 0;
+  width: 100%;
   box-sizing: border-box;
 }
 
@@ -1547,6 +1551,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-radius: 5px;
   background: white;
   min-width: 0;
+  width: 100%;
   box-sizing: border-box;
 }
 
