@@ -432,11 +432,14 @@ class NewsletterIssue(BaseModel):
                 out.append({"type": "podcast", "podcasts": list(self.podcasts)})
             if self.static_blocks:
                 out.append({"type": "static_blocks", "blocks": list(self.static_blocks)})
+            if self.highlights:
+                out.append({"type": "highlights", "groups": self.highlights_grouped()})
             return out
 
         art_cursor = 0
         sb_cursor = 0
         pod_cursor = 0
+        hlt_cursor = 0
         out = []
         for fs in self.form_sections:
             if fs.type == "articles":
@@ -462,6 +465,13 @@ class NewsletterIssue(BaseModel):
                     # Legacy support for older drafts where podcast sections had enabled=True instead of count
                     out.append({"type": "podcast", "podcasts": [self.podcasts[pod_cursor]]})
                     pod_cursor += 1
+            elif fs.type == "highlights":
+                n = fs.count or 0
+                if n > 0:
+                    slice_ = list(self.highlights[hlt_cursor : hlt_cursor + n])
+                    hlt_cursor += n
+                    if slice_:
+                        out.append({"type": "highlights", "groups": self.highlights_grouped(slice_)})
 
         # Defensive tail: if form_sections under-counts (a saved draft
         # whose counts drifted from the actual flat list), flush the
@@ -478,10 +488,14 @@ class NewsletterIssue(BaseModel):
         if leftover_blocks:
             out.append({"type": "static_blocks", "blocks": leftover_blocks})
 
+        leftover_highlights = list(self.highlights[hlt_cursor:])
+        if leftover_highlights:
+            out.append({"type": "highlights", "groups": self.highlights_grouped(leftover_highlights)})
+
         return out
 
 
-    def highlights_grouped(self) -> list[dict]:
+    def highlights_grouped(self, subset: list[HighlightRef] | None = None) -> list[dict]:
         """Group bottom highlights by source issue, preserving drag order.
 
         Returns a list of ``{label, date, refs}`` dicts in the order the
@@ -503,7 +517,7 @@ class NewsletterIssue(BaseModel):
         index_by_key: dict = {}
         IN_ISSUE_KEY = "__in_issue__"
 
-        for h in self.highlights:
+        for h in (subset if subset is not None else self.highlights):
             if h.article_index is not None:
                 key = IN_ISSUE_KEY
                 if key not in index_by_key:

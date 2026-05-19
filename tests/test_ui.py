@@ -26,7 +26,6 @@ def test_index_serves_composer_page(client: TestClient):
         "Articles",
         "Podcast",
         "Static blocks",
-        "Bottom highlights",
         "Footer",
     ):
         assert legend in body, f"composer page missing section: {legend}"
@@ -582,19 +581,18 @@ def test_form_pane_has_floating_add_section_fab(client: TestClient):
 
 
 def test_sortable_sections_wrapper_present(client: TestClient):
-    """Articles / Podcast / Static-blocks <details> live in a single
+    """Articles / Podcast / Static-blocks / Highlights <details> live in a single
     wrapper that hosts drag-reorder and is bracketed by the fixed
-    Issue Details (above) and Bottom highlights + Footer (below)."""
+    Issue Details (above) and Footer (below)."""
     body = client.get("/").text
     assert 'id="sortable-sections"' in body
     # Must NOT contain a sortable wrapper around the fixed sections.
     sortable_idx = body.index('id="sortable-sections"')
     issue_details_idx = body.index("Issue Details")
-    highlights_idx = body.index("Bottom highlights")
     footer_idx = body.index(">Footer<")
-    assert issue_details_idx < sortable_idx < highlights_idx < footer_idx, (
-        "Sortable region must sit between Issue Details and Bottom "
-        "highlights/Footer so the fixed sections never get sorted."
+    assert issue_details_idx < sortable_idx < footer_idx, (
+        "Sortable region must sit between Issue Details and Footer "
+        "so the fixed sections never get sorted."
     )
 
 
@@ -632,7 +630,7 @@ def test_section_templates_present_for_each_sortable_type(client: TestClient):
 def test_composer_js_wires_sortable_section_drag(client: TestClient):
     """JS provides section-level drag wiring distinct from the existing
     article-card drag, scoped to #sortable-sections so the fixed
-    Issue Details / Bottom highlights / Footer can never be reordered."""
+    Issue Details / Footer can never be reordered."""
     js = client.get("/static/composer.js").text
     # Section-level drag helpers + state are present.
     for needle in (
@@ -685,12 +683,12 @@ def test_preview_endpoint_ignores_form_sections_extra(client: TestClient):
 
 
 def test_compose_form_does_not_render_sortable_handle_for_fixed_sections(client: TestClient):
-    """Issue Details / Bottom highlights / Footer must NOT carry the
+    """Issue Details / Footer must NOT carry the
     sortable-section class — only items inside #sortable-sections do."""
     body = client.get("/").text
     # Locate the fixed section <details> by their summary labels and
     # verify they don't carry the sortable-section class.
-    for label in ("Issue Details", "Bottom highlights", ">Footer<"):
+    for label in ("Issue Details", ">Footer<"):
         idx = body.index(label)
         # Walk backwards to the nearest <details ...>
         det_start = body.rfind("<details", 0, idx)

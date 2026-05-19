@@ -41,8 +41,6 @@
   // round-trips through draft save/load via the `form_sections` payload
   // metadata array.
   const sortableSections = document.getElementById('sortable-sections');
-  const highlightsContainer = document.getElementById('highlights');
-  const highlightsCount = document.getElementById('highlights-count');
 
   const articleTpl = document.getElementById('article-template');
   const podcastTpl = document.getElementById('podcast-template');
@@ -52,6 +50,7 @@
   const articlesSectionTpl = document.getElementById('articles-section-template');
   const podcastSectionTpl = document.getElementById('podcast-section-template');
   const staticBlocksSectionTpl = document.getElementById('static-blocks-section-template');
+  const highlightsSectionTpl = document.getElementById('highlights-section-template');
 
   // Stable per-section ids so refs (e.g. saved draft form_sections) survive
   // page reloads even though the underlying DOM is rebuilt from templates.
@@ -458,7 +457,10 @@
       const badge = sec.querySelector('[data-role="podcast-count"]');
       if (badge) badge.textContent = sec.querySelectorAll('.podcast-card').length;
     });
-    highlightsCount.textContent = highlightsContainer.querySelectorAll('.row').length;
+    sortableSectionsOfType('highlights').forEach((sec) => {
+      const badge = sec.querySelector('[data-role="highlights-count"]');
+      if (badge) badge.textContent = sec.querySelectorAll('.row').length;
+    });
     refreshHighlightOptions();
   };
 
@@ -469,6 +471,8 @@
     section.querySelector('[data-role="articles-container"]');
   const staticsContainerOf = (section) =>
     section.querySelector('[data-role="statics-container"]');
+  const highlightsContainerOf = (section) =>
+    section.querySelector('[data-role="highlights-container"]');
 
   const addArticle = (data = {}, container = null) => {
     const targetContainer = container
@@ -853,6 +857,29 @@
     return closest.element;
   };
 
+  const highlightsContainerAtPoint = (x, y) => {
+    const sections = [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="highlights"]')];
+    for (const sec of sections) {
+      if (!sec.open) continue;
+      const box = sec.getBoundingClientRect();
+      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) {
+        return sec.querySelector('.highlights-container');
+      }
+    }
+    return null;
+  };
+
+  const getHighlightDragAfterElement = (container, y) => {
+    const els = [...container.querySelectorAll(':scope > .highlight-row:not(.dragging)')];
+    let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+    els.forEach((child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) closest = { offset, element: child };
+    });
+    return closest.element;
+  };
+
   // Document-level dragover — chooses the .articles-container under the
   // cursor and reflows the dragged card live. Delegated rather than per-
   // container so newly-added Articles sections work without rewiring.
@@ -871,6 +898,13 @@
       if (!container) return;
       e.preventDefault();
       const after = getDragAfterElement(container, e.clientY);
+      if (after == null) container.appendChild(draggingEl);
+      else if (after !== draggingEl) container.insertBefore(draggingEl, after);
+    } else if (draggingEl.classList.contains('highlight-row')) {
+      const container = highlightsContainerAtPoint(e.clientX, e.clientY);
+      if (!container) return;
+      e.preventDefault();
+      const after = getHighlightDragAfterElement(container, e.clientY);
       if (after == null) container.appendChild(draggingEl);
       else if (after !== draggingEl) container.insertBefore(draggingEl, after);
     }
@@ -1257,6 +1291,15 @@
           });
         });
       }
+    } else if (section.dataset.sectionType === 'highlights') {
+      const addBtn = section.querySelector('[data-action="add-highlight"]');
+      if (addBtn) {
+        addBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          addHighlight({}, highlightsContainerOf(section));
+          schedulePreview();
+        });
+      }
     }
   };
 
@@ -1264,7 +1307,8 @@
     const tpl = (
       type === 'articles' ? articlesSectionTpl :
       type === 'podcast' ? podcastSectionTpl :
-      type === 'static_blocks' ? staticBlocksSectionTpl : null
+      type === 'static_blocks' ? staticBlocksSectionTpl :
+      type === 'highlights' ? highlightsSectionTpl : null
     );
     if (!tpl) return null;
     return tpl.content.firstElementChild.cloneNode(true);
@@ -1568,33 +1612,18 @@
     handle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
     row.addEventListener('dragstart', (e) => {
       if (!row.draggable) return;
+      draggingEl = row;
       row.classList.add('dragging');
-      try { e.dataTransfer.setData('text/plain', ''); } catch { /* ignore */ }
+      try { e.dataTransfer.setData('text/plain', 'highlight'); } catch { /* ignore */ }
       e.dataTransfer.effectAllowed = 'move';
     });
     row.addEventListener('dragend', () => {
       row.classList.remove('dragging');
       row.draggable = false;
+      if (draggingEl === row) draggingEl = null;
       schedulePreview();
     });
   };
-  if (highlightsContainer) {
-    highlightsContainer.addEventListener('dragover', (e) => {
-      const dragging = highlightsContainer.querySelector('.dragging');
-      if (!dragging) return;
-      e.preventDefault();
-      const rows = [...highlightsContainer.querySelectorAll('.row:not(.dragging)')];
-      const after = rows.find((r) => {
-        const box = r.getBoundingClientRect();
-        return e.clientY < box.top + box.height / 2;
-      });
-      if (after) {
-        highlightsContainer.insertBefore(dragging, after);
-      } else {
-        highlightsContainer.appendChild(dragging);
-      }
-    });
-  }
 
   // refreshHighlightOptions used to keep <select> options in sync with
   // the current articles list. With the new search-driven UI there is
@@ -1603,9 +1632,12 @@
   // (article add/remove/reorder, headline edits) still hit something.
   const refreshHighlightOptions = () => { /* no-op — search-driven */ };
 
-  const addHighlight = (data = {}) => {
+  const addHighlight = (data = {}, container = null) => {
+    const targetContainer = container
+      || (sortableSectionsOfType('highlights')[0]?.querySelector('[data-role="highlights-container"]'));
+    if (!targetContainer) return null;
     const node = highlightTpl.content.firstElementChild.cloneNode(true);
-    highlightsContainer.appendChild(node);
+    targetContainer.appendChild(node);
     wireHighlightRow(node);
     wireHighlightDrag(node);
     if (Object.keys(data).length) node._seedHighlight(data);
@@ -1677,9 +1709,22 @@
     // save / load. Pydantic ignores unknown extras, so the form_sections
     // field is dropped harmlessly by /api/preview/html and /api/eml.
     const idToOutIdx = new Map();
+    let globalArticleCount = 0;
+    sortableSectionsAll().forEach((section) => {
+      if (section.dataset.sectionType === 'articles') {
+        [...section.querySelectorAll('.article-card')].forEach((card) => {
+          const fields = stripEmpty(collectFields(card));
+          if (fields.headline && fields.url) {
+            idToOutIdx.set(card.dataset.articleId, globalArticleCount++);
+          }
+        });
+      }
+    });
+
     issue.articles = [];
     issue.podcasts = [];
     issue.static_blocks = [];
+    issue.highlights = [];
     const formSections = [];
     sortableSectionsAll().forEach((section) => {
       const type = section.dataset.sectionType;
@@ -1690,7 +1735,6 @@
         cards.forEach((card) => {
           const fields = stripEmpty(collectFields(card));
           if (fields.headline && fields.url) {
-            idToOutIdx.set(card.dataset.articleId, issue.articles.length);
             issue.articles.push(fields);
             count += 1;
           }
@@ -1739,47 +1783,41 @@
           }
         });
         formSections.push({ type, id: sectionId, count });
+      } else if (type === 'highlights') {
+        const rows = [...section.querySelectorAll('.row')];
+        let count = 0;
+        rows.forEach((row) => {
+          const fields = collectFields(row);
+          const archiveId = fields.source_archive_id;
+          if (archiveId !== '' && archiveId != null) {
+            const out = {
+              source_archive_id: Number(archiveId),
+              source_article_index: Number(fields.source_article_index),
+            };
+            if (fields.cached_headline) out.cached_headline = fields.cached_headline;
+            if (fields.cached_url) out.cached_url = fields.cached_url;
+            if (fields.cached_issue_date) out.cached_issue_date = fields.cached_issue_date;
+            if (fields.cached_issue_year) out.cached_issue_year = Number(fields.cached_issue_year);
+            if (fields.cached_issue_number) out.cached_issue_number = Number(fields.cached_issue_number);
+            if (fields.cached_issue_title) out.cached_issue_title = fields.cached_issue_title;
+            if (fields.override_label) out.override_label = fields.override_label;
+            issue.highlights.push(out);
+            count += 1;
+            return;
+          }
+          const id = fields.article_index;
+          if (id === '' || id === null || id === undefined) return;
+          const remapped = idToOutIdx.get(String(id));
+          if (remapped === undefined) return;
+          const out = { article_index: remapped };
+          if (fields.override_label) out.override_label = fields.override_label;
+          issue.highlights.push(out);
+          count += 1;
+        });
+        formSections.push({ type, id: sectionId, count });
       }
     });
     issue.form_sections = formSections;
-
-    // Highlights — two flavors:
-    //   In-issue: article_index input carries the article's stable DOM id;
-    //     resolve to the post-filter article position (numbered globally
-    //     across all Articles sections) and drop refs whose article was
-    //     removed or is still incomplete (no headline+url).
-    //   Archive: source_archive_id + source_article_index identify the
-    //     source article, cached_* fields carry the snapshot the
-    //     renderer + grouping helper need. We round-trip every cached
-    //     field so the bottom-highlights block renders consistently
-    //     across draft save/load + preview cycles.
-    issue.highlights = [...highlightsContainer.querySelectorAll('.row')]
-      .map((row) => {
-        const fields = collectFields(row);
-        const archiveId = fields.source_archive_id;
-        if (archiveId !== '' && archiveId != null) {
-          const out = {
-            source_archive_id: Number(archiveId),
-            source_article_index: Number(fields.source_article_index),
-          };
-          if (fields.cached_headline) out.cached_headline = fields.cached_headline;
-          if (fields.cached_url) out.cached_url = fields.cached_url;
-          if (fields.cached_issue_date) out.cached_issue_date = fields.cached_issue_date;
-          if (fields.cached_issue_year) out.cached_issue_year = Number(fields.cached_issue_year);
-          if (fields.cached_issue_number) out.cached_issue_number = Number(fields.cached_issue_number);
-          if (fields.cached_issue_title) out.cached_issue_title = fields.cached_issue_title;
-          if (fields.override_label) out.override_label = fields.override_label;
-          return out;
-        }
-        const id = fields.article_index;
-        if (id === '' || id === null || id === undefined) return null;
-        const remapped = idToOutIdx.get(String(id));
-        if (remapped === undefined) return null;
-        const out = { article_index: remapped };
-        if (fields.override_label) out.override_label = fields.override_label;
-        return out;
-      })
-      .filter((h) => h !== null);
 
     return issue;
   };
@@ -2630,11 +2668,13 @@
     const articleList = Array.isArray(issue.articles) ? issue.articles : [];
     const staticList = Array.isArray(issue.static_blocks) ? issue.static_blocks : [];
     const podcastList = Array.isArray(issue.podcasts) ? issue.podcasts : (issue.podcast ? [issue.podcast] : []);
+    const highlightList = Array.isArray(issue.highlights) ? issue.highlights : [];
     const formSections = Array.isArray(issue.form_sections) ? issue.form_sections : null;
 
     let articleCursor = 0;
     let staticCursor = 0;
     let podcastCursor = 0;
+    let highlightCursor = 0;
 
     if (formSections && formSections.length) {
       formSections.forEach((entry) => {
@@ -2657,6 +2697,11 @@
           const slice = podcastList.slice(podcastCursor, podcastCursor + count);
           podcastCursor += slice.length;
           slice.forEach((p) => addPodcast(p || {}, podcastsContainerOf(sec)));
+        } else if (type === 'highlights') {
+          const count = Number.isInteger(entry.count) ? Math.max(0, entry.count) : highlightList.length;
+          const slice = highlightList.slice(highlightCursor, highlightCursor + count);
+          highlightCursor += slice.length;
+          slice.forEach((h) => addHighlight(h || {}, highlightsContainerOf(sec)));
         }
       });
     }
@@ -2687,12 +2732,12 @@
     }
     updateSectionDragVisibility();
 
-    // Highlights — clear, then re-add. Must run after articles so the
-    // refreshHighlightOptions select gets the right option list.
-    highlightsContainer.innerHTML = '';
-    (Array.isArray(issue.highlights) ? issue.highlights : []).forEach((h) => {
-      addHighlight(h || {});
-    });
+    const tailHighlights = highlightList.slice(highlightCursor);
+    if (tailHighlights.length) {
+      const sec = sortableSectionsOfType('highlights').slice(-1)[0]
+        || addSection('highlights');
+      tailHighlights.forEach((h) => addHighlight(h || {}, highlightsContainerOf(sec)));
+    }
 
     renumber();
     updateYearDisplay();
