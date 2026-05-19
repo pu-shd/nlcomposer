@@ -110,12 +110,18 @@ jobs:
         # silently no-ops the update — the new image sits in ACR but
         # the running replicas keep serving the previous digest.
         run: |
+          az containerapp secret set \
+            --name "${{ secrets.AZURE_ACA_APP }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --secrets "youtube-api-key=${{ secrets.YOUTUBE_API_KEY }}"
+
           SUFFIX="r${{ github.run_number }}-$(echo "${{ github.sha }}" | cut -c1-7)"
           az containerapp update \
             --name "${{ secrets.AZURE_ACA_APP }}" \
             --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
             --image "${{ secrets.AZURE_ACR_NAME }}.azurecr.io/${{ secrets.AZURE_ACA_APP }}:${{ inputs.image_tag }}" \
-            --revision-suffix "$SUFFIX"
+            --revision-suffix "$SUFFIX" \
+            --set-env-vars "YOUTUBE_API_KEY=secretref:youtube-api-key"
 
       - name: Show new revision
         run: |
