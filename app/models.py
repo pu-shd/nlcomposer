@@ -91,6 +91,33 @@ class PodcastEpisode(BaseModel):
     timecodes: list[PodcastTimecode] = Field(default_factory=list)
 
 
+class YouTubeChannel(BaseModel):
+    """A managed YouTube channel."""
+
+    id: Optional[int] = None
+    handle: str
+    name: str
+    channel_id: str
+    uploads_playlist_id: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class YouTubeEpisode(BaseModel):
+    """A video upload from a YouTube channel."""
+
+    id: Optional[int] = None
+    channel_id: int
+    video_id: str
+    title: str
+    description: Optional[str] = None
+    published_at: str
+    thumbnail_url: Optional[str] = None
+    payload: dict = Field(default_factory=dict)
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 class StaticBlock(BaseModel):
     """A repeated/static block — sponsor blurb, book promo, conference promo, etc.
 

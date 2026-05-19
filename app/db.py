@@ -152,6 +152,30 @@ CREATE TABLE IF NOT EXISTS media (
     updated_at    TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_media_updated ON media(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS youtube_channels (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    handle      TEXT    NOT NULL UNIQUE,
+    name        TEXT    NOT NULL,
+    channel_id  TEXT    NOT NULL UNIQUE,
+    uploads_playlist_id TEXT,
+    created_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS youtube_episodes (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id        INTEGER NOT NULL REFERENCES youtube_channels(id) ON DELETE CASCADE,
+    video_id          TEXT    NOT NULL UNIQUE,
+    title             TEXT    NOT NULL,
+    description       TEXT,
+    published_at      TEXT    NOT NULL,
+    thumbnail_url     TEXT,
+    payload           TEXT    NOT NULL,
+    created_at        TEXT    NOT NULL,
+    updated_at        TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_yt_episodes_published ON youtube_episodes(published_at DESC);
 """
 
 

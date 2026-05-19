@@ -11,7 +11,10 @@ from ..podcast import (
     YoutubeMetadata,
     fetch_youtube_metadata,
     validate_youtube_url,
+    parse_timecodes,
+    strip_timecode_lines,
 )
+from ..youtube import fetch_video_details, extract_video_id
 
 
 router = APIRouter(prefix="/api/fetch")
@@ -112,9 +115,27 @@ def fetch_youtube(
     """
 
     try:
-        validate_youtube_url(url)
+        url = validate_youtube_url(url)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Try YouTube API first
+    video_id = extract_video_id(url)
+    if video_id:
+        try:
+            details = fetch_video_details(video_id)
+            if details:
+                description = details["description"]
+                meta: YoutubeMetadata = {
+                    "title": details["title"],
+                    "summary": strip_timecode_lines(description),
+                    "youtube_video_url": f"https://www.youtube.com/watch?v={video_id}",
+                    "timecodes": parse_timecodes(description, video_id)
+                }
+                return JSONResponse(content=dict(meta))
+        except Exception as e:
+            # Fallback to scraping if API fails
+            print(f"YouTube API failed, falling back to scraping: {e}")
 
     try:
         meta: YoutubeMetadata = fetch_youtube_metadata(url)

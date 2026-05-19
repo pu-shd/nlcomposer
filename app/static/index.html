@@ -26,7 +26,7 @@
       <!-- Episodes lives next to the other library surfaces — it will host
            a local cache of YouTube/podcast episode metadata once the
            import flow lands. Disabled placeholder for now. -->
-      <button type="button" id="open-episodes" role="menuitem" aria-haspopup="dialog" disabled title="Coming soon — import episodes from YouTube">Episodes</button>
+      <button type="button" id="open-episodes" role="menuitem" aria-haspopup="dialog" title="Import episodes from YouTube">Episodes</button>
     </div>
   </div>
   <h1>Newsletter Composer</h1>
@@ -284,6 +284,7 @@
       <div class="row inline">
         <input type="url" data-field="youtube_video_url">
         <button type="button" class="btn ghost btn-fetch" data-action="fetch-youtube" title="Fetch title, description, and MM:SS timecodes from the YouTube video">Fetch</button>
+        <button type="button" class="btn ghost btn-fetch" data-action="pick-episode" title="Pick from imported Episodes">Library</button>
       </div>
       <small class="fetch-status" data-role="youtube-fetch-status"></small>
     </label>
@@ -754,6 +755,59 @@
       </button>
     </footer>
   </form>
+</dialog>
+
+<dialog id="episodes-dialog" aria-labelledby="episodes-title">
+  <div class="dialog-body">
+    <header class="dialog-header">
+      <h2 id="episodes-title">Episodes</h2>
+      <button type="button" class="btn-remove" id="episodes-close" aria-label="Close">&times;</button>
+    </header>
+    <p class="hint">Manage YouTube channels and import their latest video uploads. Add a channel by handle (e.g. @smartdrivingcars) or search by name. Use "Library" in the Podcast section to pick an episode.</p>
+
+    <div class="episodes-layout">
+      <aside class="episodes-sidebar">
+        <h3>Channels</h3>
+        <ul class="templates-list" id="episodes-channels-list" aria-live="polite"></ul>
+        <form id="episodes-channel-add-form" autocomplete="off" class="templates-create">
+          <div class="row inline">
+            <input type="text" name="handle" required placeholder="Channel name or @handle" style="width: 100%;">
+            <button type="submit" class="btn primary">Add</button>
+          </div>
+          <small id="episodes-channel-status" class="status" aria-live="polite"></small>
+        </form>
+      </aside>
+      <section class="episodes-main">
+        <header class="episodes-main-header">
+          <h3 id="episodes-selected-channel-name">Select a channel</h3>
+          <div class="episodes-main-actions" id="episodes-main-actions" hidden>
+            <button type="button" class="btn ghost" id="episodes-sync-btn">Refresh</button>
+            <button type="button" class="btn ghost" id="episodes-reset-btn">Resync All</button>
+            <button type="button" class="btn danger" id="episodes-remove-channel-btn">Remove Channel</button>
+          </div>
+        </header>
+        <ul class="templates-list episodes-list" id="episodes-list" aria-live="polite"></ul>
+        <small id="episodes-status" class="status" aria-live="polite"></small>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="episodes-picker-dialog" aria-labelledby="episodes-picker-title">
+  <div class="dialog-body">
+    <header class="dialog-header">
+      <h2 id="episodes-picker-title">Pick an Episode</h2>
+      <button type="button" class="btn-remove" id="episodes-picker-close" aria-label="Close">&times;</button>
+    </header>
+    <div class="media-picker-search">
+      <select id="episodes-picker-channel-select" aria-label="Select channel"></select>
+    </div>
+    <ul class="templates-list episodes-list" id="episodes-picker-list" aria-live="polite"></ul>
+    <footer class="dialog-actions">
+      <small id="episodes-picker-status" class="status" aria-live="polite"></small>
+      <button type="button" class="btn ghost" id="episodes-picker-cancel">Cancel</button>
+    </footer>
+  </div>
 </dialog>
 
 <script src="/static/composer.js"></script>

@@ -928,6 +928,30 @@
         fetchYouTubeInto(node);
       });
     }
+    const ytPickBtn = node.querySelector('[data-action="pick-episode"]');
+    if (ytPickBtn) {
+      ytPickBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        openEpisodesPicker((meta) => {
+          ['title', 'summary', 'youtube_video_url'].forEach((f) => {
+            const el = node.querySelector(`[data-field="${f}"]`);
+            if (el && meta[f]) el.value = meta[f];
+          });
+          const tcContainer = node.querySelector('#timecodes');
+          if (tcContainer && Array.isArray(meta.timecodes)) {
+            tcContainer.innerHTML = '';
+            meta.timecodes.forEach((tc) => {
+              addTimecode({
+                timecode: tc.timecode,
+                label: tc.label || '',
+                url: tc.url || '',
+              }, tcContainer);
+            });
+          }
+          schedulePreview();
+        });
+      });
+    }
     return node;
   };
 
@@ -3638,6 +3662,269 @@
     e.preventDefault();
     closeLibraryPicker();
   });
+
+  // ───────── Episodes Library ─────────────────────────────────────────
+  const episodesDialog = document.getElementById('episodes-dialog');
+  const episodesChannelsList = document.getElementById('episodes-channels-list');
+  const episodesChannelAddForm = document.getElementById('episodes-channel-add-form');
+  const episodesChannelStatus = document.getElementById('episodes-channel-status');
+  const episodesList = document.getElementById('episodes-list');
+  const episodesStatus = document.getElementById('episodes-status');
+  const episodesMainActions = document.getElementById('episodes-main-actions');
+  const episodesSelectedChannelName = document.getElementById('episodes-selected-channel-name');
+  const episodesSyncBtn = document.getElementById('episodes-sync-btn');
+  const episodesResetBtn = document.getElementById('episodes-reset-btn');
+  const episodesRemoveChannelBtn = document.getElementById('episodes-remove-channel-btn');
+
+  const episodesPickerDialog = document.getElementById('episodes-picker-dialog');
+  const episodesPickerChannelSelect = document.getElementById('episodes-picker-channel-select');
+  const episodesPickerList = document.getElementById('episodes-picker-list');
+  const episodesPickerStatus = document.getElementById('episodes-picker-status');
+
+  let selectedChannelId = null;
+  let episodesOnPick = null;
+
+  const setEpisodesChannelStatus = statusSetter(episodesChannelStatus);
+  const setEpisodesStatus = statusSetter(episodesStatus);
+  const setEpisodesPickerStatus = statusSetter(episodesPickerStatus);
+
+  const refreshEpisodesChannels = async () => {
+    try {
+      const res = await fetch('/api/episodes/channels');
+      if (!res.ok) return;
+      const channels = await res.json();
+      episodesChannelsList.innerHTML = channels.map((c) => `
+        <li data-channel-id="${c.id}" class="template-item ${selectedChannelId === c.id ? 'active' : ''}">
+          <div class="template-meta">
+            <strong>${escapeHtml(c.name)}</strong>
+            <small>${escapeHtml(c.handle)}</small>
+          </div>
+        </li>
+      `).join('');
+
+      // Update picker select
+      episodesPickerChannelSelect.innerHTML = channels.map((c) =>
+        `<option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.handle)})</option>`
+      ).join('');
+      if (channels.length > 0 && !episodesPickerChannelSelect.value) {
+        episodesPickerChannelSelect.value = channels[0].id;
+      }
+    } catch (err) {
+      console.error('Failed to refresh channels:', err);
+    }
+  };
+
+  const selectEpisodesChannel = async (id) => {
+    selectedChannelId = id;
+    [...episodesChannelsList.children].forEach((li) => {
+      li.classList.toggle('active', Number(li.dataset.channelId) === id);
+    });
+
+    const res = await fetch(`/api/episodes/channels/${id}`);
+    if (res.ok) {
+      const channel = await res.json();
+      episodesSelectedChannelName.textContent = channel.name;
+      episodesMainActions.hidden = false;
+      await refreshEpisodesList(id);
+    }
+  };
+
+  const refreshEpisodesList = async (channelId) => {
+    setEpisodesStatus('Loading episodes...');
+    try {
+      const res = await fetch(`/api/episodes/channels/${channelId}/episodes`);
+      if (!res.ok) {
+        setEpisodesStatus('Failed to load episodes.', 'error');
+        return;
+      }
+      const episodes = await res.json();
+      setEpisodesStatus('');
+      if (episodes.length === 0) {
+        episodesList.innerHTML = '<li class="hint">No episodes found. Click Refresh to fetch from YouTube.</li>';
+      } else {
+        episodesList.innerHTML = episodes.map((e) => `
+          <li class="template-item">
+            <img class="episode-thumb" src="${e.thumbnail_url || ''}" alt="">
+            <div class="episode-info">
+              <span class="episode-title">${escapeHtml(e.title)}</span>
+              <span class="episode-meta">${new Date(e.published_at).toLocaleDateString()}</span>
+              <p class="episode-desc">${escapeHtml(e.description || '')}</p>
+            </div>
+          </li>
+        `).join('');
+      }
+    } catch (err) {
+      setEpisodesStatus(`Network error: ${err.message}`, 'error');
+    }
+  };
+
+  const openEpisodesDialog = async () => {
+    setEpisodesChannelStatus('');
+    setEpisodesStatus('');
+    episodesChannelAddForm.reset();
+    episodesSelectedChannelName.textContent = 'Select a channel';
+    episodesMainActions.hidden = true;
+    episodesList.innerHTML = '';
+    selectedChannelId = null;
+    await refreshEpisodesChannels();
+    openDialog(episodesDialog);
+  };
+
+  const openEpisodesPicker = async (onPick) => {
+    episodesOnPick = onPick;
+    setEpisodesPickerStatus('');
+    await refreshEpisodesChannels();
+    if (episodesPickerChannelSelect.value) {
+      await refreshPickerEpisodesList(episodesPickerChannelSelect.value);
+    }
+    openDialog(episodesPickerDialog);
+  };
+
+  const refreshPickerEpisodesList = async (channelId) => {
+    setEpisodesPickerStatus('Loading...');
+    try {
+      const res = await fetch(`/api/episodes/channels/${channelId}/episodes`);
+      const episodes = await res.json();
+      setEpisodesPickerStatus('');
+      if (episodes.length === 0) {
+        episodesPickerList.innerHTML = '<li class="hint">No episodes found for this channel.</li>';
+      } else {
+        episodesPickerList.innerHTML = episodes.map((e) => `
+          <li class="template-item clickable" data-video-id="${e.video_id}">
+            <img class="episode-thumb" src="${e.thumbnail_url || ''}" alt="">
+            <div class="episode-info">
+              <span class="episode-title">${escapeHtml(e.title)}</span>
+              <span class="episode-meta">${new Date(e.published_at).toLocaleDateString()}</span>
+            </div>
+          </li>
+        `).join('');
+      }
+    } catch (err) {
+      setEpisodesPickerStatus(`Error: ${err.message}`, 'error');
+    }
+  };
+
+  episodesChannelsList.addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-channel-id]');
+    if (li) {
+      selectEpisodesChannel(Number(li.dataset.channelId));
+    }
+  });
+
+  episodesChannelAddForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const handle = episodesChannelAddForm.elements['handle'].value.trim();
+    if (!handle) return;
+
+    setEpisodesChannelStatus('Adding channel...');
+    try {
+      const res = await fetch('/api/episodes/channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle }),
+      });
+      if (!res.ok) {
+        const detail = await readJsonDetail(res);
+        setEpisodesChannelStatus(detail || 'Failed to add channel.', 'error');
+        return;
+      }
+      const channel = await res.json();
+      setEpisodesChannelStatus('Channel added.', 'ok');
+      episodesChannelAddForm.reset();
+      await refreshEpisodesChannels();
+      await selectEpisodesChannel(channel.id);
+    } catch (err) {
+      setEpisodesChannelStatus(`Network error: ${err.message}`, 'error');
+    }
+  });
+
+  episodesSyncBtn.addEventListener('click', async () => {
+    if (!selectedChannelId) return;
+    setEpisodesStatus('Syncing with YouTube...');
+    try {
+      const res = await fetch(`/api/episodes/channels/${selectedChannelId}/sync`, { method: 'POST' });
+      if (!res.ok) {
+        const detail = await readJsonDetail(res);
+        setEpisodesStatus(detail || 'Sync failed.', 'error');
+        return;
+      }
+      const data = await res.json();
+      setEpisodesStatus(`Synced ${data.count} episodes.`, 'ok');
+      await refreshEpisodesList(selectedChannelId);
+    } catch (err) {
+      setEpisodesStatus(`Network error: ${err.message}`, 'error');
+    }
+  });
+
+  episodesResetBtn.addEventListener('click', async () => {
+    if (!selectedChannelId) return;
+    if (currentSettings?.confirm_before_delete) {
+      if (!confirm('This will clear the local cache for this channel and re-fetch everything from YouTube. Continue?')) return;
+    }
+    setEpisodesStatus('Resetting and syncing...');
+    try {
+      const res = await fetch(`/api/episodes/channels/${selectedChannelId}/reset`, { method: 'POST' });
+      if (!res.ok) {
+        const detail = await readJsonDetail(res);
+        setEpisodesStatus(detail || 'Reset failed.', 'error');
+        return;
+      }
+      const data = await res.json();
+      setEpisodesStatus(`Reset complete. Synced ${data.count} episodes.`, 'ok');
+      await refreshEpisodesList(selectedChannelId);
+    } catch (err) {
+      setEpisodesStatus(`Network error: ${err.message}`, 'error');
+    }
+  });
+
+  episodesRemoveChannelBtn.addEventListener('click', async () => {
+    if (!selectedChannelId) return;
+    if (currentSettings?.confirm_before_delete) {
+      if (!confirm('Remove this channel and all its cached episodes?')) return;
+    }
+    try {
+      const res = await fetch(`/api/episodes/channels/${selectedChannelId}`, { method: 'DELETE' });
+      if (res.ok) {
+        selectedChannelId = null;
+        episodesMainActions.hidden = true;
+        episodesSelectedChannelName.textContent = 'Select a channel';
+        episodesList.innerHTML = '';
+        await refreshEpisodesChannels();
+      }
+    } catch (err) {
+      setEpisodesStatus(`Network error: ${err.message}`, 'error');
+    }
+  });
+
+  episodesPickerChannelSelect.addEventListener('change', () => {
+    refreshPickerEpisodesList(episodesPickerChannelSelect.value);
+  });
+
+  episodesPickerList.addEventListener('click', async (e) => {
+    const li = e.target.closest('li[data-video-id]');
+    if (!li || !episodesOnPick) return;
+    const { videoId } = li.dataset;
+
+    try {
+      const url = `https://www.youtube.com/watch?v=${videoId}`;
+      setEpisodesPickerStatus('Fetching full metadata...');
+      const res = await fetch(`/api/fetch/youtube?url=${encodeURIComponent(url)}`);
+      if (res.ok) {
+        const meta = await res.json();
+        episodesOnPick(meta);
+        closeDialog(episodesPickerDialog);
+      } else {
+        setEpisodesPickerStatus('Failed to fetch full metadata.', 'error');
+      }
+    } catch (err) {
+      setEpisodesPickerStatus(`Error: ${err.message}`, 'error');
+    }
+  });
+
+  document.getElementById('open-episodes').addEventListener('click', openEpisodesDialog);
+  document.getElementById('episodes-close').addEventListener('click', () => closeDialog(episodesDialog));
+  document.getElementById('episodes-picker-close').addEventListener('click', () => closeDialog(episodesPickerDialog));
+  document.getElementById('episodes-picker-cancel').addEventListener('click', () => closeDialog(episodesPickerDialog));
 
   document.getElementById('open-settings').addEventListener('click', openSettingsDialog);
   document.getElementById('settings-close').addEventListener('click', (e) => {

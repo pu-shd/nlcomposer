@@ -21,6 +21,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .links import sanitize_url
+from .youtube import extract_video_id, validate_youtube_url
 
 _DEFAULT_TIMEOUT = 8.0
 _DEFAULT_USER_AGENT = (
@@ -41,57 +42,6 @@ class YoutubeMetadata(TypedDict, total=False):
     summary: str
     youtube_video_url: str
     timecodes: list[PodcastTimecodeDict]
-
-
-def extract_video_id(url: str) -> Optional[str]:
-    """Pull the 11-ish-char video ID out of any common YouTube URL shape.
-
-    Supports ``watch?v=…``, ``youtu.be/…``, ``shorts/…``, ``embed/…``,
-    ``v/…``, and ``live/…``. Returns ``None`` if no ID is recognizable.
-    """
-
-    try:
-        parsed = urlparse(url.strip())
-    except (ValueError, AttributeError):
-        return None
-    host = (parsed.hostname or "").lower()
-    if host == "youtu.be" or host.endswith(".youtu.be"):
-        path_id = parsed.path.lstrip("/").split("/", 1)[0]
-        return path_id or None
-    if "youtube.com" not in host and "youtube-nocookie.com" not in host:
-        return None
-    if parsed.path == "/watch":
-        qs = parse_qs(parsed.query)
-        v = qs.get("v")
-        if v and v[0]:
-            return v[0]
-    parts = parsed.path.lstrip("/").split("/", 2)
-    if len(parts) >= 2 and parts[0] in {"shorts", "embed", "v", "live"}:
-        return parts[1] or None
-    return None
-
-
-def validate_youtube_url(url: str) -> str:
-    """Reject anything that doesn't yield a YouTube video ID.
-
-    Also blocks file/ftp/loopback URLs the same way :func:`app.fetch.validate_fetch_url`
-    does so the endpoint cannot be turned into an SSRF probe by accident.
-    """
-
-    cleaned = sanitize_url(url.strip()) or ""
-    parsed = urlparse(cleaned)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError("only http(s) URLs are supported")
-    if not parsed.netloc:
-        raise ValueError("URL is missing a host")
-    host = (parsed.hostname or "").lower()
-    if host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or host.endswith(
-        ".localhost"
-    ):
-        raise ValueError("URL host is not allowed")
-    if not extract_video_id(cleaned):
-        raise ValueError("URL is not a recognizable YouTube video URL")
-    return cleaned
 
 
 # ───────── Timecode parsing ───────────────────────────────────────────────

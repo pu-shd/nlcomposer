@@ -49,6 +49,13 @@ EXPECTED_ROUTES: list[tuple[str, str]] = [
     ("PUT", "/api/media/{media_id}"),
     ("DELETE", "/api/media/{media_id}"),
     ("GET", "/api/media/{media_id}/content"),
+    ("GET", "/api/episodes/channels"),
+    ("POST", "/api/episodes/channels"),
+    ("GET", "/api/episodes/channels/{channel_id}"),
+    ("DELETE", "/api/episodes/channels/{channel_id}"),
+    ("GET", "/api/episodes/channels/{channel_id}/episodes"),
+    ("POST", "/api/episodes/channels/{channel_id}/sync"),
+    ("POST", "/api/episodes/channels/{channel_id}/reset"),
 ]
 
 
@@ -57,6 +64,7 @@ CONTROLLER_MODULES = (
     "archive",
     "drafts",
     "eml",
+    "episodes",
     "fetch",
     "media",
     "pages",
