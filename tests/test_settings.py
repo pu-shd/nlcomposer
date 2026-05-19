@@ -19,7 +19,6 @@ def test_settings_model_has_sane_defaults():
     s = AppSettings()
     # Behavior toggles default to the values used by the UI.
     assert s.preview_debounce_ms == 400
-    assert s.auto_archive_on_download is True
     # Read-more link is a render-toggle that defaults on so existing
     # newsletters keep their familiar layout; users can opt out.
     assert s.include_read_more_link is True
@@ -105,7 +104,6 @@ def test_save_then_load_round_trip():
                 from_email="t@example.com",
                 to_email="dest@example.com",
                 preview_debounce_ms=750,
-                auto_archive_on_download=False,
             ),
         )
         conn.commit()
@@ -115,7 +113,6 @@ def test_save_then_load_round_trip():
     assert loaded.from_name == "Test User"
     assert loaded.from_email == "t@example.com"
     assert loaded.preview_debounce_ms == 750
-    assert loaded.auto_archive_on_download is False
 
 
 def test_save_then_load_round_trips_masthead_logo_media_id():
@@ -166,7 +163,6 @@ def test_get_settings_returns_defaults_when_unset(client: TestClient):
     body = res.json()
     assert body["from_name"] == AppSettings().from_name
     assert body["preview_debounce_ms"] == 400
-    assert body["auto_archive_on_download"] is True
 
 
 def test_put_settings_self_heals_when_settings_table_is_missing(client: TestClient):
@@ -284,14 +280,12 @@ def test_put_settings_persists_and_round_trips(client: TestClient):
         "default_intro_html": "<p>Greetings.</p>",
         "default_footer_html": "<p>Cheers.</p>",
         "preview_debounce_ms": 250,
-        "auto_archive_on_download": False,
     }
     res = client.put("/api/settings", json=payload)
     assert res.status_code == 200, res.text
     saved = res.json()
     assert saved["from_name"] == "Alain K."
     assert saved["preview_debounce_ms"] == 250
-    assert saved["auto_archive_on_download"] is False
 
     again = client.get("/api/settings")
     assert again.status_code == 200
@@ -336,7 +330,7 @@ def test_index_includes_settings_button_and_dialog(client: TestClient):
         "unsubscribe_url", "masthead_logo_url",
         "initial_publication_date",
         "default_intro_html", "default_footer_html",
-        "preview_debounce_ms", "auto_archive_on_download",
+        "preview_debounce_ms",
         "include_read_more_link", "confirm_before_delete",
         "embed_all_media",
     ):

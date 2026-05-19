@@ -90,10 +90,6 @@ class AppSettings(BaseModel):
         le=5000,
         description="Delay between keystroke and preview re-render.",
     )
-    auto_archive_on_download: bool = Field(
-        default=True,
-        description="When True, every successful .eml download is also stored in the archive.",
-    )
     include_read_more_link: bool = Field(
         default=True,
         description=(
