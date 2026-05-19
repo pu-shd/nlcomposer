@@ -966,6 +966,9 @@
     return node ? node.querySelector('#timecodes') : null;
   };
 
+  const podcastsContainerOf = (section) =>
+    section.querySelector('[data-role="podcasts-container"]');
+
   const addPodcast = (data = {}, container = null) => {
     const targetContainer = container
       || (sortableSectionsOfType('podcast')[0]?.querySelector('[data-role="podcasts-container"]'));
@@ -3910,20 +3913,23 @@
     const videoIds = checked.map((cb) => cb.closest('li').dataset.videoId);
     setEpisodesPickerStatus(`Fetching ${videoIds.length} episode(s)...`);
 
-    const metas = [];
-    for (const videoId of videoIds) {
+    const fetchPromises = videoIds.map(async (videoId) => {
       try {
         const url = `https://www.youtube.com/watch?v=${videoId}`;
         const res = await fetch(`/api/fetch/youtube?url=${encodeURIComponent(url)}`);
         if (res.ok) {
-          metas.push(await res.json());
+          return await res.json();
         } else {
           console.error('Failed to fetch video', videoId, res.status);
         }
       } catch (err) {
         console.error('Failed to fetch video', videoId, err);
       }
-    }
+      return null;
+    });
+
+    const results = await Promise.all(fetchPromises);
+    const metas = results.filter(m => m !== null);
 
     if (metas.length > 0) {
       episodesOnPick(metas);
