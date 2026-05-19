@@ -492,6 +492,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-radius: 8px;
   margin-bottom: 12px;
   padding: 0;
+  position: relative;
 }
 
 #composer details > summary {
@@ -765,15 +766,15 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 
 /* Article card — collapsible <details> with prominent header bar + drag handle. */
-#composer .article-card {
+#composer .article-card, #composer .podcast-card {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
   margin-bottom: 0;
 }
-#composer .article-card[draggable="true"] { cursor: grabbing; }
-#composer .article-card.dragging { opacity: 0.45; }
-#composer .article-card > summary.card-header {
+#composer .article-card[draggable="true"], #composer .podcast-card[draggable="true"] { cursor: grabbing; }
+#composer .article-card.dragging, #composer .podcast-card.dragging { opacity: 0.45; }
+#composer .article-card > summary.card-header, #composer .podcast-card > summary.card-header {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -788,10 +789,10 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   user-select: none;
   border-bottom: 1px solid var(--border);
 }
-#composer .article-card:not([open]) > summary.card-header { border-bottom: 0; }
-#composer .article-card > summary.card-header::-webkit-details-marker { display: none; }
-#composer .article-card > summary.card-header::after { content: none; }
-#composer .article-card > summary.card-header::before {
+#composer .article-card:not([open]) > summary.card-header, #composer .podcast-card:not([open]) > summary.card-header { border-bottom: 0; }
+#composer .article-card > summary.card-header::-webkit-details-marker, #composer .podcast-card > summary.card-header::-webkit-details-marker { display: none; }
+#composer .article-card > summary.card-header::after, #composer .podcast-card > summary.card-header::after { content: none; }
+#composer .article-card > summary.card-header::before, #composer .podcast-card > summary.card-header::before {
   content: "▸";
   display: inline-block;
   flex: 0 0 auto;
@@ -805,8 +806,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   transform-origin: 50% 50%;
   transition: transform 0.15s ease;
 }
-#composer .article-card[open] > summary.card-header::before { transform: rotate(90deg); }
-#composer .article-card .drag-handle {
+#composer .article-card[open] > summary.card-header::before, #composer .podcast-card[open] > summary.card-header::before { transform: rotate(90deg); }
+#composer .article-card .drag-handle, #composer .podcast-card .drag-handle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -816,23 +817,23 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-radius: 4px;
   user-select: none;
 }
-#composer .article-card .drag-handle:hover { background: rgba(26, 68, 128, 0.12); color: var(--accent); }
-#composer .article-card .drag-handle:active { cursor: grabbing; }
-#composer .article-card .drag-handle svg { width: 14px; height: 18px; display: block; }
-#composer .article-card .card-title {
+#composer .article-card .drag-handle:hover, #composer .podcast-card .drag-handle:hover { background: rgba(26, 68, 128, 0.12); color: var(--accent); }
+#composer .article-card .drag-handle:active, #composer .podcast-card .drag-handle:active { cursor: grabbing; }
+#composer .article-card .drag-handle svg, #composer .podcast-card .drag-handle svg { width: 14px; height: 18px; display: block; }
+#composer .article-card .card-title, #composer .podcast-card .card-title {
   flex: 1;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#composer .article-card .card-headline-preview {
+#composer .article-card .card-headline-preview, #composer .podcast-card .card-headline-preview {
   color: var(--muted);
   font-weight: 500;
   font-size: 12px;
   margin-left: 4px;
 }
-#composer .article-card > .grid-2 { padding: 12px; }
+#composer .article-card > .grid-2, #composer .podcast-card > .grid-2 { padding: 12px; }
 
 #composer .row.inline {
   width: 100%;

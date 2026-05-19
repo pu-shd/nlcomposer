@@ -66,6 +66,8 @@
     [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="articles"] .articles-container .article-card')];
   const allStaticCards = () =>
     [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="static_blocks"] .statics-container fieldset.card')];
+  const allPodcastCards = () =>
+    [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="podcast"] .podcasts-container .podcast-card')];
 
   // ───────── Helpers ─────────────────────────────────────────────────
   const trim = (v) => (typeof v === 'string' ? v.trim() : v);
@@ -430,6 +432,10 @@
       const idx = card.querySelector('.idx');
       if (idx) idx.textContent = `#${i + 1}`;
     });
+    allPodcastCards().forEach((card, i) => {
+      const idx = card.querySelector('.idx');
+      if (idx) idx.textContent = `#${i + 1}`;
+    });
     // Per-section counts in the section summary badges.
     sortableSectionsOfType('articles').forEach((sec) => {
       const badge = sec.querySelector('[data-role="articles-count"]');
@@ -438,6 +444,10 @@
     sortableSectionsOfType('static_blocks').forEach((sec) => {
       const badge = sec.querySelector('[data-role="static-count"]');
       if (badge) badge.textContent = sec.querySelectorAll('fieldset.card').length;
+    });
+    sortableSectionsOfType('podcast').forEach((sec) => {
+      const badge = sec.querySelector('[data-role="podcast-count"]');
+      if (badge) badge.textContent = sec.querySelectorAll('.podcast-card').length;
     });
     highlightsCount.textContent = highlightsContainer.querySelectorAll('.row').length;
     refreshHighlightOptions();
