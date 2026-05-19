@@ -90,8 +90,9 @@ def sample_issue() -> NewsletterIssue:
                 pull_quote="Waymo is here. Why aren't we using it more?",
             ),
         ],
-        podcast=PodcastEpisode(
-            episode_number=412,
+        podcasts=[
+            PodcastEpisode(
+                episode_number=412,
             title=(
                 "What is it like at the 2026 Auto Show in Beijing? On episode "
                 "412 of Smart Driving Cars."
@@ -121,9 +122,10 @@ def sample_issue() -> NewsletterIssue:
                     url="https://www.youtube.com/watch?v=OVyjLVA5524&t=1055s",
                 ),
             ],
-        ),
-        static_blocks=[
-            StaticBlock(
+        )
+    ],
+    static_blocks=[
+        StaticBlock(
                 title="The Real Case for Driverless Mobility",
                 html=(
                     '<p>Narrated by Fred Fishkin, available now on '

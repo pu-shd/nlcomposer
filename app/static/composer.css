@@ -1714,13 +1714,20 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 
 .episodes-list .template-item {
   display: grid;
-  grid-template-columns: 80px 1fr auto;
+  grid-template-columns: 24px 120px 1fr;
   gap: 12px;
   align-items: start;
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.episode-checkbox {
+  margin-top: 6px;
+  cursor: pointer;
 }
 
 .episode-thumb {
-  width: 80px;
+  width: 120px;
   aspect-ratio: 16/9;
   object-fit: cover;
   border-radius: 4px;
@@ -1745,11 +1752,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 
 .episode-desc {
   font-size: 0.85rem;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
   color: var(--text-muted);
+  white-space: pre-wrap;
 }
 
 #episodes-dialog {

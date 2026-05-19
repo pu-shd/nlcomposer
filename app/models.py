@@ -342,7 +342,7 @@ class NewsletterIssue(BaseModel):
 
     # Body sections — every one optional so partial drafts validate.
     articles: list[Article] = Field(default_factory=list)
-    podcast: Optional[PodcastEpisode] = None
+    podcasts: list[PodcastEpisode] = Field(default_factory=list)
     static_blocks: list[StaticBlock] = Field(default_factory=list)
     highlights: list[HighlightRef] = Field(default_factory=list)
     # UI-driven render plan — describes which sortable section
@@ -361,6 +361,14 @@ class NewsletterIssue(BaseModel):
     # or /api/eml. Default True preserves the historical behavior; the
     # composer client injects the configured value at build time.
     include_read_more_link: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_podcast(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "podcast" in data and data["podcast"] and not data.get("podcasts"):
+                data["podcasts"] = [data["podcast"]]
+        return data
 
     def effective_subject(self) -> str:
         if self.subject:
@@ -420,15 +428,16 @@ class NewsletterIssue(BaseModel):
             out: list[dict] = []
             if self.articles:
                 out.append({"type": "articles", "articles": list(self.articles)})
-            if self.podcast:
-                out.append({"type": "podcast", "podcast": self.podcast})
+            if self.podcasts:
+                for p in self.podcasts:
+                    out.append({"type": "podcast", "podcast": p})
             if self.static_blocks:
                 out.append({"type": "static_blocks", "blocks": list(self.static_blocks)})
             return out
 
         art_cursor = 0
         sb_cursor = 0
-        podcast_emitted = False
+        pod_cursor = 0
         out = []
         for fs in self.form_sections:
             if fs.type == "articles":
@@ -444,14 +453,9 @@ class NewsletterIssue(BaseModel):
                 if slice_:
                     out.append({"type": "static_blocks", "blocks": slice_})
             elif fs.type == "podcast":
-                # The model carries a single ``podcast`` slot, so only
-                # the first enabled podcast section consumes it. Extra
-                # podcast entries in form_sections are placeholders
-                # (their data round-trips through buildIssue) and
-                # render nothing.
-                if not podcast_emitted and fs.enabled and self.podcast:
-                    out.append({"type": "podcast", "podcast": self.podcast})
-                    podcast_emitted = True
+                if fs.enabled and pod_cursor < len(self.podcasts):
+                    out.append({"type": "podcast", "podcast": self.podcasts[pod_cursor]})
+                    pod_cursor += 1
 
         # Defensive tail: if form_sections under-counts (a saved draft
         # whose counts drifted from the actual flat list), flush the
@@ -459,12 +463,18 @@ class NewsletterIssue(BaseModel):
         leftover_articles = list(self.articles[art_cursor:])
         if leftover_articles:
             out.append({"type": "articles", "articles": leftover_articles})
+
+        leftover_podcasts = list(self.podcasts[pod_cursor:])
+        if leftover_podcasts:
+            for p in leftover_podcasts:
+                out.append({"type": "podcast", "podcast": p})
+
         leftover_blocks = list(self.static_blocks[sb_cursor:])
         if leftover_blocks:
             out.append({"type": "static_blocks", "blocks": leftover_blocks})
-        if not podcast_emitted and self.podcast:
-            out.append({"type": "podcast", "podcast": self.podcast})
+
         return out
+
 
     def highlights_grouped(self) -> list[dict]:
         """Group bottom highlights by source issue, preserving drag order.

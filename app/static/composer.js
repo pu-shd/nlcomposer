@@ -1619,9 +1619,9 @@
     // field is dropped harmlessly by /api/preview/html and /api/eml.
     const idToOutIdx = new Map();
     issue.articles = [];
+    issue.podcasts = [];
     issue.static_blocks = [];
     const formSections = [];
-    let collectedPodcast = null;
     sortableSectionsAll().forEach((section) => {
       const type = section.dataset.sectionType;
       const sectionId = section.dataset.sectionId || '';
@@ -1680,15 +1680,12 @@
             collected = cleaned;
           }
         }
-        // Only the first podcast section with usable data flows into the
-        // model's single `podcast` slot — extras still appear in
-        // form_sections so the layout restores on load even if their
-        // data is empty.
-        if (collected && !collectedPodcast) collectedPodcast = collected;
-        formSections.push({ type, id: sectionId, enabled });
+        if (collected) {
+          issue.podcasts.push(collected);
+        }
+        formSections.push({ type, id: sectionId, enabled: !!collected });
       }
     });
-    if (collectedPodcast) issue.podcast = collectedPodcast;
     issue.form_sections = formSections;
 
     // Highlights — two flavors:
@@ -2572,12 +2569,12 @@
     // with drafts saved by older builds of the composer.
     const articleList = Array.isArray(issue.articles) ? issue.articles : [];
     const staticList = Array.isArray(issue.static_blocks) ? issue.static_blocks : [];
-    const podcast = (issue.podcast && typeof issue.podcast === 'object') ? issue.podcast : null;
+    const podcastList = Array.isArray(issue.podcasts) ? issue.podcasts : (issue.podcast ? [issue.podcast] : []);
     const formSections = Array.isArray(issue.form_sections) ? issue.form_sections : null;
 
     let articleCursor = 0;
     let staticCursor = 0;
-    let podcastConsumed = false;
+    let podcastCursor = 0;
 
     if (formSections && formSections.length) {
       formSections.forEach((entry) => {
@@ -2598,20 +2595,17 @@
         } else if (type === 'podcast') {
           const cb = podcastEnabledInputOf(sec);
           const fields = podcastFieldsOf(sec);
-          // Only the first podcast section's data exists in the model;
-          // additional podcast sections restore as empty (the user can
-          // tick "Include podcast section" to populate).
-          if (entry.enabled && podcast && !podcastConsumed) {
-            podcastConsumed = true;
+          if (entry.enabled && podcastCursor < podcastList.length) {
+            const podData = podcastList[podcastCursor++];
             cb.checked = true;
             fields.hidden = false;
             const node = renderPodcastFields(sec);
             ['episode_number', 'guest', 'title', 'zoomcast_url', 'podcast_url', 'youtube_video_url', 'summary'].forEach((k) => {
               const el = node.querySelector(`[data-field="${k}"]`);
-              if (el && podcast[k] != null) el.value = String(podcast[k]);
+              if (el && podData[k] != null) el.value = String(podData[k]);
             });
-            if (Array.isArray(podcast.timecodes)) {
-              podcast.timecodes.forEach((tc) =>
+            if (Array.isArray(podData.timecodes)) {
+              podData.timecodes.forEach((tc) =>
                 addTimecode(tc || {}, node.querySelector('#timecodes')));
             }
           } else {
@@ -2622,7 +2616,7 @@
       });
     }
 
-    // Tail: any leftover articles / static blocks / podcast not covered
+    // Tail: any leftover articles / static blocks / podcasts not covered
     // by form_sections fall through into freshly-spawned sections so
     // nothing is silently dropped during a partial-payload load.
     const tailArticles = articleList.slice(articleCursor);
@@ -2640,24 +2634,25 @@
         || addSection('static_blocks');
       tailStatic.forEach((b) => addStatic(b || {}, staticsContainerOf(sec)));
     }
-    if (!podcastConsumed) {
-      const podSec = sortableSectionsOfType('podcast')[0] || addSection('podcast');
-      const cb = podcastEnabledInputOf(podSec);
-      const fields = podcastFieldsOf(podSec);
-      if (podcast) {
+    const tailPodcasts = podcastList.slice(podcastCursor);
+    if (tailPodcasts.length || sortableSectionsOfType('podcast').length === 0) {
+      tailPodcasts.forEach((podData) => {
+        const podSec = addSection('podcast');
+        const cb = podcastEnabledInputOf(podSec);
+        const fields = podcastFieldsOf(podSec);
         cb.checked = true;
         fields.hidden = false;
         const node = renderPodcastFields(podSec);
         ['episode_number', 'guest', 'title', 'zoomcast_url', 'podcast_url', 'youtube_video_url', 'summary'].forEach((k) => {
           const el = node.querySelector(`[data-field="${k}"]`);
-          if (el && podcast[k] != null) el.value = String(podcast[k]);
+          if (el && podData[k] != null) el.value = String(podData[k]);
         });
-        if (Array.isArray(podcast.timecodes)) {
-          podcast.timecodes.forEach((tc) => addTimecode(tc || {}, node.querySelector('#timecodes')));
+        if (Array.isArray(podData.timecodes)) {
+          podData.timecodes.forEach((tc) => addTimecode(tc || {}, node.querySelector('#timecodes')));
         }
-      } else {
-        cb.checked = false;
-        fields.hidden = true;
+      });
+      if (sortableSectionsOfType('podcast').length === 0) {
+        addSection('podcast');
       }
     }
     updateSectionDragVisibility();
@@ -3672,6 +3667,7 @@
   const episodesStatus = document.getElementById('episodes-status');
   const episodesMainActions = document.getElementById('episodes-main-actions');
   const episodesSelectedChannelName = document.getElementById('episodes-selected-channel-name');
+  const episodesAddSelectedBtn = document.getElementById('episodes-add-selected-btn');
   const episodesSyncBtn = document.getElementById('episodes-sync-btn');
   const episodesResetBtn = document.getElementById('episodes-reset-btn');
   const episodesRemoveChannelBtn = document.getElementById('episodes-remove-channel-btn');
@@ -3743,7 +3739,8 @@
         episodesList.innerHTML = '<li class="hint">No episodes found. Click Refresh to fetch from YouTube.</li>';
       } else {
         episodesList.innerHTML = episodes.map((e) => `
-          <li class="template-item">
+          <li class="template-item episode-selectable" data-video-id="${e.video_id}">
+            <input type="checkbox" class="episode-checkbox" aria-label="Select episode">
             <img class="episode-thumb" src="${e.thumbnail_url || ''}" alt="">
             <div class="episode-info">
               <span class="episode-title">${escapeHtml(e.title)}</span>
@@ -3836,6 +3833,65 @@
     } catch (err) {
       setEpisodesChannelStatus(`Network error: ${err.message}`, 'error');
     }
+  });
+
+  episodesAddSelectedBtn.addEventListener('click', async () => {
+    const checked = [...episodesList.querySelectorAll('.episode-checkbox:checked')];
+    if (checked.length === 0) {
+      setEpisodesStatus('Select one or more episodes first.', 'error');
+      return;
+    }
+
+    const videoIds = checked.map((cb) => cb.closest('li').dataset.videoId);
+    setEpisodesStatus(`Adding ${videoIds.length} episodes...`);
+
+    let added = 0;
+    for (const videoId of videoIds) {
+      try {
+        const url = `https://www.youtube.com/watch?v=${videoId}`;
+        const res = await fetch(`/api/fetch/youtube?url=${encodeURIComponent(url)}`);
+        if (res.ok) {
+          const meta = await res.json();
+          // Find an empty podcast section or create a new one
+          let podSec = sortableSectionsOfType('podcast').find((s) => {
+            const cb = podcastEnabledInputOf(s);
+            return !cb.checked;
+          });
+          if (!podSec) {
+            podSec = addSection('podcast');
+          }
+          const cb = podcastEnabledInputOf(podSec);
+          cb.checked = true;
+          cb.dispatchEvent(new Event('change', { bubbles: true }));
+          const node = podcastNodeOf(podSec);
+          if (node) {
+            ['title', 'summary', 'youtube_video_url'].forEach((f) => {
+              const el = node.querySelector(`[data-field="${f}"]`);
+              if (el) el.value = meta[f] || '';
+            });
+            const tcContainer = node.querySelector('#timecodes');
+            if (tcContainer && Array.isArray(meta.timecodes)) {
+              tcContainer.innerHTML = '';
+              meta.timecodes.forEach((tc) => {
+                addTimecode({
+                  timecode: tc.timecode,
+                  label: tc.label || '',
+                  url: tc.url || '',
+                }, tcContainer);
+              });
+            }
+          }
+          added += 1;
+        }
+      } catch (err) {
+        console.error('Failed to add episode:', videoId, err);
+      }
+    }
+
+    setEpisodesStatus(`Added ${added} podcast section${added === 1 ? '' : 's'}.`, 'ok');
+    // Uncheck all
+    checked.forEach((cb) => { cb.checked = false; });
+    schedulePreview();
   });
 
   episodesSyncBtn.addEventListener('click', async () => {

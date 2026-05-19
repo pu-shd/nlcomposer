@@ -294,13 +294,13 @@ def test_round_trip_form_sections_preserves_user_drag_order(
     section_a_articles = base["articles"][:2]
     section_b_articles = base["articles"][2:3] or [base["articles"][0]]
     statics = base["static_blocks"]
-    podcast = base["podcast"]
+    podcasts = base["podcasts"]
 
     payload = {
-        **{k: v for k, v in base.items() if k not in {"articles", "static_blocks"}},
+        **{k: v for k, v in base.items() if k not in {"articles", "static_blocks", "podcasts"}},
         "articles": section_a_articles + section_b_articles,
         "static_blocks": statics,
-        "podcast": podcast,
+        "podcasts": podcasts,
         "form_sections": [
             {"type": "articles", "id": "s-1", "count": len(section_a_articles)},
             {"type": "articles", "id": "s-4", "count": len(section_b_articles)},
