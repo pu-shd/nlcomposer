@@ -13,6 +13,7 @@ services:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
       - SDC_DATA_DIR=/app/data
+      - YOUTUBE_API_KEY
 
   tests:
     build: .
@@ -21,6 +22,8 @@ services:
     volumes:
       - ./app:/app/app
       - ./tests:/app/tests
+    environment:
+      - YOUTUBE_API_KEY
     profiles: ["test"]
 
 volumes:
