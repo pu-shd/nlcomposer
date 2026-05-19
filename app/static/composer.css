@@ -896,11 +896,24 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   .preview-pane { min-height: 40vh; }
 }
 
-/* Settings / compose-new / confirm-delete dialogs ───────────────────
-   These three dialogs share the same chrome (rounded panel, accented
+/* Settings dialog — Full page overlay */
+#settings-dialog {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: var(--panel);
+  color: var(--text);
+}
+
+/* compose-new / confirm-delete dialogs ───────────────────
+   These dialogs share the same chrome (rounded panel, accented
    header, settings-row grid). Keeping the selectors grouped means a
    tweak to one shape applies uniformly. */
-#settings-dialog,
 #compose-new-dialog,
 #confirm-delete-dialog {
   border: 1px solid var(--border);
@@ -910,9 +923,6 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   max-height: calc(100vh - 32px);
   background: var(--panel);
   color: var(--text);
-}
-#settings-dialog {
-  width: min(960px, calc(100vw - 32px));
 }
 #confirm-delete-dialog {
   width: min(460px, calc(100vw - 32px));
@@ -990,11 +1000,6 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 /* Settings dialog: two-column grid for better viewport fit at high zoom.
    The layout groups identity/delivery on the left and behavior/media on
    the right, with tall HTML blocks spanning full-width at the bottom. */
-#settings-dialog .settings-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 24px;
-}
 #compose-new-dialog .settings-fields,
 #confirm-delete-dialog .settings-fields {
   display: flex;
@@ -1209,31 +1214,46 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 #drafts-dialog,
 #archive-dialog,
 #media-dialog,
-#media-picker-dialog {
-  border: 1px solid var(--border);
-  border-radius: 10px;
+#media-picker-dialog,
+#episodes-dialog,
+#episodes-picker-dialog {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: none;
+  border-radius: 0;
   padding: 0;
-  width: min(640px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
   background: var(--panel);
   color: var(--text);
 }
-#templates-dialog::backdrop,
-#drafts-dialog::backdrop,
-#archive-dialog::backdrop,
-#media-dialog::backdrop,
-#media-picker-dialog::backdrop {
-  background: rgba(31, 36, 48, 0.45);
-}
+
+/* Make sure dialog contents stretch to the bottom of the screen */
+#settings-dialog .dialog-body,
+#compose-new-dialog .dialog-body,
+#confirm-delete-dialog .dialog-body,
 #templates-dialog .dialog-body,
 #drafts-dialog .dialog-body,
 #archive-dialog .dialog-body,
 #media-dialog .dialog-body,
-#media-picker-dialog .dialog-body {
+#media-picker-dialog .dialog-body,
+#episodes-dialog .dialog-body,
+#episodes-picker-dialog .dialog-body {
+  height: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 18px 20px 16px;
+}
+
+#settings-dialog .settings-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 24px;
+  flex: 1;
+  overflow-y: auto;
 }
 #templates-dialog .dialog-header,
 #drafts-dialog .dialog-header,
@@ -1761,12 +1781,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   white-space: pre-wrap;
 }
 
-#episodes-dialog {
-  max-width: 1200px;
-  width: 95vw;
-  height: 90vh;
-  max-height: 1000px;
-}
+
 
 #episodes-dialog .dialog-body {
   height: 100%;
@@ -1788,10 +1803,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   overflow-y: auto;
 }
 
-#episodes-picker-dialog {
-  max-width: 700px;
-  width: 80vw;
-}
+
 
 .episodes-picker-search {
   margin-bottom: 16px;
