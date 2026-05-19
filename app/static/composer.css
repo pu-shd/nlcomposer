@@ -1714,16 +1714,11 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 
 .episodes-list .template-item {
   display: grid;
-  grid-template-columns: 24px 120px 1fr;
+  grid-template-columns: 120px 1fr;
   gap: 12px;
   align-items: start;
   padding: 12px;
   border-bottom: 1px solid var(--border-color);
-}
-
-.episode-checkbox {
-  margin-top: 6px;
-  cursor: pointer;
 }
 
 .episode-thumb {

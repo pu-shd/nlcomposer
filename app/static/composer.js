@@ -903,8 +903,6 @@
   // on each call so multiple Podcast sections coexist.
   const podcastFieldsOf = (section) =>
     section.querySelector('[data-role="podcast-fields"]');
-  const podcastEnabledInputOf = (section) =>
-    section.querySelector('[data-role="podcast-enabled"]');
   const podcastNodeOf = (section) =>
     section.querySelector('[data-role="podcast-fields"] > div');
   const timecodesContainerOf = (section) => {
@@ -1047,18 +1045,39 @@
   // toggling reveals/hides the cloned podcast-template fields. Each
   // section stays independent of the others.
   const wirePodcastSection = (section) => {
-    const cb = podcastEnabledInputOf(section);
     const fields = podcastFieldsOf(section);
-    if (!cb || !fields) return;
-    cb.addEventListener('change', () => {
-      if (cb.checked) {
-        fields.hidden = false;
-        if (!podcastNodeOf(section)) renderPodcastFields(section);
-      } else {
-        fields.hidden = true;
-      }
-      schedulePreview();
-    });
+    if (!fields) return;
+    fields.hidden = false;
+    if (!podcastNodeOf(section)) renderPodcastFields(section);
+    
+    // Wire up the Add Episode button that lives inside the section details
+    const pickBtn = section.querySelector('[data-action="pick-episode"]');
+    if (pickBtn) {
+      pickBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        openEpisodesPicker((meta) => {
+          const node = podcastNodeOf(section);
+          if (node) {
+            ['title', 'summary', 'youtube_video_url'].forEach((f) => {
+              const el = node.querySelector(`[data-field="${f}"]`);
+              if (el && meta[f]) el.value = meta[f];
+            });
+            const tcContainer = node.querySelector('#timecodes');
+            if (tcContainer && Array.isArray(meta.timecodes)) {
+              tcContainer.innerHTML = '';
+              meta.timecodes.forEach((tc) => {
+                addTimecode({
+                  timecode: tc.timecode,
+                  label: tc.label || '',
+                  url: tc.url || '',
+                }, tcContainer);
+              });
+            }
+            schedulePreview();
+          }
+        });
+      });
+    }
   };
 
   // ───────── Static blocks ───────────────────────────────────────────
@@ -1166,7 +1185,7 @@
         // would lose; an empty newly-spawned section deletes silently.
         const hasContent =
           section.querySelectorAll('.article-card, fieldset.card').length > 0 ||
-          (type === 'podcast' && podcastEnabledInputOf(section)?.checked);
+          (type === 'podcast' && !!podcastNodeOf(section));
         if (hasContent) {
           const ok = await confirmDelete(`Remove this ${label} section? Its contents will be discarded.`);
           if (!ok) return;
@@ -1654,11 +1673,9 @@
         });
         formSections.push({ type, id: sectionId, count });
       } else if (type === 'podcast') {
-        const cb = podcastEnabledInputOf(section);
-        const enabled = !!(cb && cb.checked);
         const node = podcastNodeOf(section);
         let collected = null;
-        if (enabled && node) {
+        if (node) {
           const podFields = {};
           node.querySelectorAll('[data-field]').forEach((el) => {
             if (el.closest('#timecodes')) return;
@@ -2593,12 +2610,8 @@
           staticCursor += slice.length;
           slice.forEach((b) => addStatic(b || {}, staticsContainerOf(sec)));
         } else if (type === 'podcast') {
-          const cb = podcastEnabledInputOf(sec);
-          const fields = podcastFieldsOf(sec);
-          if (entry.enabled && podcastCursor < podcastList.length) {
+          if (entry.enabled !== false && podcastCursor < podcastList.length) {
             const podData = podcastList[podcastCursor++];
-            cb.checked = true;
-            fields.hidden = false;
             const node = renderPodcastFields(sec);
             ['episode_number', 'guest', 'title', 'zoomcast_url', 'podcast_url', 'youtube_video_url', 'summary'].forEach((k) => {
               const el = node.querySelector(`[data-field="${k}"]`);
@@ -2608,9 +2621,6 @@
               podData.timecodes.forEach((tc) =>
                 addTimecode(tc || {}, node.querySelector('#timecodes')));
             }
-          } else {
-            cb.checked = false;
-            fields.hidden = true;
           }
         }
       });
@@ -2638,10 +2648,6 @@
     if (tailPodcasts.length || sortableSectionsOfType('podcast').length === 0) {
       tailPodcasts.forEach((podData) => {
         const podSec = addSection('podcast');
-        const cb = podcastEnabledInputOf(podSec);
-        const fields = podcastFieldsOf(podSec);
-        cb.checked = true;
-        fields.hidden = false;
         const node = renderPodcastFields(podSec);
         ['episode_number', 'guest', 'title', 'zoomcast_url', 'podcast_url', 'youtube_video_url', 'summary'].forEach((k) => {
           const el = node.querySelector(`[data-field="${k}"]`);
@@ -3667,7 +3673,6 @@
   const episodesStatus = document.getElementById('episodes-status');
   const episodesMainActions = document.getElementById('episodes-main-actions');
   const episodesSelectedChannelName = document.getElementById('episodes-selected-channel-name');
-  const episodesAddSelectedBtn = document.getElementById('episodes-add-selected-btn');
   const episodesSyncBtn = document.getElementById('episodes-sync-btn');
   const episodesResetBtn = document.getElementById('episodes-reset-btn');
   const episodesRemoveChannelBtn = document.getElementById('episodes-remove-channel-btn');
@@ -3740,7 +3745,6 @@
       } else {
         episodesList.innerHTML = episodes.map((e) => `
           <li class="template-item episode-selectable" data-video-id="${e.video_id}">
-            <input type="checkbox" class="episode-checkbox" aria-label="Select episode">
             <img class="episode-thumb" src="${e.thumbnail_url || ''}" alt="">
             <div class="episode-info">
               <span class="episode-title">${escapeHtml(e.title)}</span>
@@ -3835,65 +3839,6 @@
     }
   });
 
-  episodesAddSelectedBtn.addEventListener('click', async () => {
-    const checked = [...episodesList.querySelectorAll('.episode-checkbox:checked')];
-    if (checked.length === 0) {
-      setEpisodesStatus('Select one or more episodes first.', 'error');
-      return;
-    }
-
-    const videoIds = checked.map((cb) => cb.closest('li').dataset.videoId);
-    setEpisodesStatus(`Adding ${videoIds.length} episodes...`);
-
-    let added = 0;
-    for (const videoId of videoIds) {
-      try {
-        const url = `https://www.youtube.com/watch?v=${videoId}`;
-        const res = await fetch(`/api/fetch/youtube?url=${encodeURIComponent(url)}`);
-        if (res.ok) {
-          const meta = await res.json();
-          // Find an empty podcast section or create a new one
-          let podSec = sortableSectionsOfType('podcast').find((s) => {
-            const cb = podcastEnabledInputOf(s);
-            return !cb.checked;
-          });
-          if (!podSec) {
-            podSec = addSection('podcast');
-          }
-          const cb = podcastEnabledInputOf(podSec);
-          cb.checked = true;
-          cb.dispatchEvent(new Event('change', { bubbles: true }));
-          const node = podcastNodeOf(podSec);
-          if (node) {
-            ['title', 'summary', 'youtube_video_url'].forEach((f) => {
-              const el = node.querySelector(`[data-field="${f}"]`);
-              if (el) el.value = meta[f] || '';
-            });
-            const tcContainer = node.querySelector('#timecodes');
-            if (tcContainer && Array.isArray(meta.timecodes)) {
-              tcContainer.innerHTML = '';
-              meta.timecodes.forEach((tc) => {
-                addTimecode({
-                  timecode: tc.timecode,
-                  label: tc.label || '',
-                  url: tc.url || '',
-                }, tcContainer);
-              });
-            }
-          }
-          added += 1;
-        }
-      } catch (err) {
-        console.error('Failed to add episode:', videoId, err);
-      }
-    }
-
-    setEpisodesStatus(`Added ${added} podcast section${added === 1 ? '' : 's'}.`, 'ok');
-    // Uncheck all
-    checked.forEach((cb) => { cb.checked = false; });
-    schedulePreview();
-  });
-
   episodesSyncBtn.addEventListener('click', async () => {
     if (!selectedChannelId) return;
     setEpisodesStatus('Syncing with YouTube...');
@@ -3981,6 +3926,25 @@
   document.getElementById('episodes-close').addEventListener('click', () => closeDialog(episodesDialog));
   document.getElementById('episodes-picker-close').addEventListener('click', () => closeDialog(episodesPickerDialog));
   document.getElementById('episodes-picker-cancel').addEventListener('click', () => closeDialog(episodesPickerDialog));
+
+  document.getElementById('episodes-picker-refresh-btn').addEventListener('click', async () => {
+    const channelId = episodesPickerChannelSelect.value;
+    if (!channelId) return;
+    setEpisodesPickerStatus('Syncing with YouTube...');
+    try {
+      const res = await fetch(`/api/episodes/channels/${channelId}/sync`, { method: 'POST' });
+      if (!res.ok) {
+        const detail = await readJsonDetail(res);
+        setEpisodesPickerStatus(detail || 'Sync failed.', 'error');
+        return;
+      }
+      const data = await res.json();
+      setEpisodesPickerStatus(`Synced ${data.count} episodes.`, 'ok');
+      await refreshPickerEpisodesList(channelId);
+    } catch (err) {
+      setEpisodesPickerStatus(`Network error: ${err.message}`, 'error');
+    }
+  });
 
   document.getElementById('open-settings').addEventListener('click', openSettingsDialog);
   document.getElementById('settings-close').addEventListener('click', (e) => {

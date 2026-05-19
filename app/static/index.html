@@ -284,7 +284,6 @@
       <div class="row inline">
         <input type="url" data-field="youtube_video_url">
         <button type="button" class="btn ghost btn-fetch" data-action="fetch-youtube" title="Fetch title, description, and MM:SS timecodes from the YouTube video">Fetch</button>
-        <button type="button" class="btn ghost btn-fetch" data-action="pick-episode" title="Pick from imported Episodes">Library</button>
       </div>
       <small class="fetch-status" data-role="youtube-fetch-status"></small>
     </label>
@@ -360,11 +359,10 @@
       <span class="section-title">Podcast</span>
       <button type="button" class="btn-remove section-remove" aria-label="Remove Podcast section" title="Remove Podcast section">&times;</button>
     </summary>
-    <label class="checkbox">
-      <input type="checkbox" data-role="podcast-enabled">
-      Include podcast section
-    </label>
-    <div class="podcast-fields" data-role="podcast-fields" hidden></div>
+    <div class="podcast-fields" data-role="podcast-fields"></div>
+    <div style="text-align: right; padding: 0 16px 16px;">
+      <button type="button" class="btn add" data-action="pick-episode">+ Add Episode</button>
+    </div>
   </details>
 </template>
 
@@ -781,7 +779,6 @@
         <header class="episodes-main-header">
           <h3 id="episodes-selected-channel-name">Select a channel</h3>
           <div class="episodes-main-actions" id="episodes-main-actions" hidden>
-            <button type="button" class="btn primary" id="episodes-add-selected-btn">Add to Newsletter</button>
             <button type="button" class="btn ghost" id="episodes-sync-btn">Refresh</button>
             <button type="button" class="btn ghost" id="episodes-reset-btn">Resync All</button>
             <button type="button" class="btn danger" id="episodes-remove-channel-btn">Remove Channel</button>
@@ -800,8 +797,9 @@
       <h2 id="episodes-picker-title">Pick an Episode</h2>
       <button type="button" class="btn-remove" id="episodes-picker-close" aria-label="Close">&times;</button>
     </header>
-    <div class="media-picker-search">
-      <select id="episodes-picker-channel-select" aria-label="Select channel"></select>
+    <div class="media-picker-search" style="display: flex; gap: 8px;">
+      <select id="episodes-picker-channel-select" aria-label="Select channel" style="flex: 1;"></select>
+      <button type="button" class="btn ghost" id="episodes-picker-refresh-btn" title="Refresh channel episodes">Refresh</button>
     </div>
     <ul class="templates-list episodes-list" id="episodes-picker-list" aria-live="polite"></ul>
     <footer class="dialog-actions">

@@ -113,7 +113,7 @@
           <p class="podcast-title" style="margin:0 0 6px 0;font-size:15px;font-weight:bold;">{{ p.title }}</p>
         {%- endif %}
         {%- if p.summary %}
-          <p class="podcast-summary" style="margin:0 0 8px 0;font-size:14px;line-height:1.45;">{{ p.summary }}</p>
+          <p class="podcast-summary" style="margin:0 0 8px 0;font-size:14px;line-height:1.45;">{{ p.summary | urlize(target="_blank") }}</p>
         {%- endif %}
         {%- if p.timecodes %}
         <ul class="podcast-list" style="margin:0;padding-left:20px;font-size:14px;line-height:1.5;">
