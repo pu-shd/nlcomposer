@@ -419,6 +419,14 @@
     preview.textContent = h ? ` — ${h.length > 60 ? h.slice(0, 57) + '…' : h}` : '';
   };
 
+  const updatePodcastHeaderPreview = (card) => {
+    const preview = card.querySelector('.card-headline-preview');
+    const input = card.querySelector('[data-field="title"]');
+    if (!preview || !input) return;
+    const h = (input.value || '').trim();
+    preview.textContent = h ? ` — ${h.length > 60 ? h.slice(0, 57) + '…' : h}` : '';
+  };
+
   const renumber = () => {
     // Article numbering is global across every Articles section so that
     // a highlight reference like "#3" still maps to a unique card even
@@ -435,6 +443,7 @@
     allPodcastCards().forEach((card, i) => {
       const idx = card.querySelector('.idx');
       if (idx) idx.textContent = `#${i + 1}`;
+      updatePodcastHeaderPreview(card);
     });
     // Per-section counts in the section summary badges.
     sortableSectionsOfType('articles').forEach((sec) => {
@@ -2206,9 +2215,14 @@
   // Live-update the article header bar's headline preview while typing.
   form.addEventListener('input', (e) => {
     const t = e.target;
-    if (t && t.matches && t.matches('[data-field="headline"]')) {
-      const card = t.closest('.article-card');
-      if (card) updateArticleHeaderPreview(card);
+    if (t && t.matches) {
+      if (t.matches('[data-field="headline"]')) {
+        const card = t.closest('.article-card');
+        if (card) updateArticleHeaderPreview(card);
+      } else if (t.matches('[data-field="title"]')) {
+        const card = t.closest('.podcast-card');
+        if (card) updatePodcastHeaderPreview(card);
+      }
     }
   });
   // Recompute the displayed enumerated year whenever the issue date
