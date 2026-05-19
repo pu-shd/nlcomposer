@@ -429,8 +429,7 @@ class NewsletterIssue(BaseModel):
             if self.articles:
                 out.append({"type": "articles", "articles": list(self.articles)})
             if self.podcasts:
-                for p in self.podcasts:
-                    out.append({"type": "podcast", "podcast": p})
+                out.append({"type": "podcast", "podcasts": list(self.podcasts)})
             if self.static_blocks:
                 out.append({"type": "static_blocks", "blocks": list(self.static_blocks)})
             return out
@@ -453,8 +452,15 @@ class NewsletterIssue(BaseModel):
                 if slice_:
                     out.append({"type": "static_blocks", "blocks": slice_})
             elif fs.type == "podcast":
-                if fs.enabled and pod_cursor < len(self.podcasts):
-                    out.append({"type": "podcast", "podcast": self.podcasts[pod_cursor]})
+                n = fs.count or 0
+                if n > 0:
+                    slice_ = list(self.podcasts[pod_cursor : pod_cursor + n])
+                    pod_cursor += n
+                    if slice_:
+                        out.append({"type": "podcast", "podcasts": slice_})
+                elif getattr(fs, "enabled", False) and pod_cursor < len(self.podcasts):
+                    # Legacy support for older drafts where podcast sections had enabled=True instead of count
+                    out.append({"type": "podcast", "podcasts": [self.podcasts[pod_cursor]]})
                     pod_cursor += 1
 
         # Defensive tail: if form_sections under-counts (a saved draft
@@ -466,8 +472,7 @@ class NewsletterIssue(BaseModel):
 
         leftover_podcasts = list(self.podcasts[pod_cursor:])
         if leftover_podcasts:
-            for p in leftover_podcasts:
-                out.append({"type": "podcast", "podcast": p})
+            out.append({"type": "podcast", "podcasts": leftover_podcasts})
 
         leftover_blocks = list(self.static_blocks[sb_cursor:])
         if leftover_blocks:

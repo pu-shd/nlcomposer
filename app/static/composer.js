@@ -788,17 +788,73 @@
     });
   };
 
+  const wirePodcastDragHandle = (card) => {
+    const handle = card.querySelector('.drag-handle');
+    if (!handle) return;
+    handle.addEventListener('mousedown', () => { card.draggable = true; });
+    handle.addEventListener('mouseup', () => { card.draggable = false; });
+    // Click on the handle (no drag) would otherwise toggle <details>.
+    handle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+    card.addEventListener('dragstart', (e) => {
+      if (!card.draggable) return;
+      draggingEl = card;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', 'podcast');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      card.draggable = false;
+      if (draggingEl === card) draggingEl = null;
+      renumber();
+      schedulePreview();
+    });
+  };
+
+  const podcastsContainerAtPoint = (x, y) => {
+    const sections = [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="podcast"]')];
+    for (const sec of sections) {
+      if (!sec.open) continue;
+      const box = sec.getBoundingClientRect();
+      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) {
+        return sec.querySelector('.podcasts-container');
+      }
+    }
+    return null;
+  };
+
+  const getPodcastDragAfterElement = (container, y) => {
+    const els = [...container.querySelectorAll(':scope > .podcast-card:not(.dragging)')];
+    let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+    els.forEach((child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) closest = { offset, element: child };
+    });
+    return closest.element;
+  };
+
   // Document-level dragover — chooses the .articles-container under the
   // cursor and reflows the dragged card live. Delegated rather than per-
   // container so newly-added Articles sections work without rewiring.
   document.addEventListener('dragover', (e) => {
     if (!draggingEl) return;
-    const container = articlesContainerAtPoint(e.clientX, e.clientY);
-    if (!container) return;
-    e.preventDefault();
-    const after = getDragAfterElement(container, e.clientY);
-    if (after == null) container.appendChild(draggingEl);
-    else if (after !== draggingEl) container.insertBefore(draggingEl, after);
+    
+    if (draggingEl.classList.contains('podcast-card')) {
+      const container = podcastsContainerAtPoint(e.clientX, e.clientY);
+      if (!container) return;
+      e.preventDefault();
+      const after = getPodcastDragAfterElement(container, e.clientY);
+      if (after == null) container.appendChild(draggingEl);
+      else if (after !== draggingEl) container.insertBefore(draggingEl, after);
+    } else if (draggingEl.classList.contains('article-card')) {
+      const container = articlesContainerAtPoint(e.clientX, e.clientY);
+      if (!container) return;
+      e.preventDefault();
+      const after = getDragAfterElement(container, e.clientY);
+      if (after == null) container.appendChild(draggingEl);
+      else if (after !== draggingEl) container.insertBefore(draggingEl, after);
+    }
   });
 
   // ───────── Article fetch (auto-fill from URL) ──────────────────────
@@ -910,14 +966,27 @@
     return node ? node.querySelector('#timecodes') : null;
   };
 
-  const renderPodcastFields = (section) => {
-    const fields = podcastFieldsOf(section);
-    fields.innerHTML = '';
+  const addPodcast = (data = {}, container = null) => {
+    const targetContainer = container
+      || (sortableSectionsOfType('podcast')[0]?.querySelector('[data-role="podcasts-container"]'));
+    if (!targetContainer) return null;
     const node = podcastTpl.content.firstElementChild.cloneNode(true);
-    fields.appendChild(node);
+    Object.entries(data).forEach(([k, v]) => {
+      const el = node.querySelector(`[data-field="${k}"]`);
+      if (el && v !== null && v !== undefined && k !== 'timecodes') el.value = v;
+    });
+    const tcContainer = node.querySelector('#timecodes');
+    if (Array.isArray(data.timecodes) && tcContainer) {
+      data.timecodes.forEach((tc) => addTimecode(tc || {}, tcContainer));
+    }
+    node.querySelector('.btn-remove').addEventListener('click', () => {
+      node.remove();
+      renumber();
+      schedulePreview();
+    });
     node.querySelector('#add-timecode').addEventListener('click', (e) => {
       e.preventDefault();
-      addTimecode({}, node.querySelector('#timecodes'));
+      addTimecode({}, tcContainer);
     });
     const ytFetchBtn = node.querySelector('[data-action="fetch-youtube"]');
     if (ytFetchBtn) {
@@ -926,30 +995,9 @@
         fetchYouTubeInto(node);
       });
     }
-    const ytPickBtn = node.querySelector('[data-action="pick-episode"]');
-    if (ytPickBtn) {
-      ytPickBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        openEpisodesPicker((meta) => {
-          ['title', 'summary', 'youtube_video_url'].forEach((f) => {
-            const el = node.querySelector(`[data-field="${f}"]`);
-            if (el && meta[f]) el.value = meta[f];
-          });
-          const tcContainer = node.querySelector('#timecodes');
-          if (tcContainer && Array.isArray(meta.timecodes)) {
-            tcContainer.innerHTML = '';
-            meta.timecodes.forEach((tc) => {
-              addTimecode({
-                timecode: tc.timecode,
-                label: tc.label || '',
-                url: tc.url || '',
-              }, tcContainer);
-            });
-          }
-          schedulePreview();
-        });
-      });
-    }
+    wirePodcastDragHandle(node);
+    targetContainer.appendChild(node);
+    renumber();
     return node;
   };
 
@@ -1039,45 +1087,6 @@
     });
     container.appendChild(node);
     return node;
-  };
-
-  // Wires the "Include podcast section" checkbox of a Podcast section so
-  // toggling reveals/hides the cloned podcast-template fields. Each
-  // section stays independent of the others.
-  const wirePodcastSection = (section) => {
-    const fields = podcastFieldsOf(section);
-    if (!fields) return;
-    fields.hidden = false;
-    if (!podcastNodeOf(section)) renderPodcastFields(section);
-    
-    // Wire up the Add Episode button that lives inside the section details
-    const pickBtn = section.querySelector('[data-action="pick-episode"]');
-    if (pickBtn) {
-      pickBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        openEpisodesPicker((meta) => {
-          const node = podcastNodeOf(section);
-          if (node) {
-            ['title', 'summary', 'youtube_video_url'].forEach((f) => {
-              const el = node.querySelector(`[data-field="${f}"]`);
-              if (el && meta[f]) el.value = meta[f];
-            });
-            const tcContainer = node.querySelector('#timecodes');
-            if (tcContainer && Array.isArray(meta.timecodes)) {
-              tcContainer.innerHTML = '';
-              meta.timecodes.forEach((tc) => {
-                addTimecode({
-                  timecode: tc.timecode,
-                  label: tc.label || '',
-                  url: tc.url || '',
-                }, tcContainer);
-              });
-            }
-            schedulePreview();
-          }
-        });
-      });
-    }
   };
 
   // ───────── Static blocks ───────────────────────────────────────────
@@ -1216,7 +1225,16 @@
         });
       }
     } else if (section.dataset.sectionType === 'podcast') {
-      wirePodcastSection(section);
+      const pickBtn = section.querySelector('[data-action="pick-episode"]');
+      if (pickBtn) {
+        pickBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          openEpisodesPicker((meta) => {
+            addPodcast(meta, podcastsContainerOf(section));
+            schedulePreview();
+          });
+        });
+      }
     }
   };
 
@@ -1673,11 +1691,11 @@
         });
         formSections.push({ type, id: sectionId, count });
       } else if (type === 'podcast') {
-        const node = podcastNodeOf(section);
-        let collected = null;
-        if (node) {
+        const cards = [...section.querySelectorAll('.podcast-card')];
+        let count = 0;
+        cards.forEach((card) => {
           const podFields = {};
-          node.querySelectorAll('[data-field]').forEach((el) => {
+          card.querySelectorAll('[data-field]').forEach((el) => {
             if (el.closest('#timecodes')) return;
             const key = el.dataset.field;
             let v;
@@ -1685,7 +1703,7 @@
             else v = trim(el.value);
             podFields[key] = v;
           });
-          const tcContainer = node.querySelector('#timecodes');
+          const tcContainer = card.querySelector('#timecodes');
           const timecodes = tcContainer
             ? [...tcContainer.querySelectorAll('.row')]
                 .map((row) => stripEmpty(collectFields(row)))
@@ -1693,14 +1711,12 @@
             : [];
           const cleaned = stripEmpty(podFields);
           cleaned.timecodes = timecodes;
-          if (cleaned.title || timecodes.length || cleaned.zoomcast_url || cleaned.podcast_url) {
-            collected = cleaned;
+          if (cleaned.title || timecodes.length || cleaned.zoomcast_url || cleaned.podcast_url || cleaned.youtube_video_url) {
+            issue.podcasts.push(cleaned);
+            count += 1;
           }
-        }
-        if (collected) {
-          issue.podcasts.push(collected);
-        }
-        formSections.push({ type, id: sectionId, enabled: !!collected });
+        });
+        formSections.push({ type, id: sectionId, count });
       }
     });
     issue.form_sections = formSections;
@@ -2610,18 +2626,10 @@
           staticCursor += slice.length;
           slice.forEach((b) => addStatic(b || {}, staticsContainerOf(sec)));
         } else if (type === 'podcast') {
-          if (entry.enabled !== false && podcastCursor < podcastList.length) {
-            const podData = podcastList[podcastCursor++];
-            const node = renderPodcastFields(sec);
-            ['episode_number', 'guest', 'title', 'zoomcast_url', 'podcast_url', 'youtube_video_url', 'summary'].forEach((k) => {
-              const el = node.querySelector(`[data-field="${k}"]`);
-              if (el && podData[k] != null) el.value = String(podData[k]);
-            });
-            if (Array.isArray(podData.timecodes)) {
-              podData.timecodes.forEach((tc) =>
-                addTimecode(tc || {}, node.querySelector('#timecodes')));
-            }
-          }
+          const count = Number.isInteger(entry.count) ? Math.max(0, entry.count) : podcastList.length;
+          const slice = podcastList.slice(podcastCursor, podcastCursor + count);
+          podcastCursor += slice.length;
+          slice.forEach((p) => addPodcast(p || {}, podcastsContainerOf(sec)));
         }
       });
     }
@@ -2646,20 +2654,9 @@
     }
     const tailPodcasts = podcastList.slice(podcastCursor);
     if (tailPodcasts.length || sortableSectionsOfType('podcast').length === 0) {
-      tailPodcasts.forEach((podData) => {
-        const podSec = addSection('podcast');
-        const node = renderPodcastFields(podSec);
-        ['episode_number', 'guest', 'title', 'zoomcast_url', 'podcast_url', 'youtube_video_url', 'summary'].forEach((k) => {
-          const el = node.querySelector(`[data-field="${k}"]`);
-          if (el && podData[k] != null) el.value = String(podData[k]);
-        });
-        if (Array.isArray(podData.timecodes)) {
-          podData.timecodes.forEach((tc) => addTimecode(tc || {}, node.querySelector('#timecodes')));
-        }
-      });
-      if (sortableSectionsOfType('podcast').length === 0) {
-        addSection('podcast');
-      }
+      const sec = sortableSectionsOfType('podcast').slice(-1)[0]
+        || addSection('podcast');
+      tailPodcasts.forEach((p) => addPodcast(p || {}, podcastsContainerOf(sec)));
     }
     updateSectionDragVisibility();
 

@@ -101,7 +101,7 @@
       </td></tr>
       {%- endfor %}
     {%- elif section.type == "podcast" %}
-      {%- set p = section.podcast %}
+      {%- for p in section.podcasts %}
       <tr><td class="podcast-pad" style="padding:24px 16px 0 16px;">
         <h3 class="podcast-h3" style="font-family:'Times New Roman',Times,Georgia,serif;font-size:18px;margin:0 0 6px 0;">
           {{ issue.newsletter_name }}
@@ -123,6 +123,7 @@
         </ul>
         {%- endif %}
       </td></tr>
+      {%- endfor %}
     {%- elif section.type == "static_blocks" %}
       {%- for block in section.blocks if block.enabled %}
       <tr><td class="static-pad" style="padding:24px 16px 0 16px;font-size:14px;line-height:1.5;">

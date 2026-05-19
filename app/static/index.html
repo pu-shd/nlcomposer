@@ -264,37 +264,50 @@
 </template>
 
 <template id="podcast-template">
-  <div class="grid-2">
-    <label>Episode #
-      <input type="number" data-field="episode_number" min="1">
-    </label>
-    <label>Guest
-      <input type="text" data-field="guest">
-    </label>
-    <label class="span-2">Title
-      <input type="text" data-field="title" placeholder="On episode 412 of Smart Driving Cars…">
-    </label>
-    <label>ZoomCast (YouTube) URL
-      <input type="url" data-field="zoomcast_url">
-    </label>
-    <label>Podcasts URL
-      <input type="url" data-field="podcast_url">
-    </label>
-    <label class="span-2">YouTube video URL
-      <div class="row inline">
-        <input type="url" data-field="youtube_video_url">
-        <button type="button" class="btn ghost btn-fetch" data-action="fetch-youtube" title="Fetch title, description, and MM:SS timecodes from the YouTube video">Fetch</button>
-      </div>
-      <small class="fetch-status" data-role="youtube-fetch-status"></small>
-    </label>
-    <label class="span-2">Summary
-      <textarea data-field="summary" rows="3"></textarea>
-    </label>
-    <fieldset class="span-2 card">
-      <legend>Timecodes <button type="button" class="btn add btn-add-inline" id="add-timecode">+ Add timecode</button></legend>
-      <div id="timecodes" class="repeating compact"></div>
-    </fieldset>
-  </div>
+  <details class="card podcast-card" open>
+    <summary class="card-header">
+      <span class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="6" cy="3.5" r="1.1" fill="currentColor"/><circle cx="10" cy="3.5" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="8" r="1.1" fill="currentColor"/><circle cx="10" cy="8" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="12.5" r="1.1" fill="currentColor"/><circle cx="10" cy="12.5" r="1.1" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="card-title">Episode <span class="idx"></span><span class="card-headline-preview"></span></span>
+      <button type="button" class="btn-remove" aria-label="Remove">×</button>
+    </summary>
+    <div class="grid-2">
+      <label>Episode #
+        <input type="number" data-field="episode_number" min="1">
+      </label>
+      <label>Guest
+        <input type="text" data-field="guest">
+      </label>
+      <label class="span-2">Title
+        <input type="text" data-field="title" placeholder="On episode 412 of Smart Driving Cars…">
+      </label>
+      <label>ZoomCast (YouTube) URL
+        <input type="url" data-field="zoomcast_url">
+      </label>
+      <label>Podcasts URL
+        <input type="url" data-field="podcast_url">
+      </label>
+      <label class="span-2">YouTube video URL
+        <div class="row inline">
+          <input type="url" data-field="youtube_video_url">
+          <button type="button" class="btn ghost btn-fetch" data-action="fetch-youtube" title="Fetch title, description, and MM:SS timecodes from the YouTube video">Fetch</button>
+        </div>
+        <small class="fetch-status" data-role="youtube-fetch-status"></small>
+      </label>
+      <label class="span-2">Summary
+        <textarea data-field="summary" rows="3"></textarea>
+      </label>
+      <fieldset class="span-2 card">
+        <legend>Timecodes <button type="button" class="btn add btn-add-inline" id="add-timecode">+ Add timecode</button></legend>
+        <div id="timecodes" class="repeating compact"></div>
+      </fieldset>
+    </div>
+  </details>
 </template>
 
 <template id="timecode-template">
@@ -356,10 +369,10 @@
           <circle cx="6" cy="12.5" r="1.1" fill="currentColor"/><circle cx="10" cy="12.5" r="1.1" fill="currentColor"/>
         </svg>
       </span>
-      <span class="section-title">Podcast</span>
+      <span class="section-title">Podcast <span class="count" data-role="podcast-count">0</span></span>
       <button type="button" class="btn-remove section-remove" aria-label="Remove Podcast section" title="Remove Podcast section">&times;</button>
     </summary>
-    <div class="podcast-fields" data-role="podcast-fields"></div>
+    <div class="podcasts-container repeating" data-role="podcasts-container"></div>
     <div style="text-align: right; padding: 0 16px 16px;">
       <button type="button" class="btn add" data-action="pick-episode">+ Add Episode</button>
     </div>

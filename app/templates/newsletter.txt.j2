@@ -22,8 +22,8 @@
 
 {% endfor -%}
 {% elif section.type == "podcast" -%}
+{% for p in section.podcasts -%}
 --- {{ issue.newsletter_name }} Podcast ---
-{% set p = section.podcast -%}
 {% if p.title %}{{ p.title }}{% endif %}
 {% if p.zoomcast_url %}ZoomCast: {{ p.zoomcast_url }}{% endif %}
 {% if p.podcast_url %}Podcasts: {{ p.podcast_url }}{% endif %}
@@ -31,6 +31,8 @@
 {% for tc in p.timecodes %}
   {{ tc.timecode }} {{ tc.label }} ({{ tc.url }})
 {%- endfor %}
+
+{% endfor -%}
 
 {% elif section.type == "static_blocks" -%}
 {% for block in section.blocks if block.enabled -%}
