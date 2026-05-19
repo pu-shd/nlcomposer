@@ -1721,6 +1721,15 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-bottom: 1px solid var(--border-color);
 }
 
+#episodes-picker-list .template-item {
+  grid-template-columns: 24px 120px 1fr;
+}
+
+#episodes-picker-list .episode-checkbox {
+  margin-top: 6px;
+  cursor: pointer;
+}
+
 .episode-thumb {
   width: 120px;
   aspect-ratio: 16/9;

@@ -1229,8 +1229,8 @@
       if (pickBtn) {
         pickBtn.addEventListener('click', (e) => {
           e.preventDefault();
-          openEpisodesPicker((meta) => {
-            addPodcast(meta, podcastsContainerOf(section));
+          openEpisodesPicker((metas) => {
+            metas.forEach(meta => addPodcast(meta, podcastsContainerOf(section)));
             schedulePreview();
           });
         });
@@ -3788,7 +3788,8 @@
         episodesPickerList.innerHTML = '<li class="hint">No episodes found for this channel.</li>';
       } else {
         episodesPickerList.innerHTML = episodes.map((e) => `
-          <li class="template-item clickable" data-video-id="${e.video_id}">
+          <li class="template-item" data-video-id="${e.video_id}">
+            <input type="checkbox" class="episode-checkbox" aria-label="Select episode">
             <img class="episode-thumb" src="${e.thumbnail_url || ''}" alt="">
             <div class="episode-info">
               <span class="episode-title">${escapeHtml(e.title)}</span>
@@ -3898,24 +3899,37 @@
     refreshPickerEpisodesList(episodesPickerChannelSelect.value);
   });
 
-  episodesPickerList.addEventListener('click', async (e) => {
-    const li = e.target.closest('li[data-video-id]');
-    if (!li || !episodesOnPick) return;
-    const { videoId } = li.dataset;
+  document.getElementById('episodes-picker-add-btn').addEventListener('click', async () => {
+    if (!episodesOnPick) return;
+    const checked = [...episodesPickerList.querySelectorAll('.episode-checkbox:checked')];
+    if (checked.length === 0) {
+      setEpisodesPickerStatus('Select one or more episodes first.', 'error');
+      return;
+    }
 
-    try {
-      const url = `https://www.youtube.com/watch?v=${videoId}`;
-      setEpisodesPickerStatus('Fetching full metadata...');
-      const res = await fetch(`/api/fetch/youtube?url=${encodeURIComponent(url)}`);
-      if (res.ok) {
-        const meta = await res.json();
-        episodesOnPick(meta);
-        closeDialog(episodesPickerDialog);
-      } else {
-        setEpisodesPickerStatus('Failed to fetch full metadata.', 'error');
+    const videoIds = checked.map((cb) => cb.closest('li').dataset.videoId);
+    setEpisodesPickerStatus(`Fetching ${videoIds.length} episode(s)...`);
+
+    const metas = [];
+    for (const videoId of videoIds) {
+      try {
+        const url = `https://www.youtube.com/watch?v=${videoId}`;
+        const res = await fetch(`/api/fetch/youtube?url=${encodeURIComponent(url)}`);
+        if (res.ok) {
+          metas.push(await res.json());
+        } else {
+          console.error('Failed to fetch video', videoId, res.status);
+        }
+      } catch (err) {
+        console.error('Failed to fetch video', videoId, err);
       }
-    } catch (err) {
-      setEpisodesPickerStatus(`Error: ${err.message}`, 'error');
+    }
+
+    if (metas.length > 0) {
+      episodesOnPick(metas);
+      closeDialog(episodesPickerDialog);
+    } else {
+      setEpisodesPickerStatus('Failed to fetch metadata for selected episodes.', 'error');
     }
   });
 
