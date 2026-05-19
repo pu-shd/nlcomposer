@@ -55,11 +55,18 @@ def add_channel(
     if existing:
         return existing
     
-    info = fetch_channel_by_handle(handle)
+    try:
+        info = fetch_channel_by_handle(handle)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
     if not info:
         # Try without the @ if it was added
         if handle.startswith("@"):
-            info = fetch_channel_by_handle(handle[1:])
+            try:
+                info = fetch_channel_by_handle(handle[1:])
+            except RuntimeError as e:
+                raise HTTPException(status_code=503, detail=str(e))
             
     if not info:
         raise HTTPException(status_code=404, detail=f"YouTube channel '{query}' not found.")
@@ -78,7 +85,12 @@ def add_channel(
     )
     
     # Auto-sync episodes after adding
-    _sync_episodes(conn, channel, info["uploads_playlist_id"])
+    try:
+        _sync_episodes(conn, channel, info["uploads_playlist_id"])
+    except RuntimeError as e:
+        # If sync fails but channel is created, we still return the channel
+        # The user can retry syncing later, though this shouldn't happen if the first fetch worked.
+        print(f"Warning: Auto-sync failed after adding channel: {e}")
     
     return channel
 
@@ -127,7 +139,10 @@ def sync_channel_episodes(
     
     playlist_id = channel.uploads_playlist_id
     if not playlist_id:
-        info = fetch_channel_by_handle(channel.handle)
+        try:
+            info = fetch_channel_by_handle(channel.handle)
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e))
         if not info:
              raise HTTPException(status_code=404, detail="Could not fetch channel info from YouTube.")
         playlist_id = info["uploads_playlist_id"]
@@ -137,7 +152,10 @@ def sync_channel_episodes(
             (playlist_id, channel_id)
         )
 
-    count = _sync_episodes(conn, channel, playlist_id)
+    try:
+        count = _sync_episodes(conn, channel, playlist_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     return {"count": count}
 
 

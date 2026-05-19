@@ -36,13 +36,10 @@ def get_youtube_client():
             scopes=["https://www.googleapis.com/auth/youtube.readonly"]
         )
         return build("youtube", "v3", credentials=credentials)
-    except Exception:
+    except Exception as e:
         if api_key:
             return build("youtube", "v3", developerKey=api_key)
-        # If no ADC and no API key, try building without creds (may only work for public data)
-        # but usually build() requires one of the two for v3.
-        # For now, we'll re-raise or return None.
-        raise
+        raise RuntimeError("YouTube API is not configured or credentials are invalid.") from e
 
 
 def extract_video_id(url: str) -> Optional[str]:

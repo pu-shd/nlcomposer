@@ -298,3 +298,24 @@ def test_endpoint_returns_502_on_network_failure(monkeypatch):
     assert res.status_code == 502
     detail = res.json()["detail"]
     assert "could not reach" in detail.lower() or "connection" in detail.lower()
+
+def test_fetch_youtube_falls_back_to_scraping_on_api_failure(monkeypatch):
+    """If the YouTube API is unconfigured (RuntimeError), it falls back to scraping."""
+    from app.podcast import YoutubeMetadata
+    def fake_fetch_video_details(video_id):
+        raise RuntimeError("YouTube API is not configured")
+        
+    def fake_fetch_youtube_metadata(url):
+        return {
+            "title": "Scraped Title",
+            "summary": "Scraped Summary",
+            "youtube_video_url": url,
+            "timecodes": []
+        }
+        
+    monkeypatch.setattr("app.controllers.fetch.fetch_video_details", fake_fetch_video_details)
+    monkeypatch.setattr("app.controllers.fetch.fetch_youtube_metadata", fake_fetch_youtube_metadata)
+    
+    res = client.get("/api/fetch/youtube", params={"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"})
+    assert res.status_code == 200
+    assert res.json()["title"] == "Scraped Title"
