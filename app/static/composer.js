@@ -160,7 +160,50 @@
     return res.json();
   };
 
-  const setStatus = statusSetter(status);
+  let _lastGeneralMsg = '';
+  let _lastGeneralKind = 'info';
+  let _lastAutosaveMsg = '';
+  let _lastAutosaveKind = 'idle';
+
+  const renderConsolidatedStatus = () => {
+    const statusEl = document.getElementById('status');
+    if (!statusEl) return;
+
+    let displayMsg = '';
+    let displayKind = 'info';
+
+    if (_lastGeneralKind === 'error') {
+      displayMsg = _lastGeneralMsg;
+      displayKind = 'error';
+    } else if (_lastAutosaveKind === 'error') {
+      displayMsg = _lastAutosaveMsg;
+      displayKind = 'error';
+    } else if (_lastGeneralMsg === 'Rendering…' || _lastGeneralMsg === 'Building .eml…') {
+      displayMsg = _lastGeneralMsg;
+      displayKind = 'info';
+    } else if (_lastAutosaveMsg === 'Saving…') {
+      displayMsg = _lastAutosaveMsg;
+      displayKind = 'saving';
+    } else if (_lastAutosaveMsg && _lastAutosaveMsg !== 'Paused (dialog open)') {
+      displayMsg = _lastAutosaveMsg;
+      displayKind = _lastAutosaveKind;
+    } else if (_lastGeneralMsg && _lastGeneralMsg !== 'Updated') {
+      displayMsg = _lastGeneralMsg;
+      displayKind = _lastGeneralKind;
+    } else {
+      displayMsg = _lastAutosaveMsg || '';
+      displayKind = _lastAutosaveKind || 'info';
+    }
+
+    statusEl.textContent = displayMsg;
+    statusEl.dataset.kind = displayKind;
+  };
+
+  const setStatus = (msg, kind = 'info') => {
+    _lastGeneralMsg = msg || '';
+    _lastGeneralKind = kind;
+    renderConsolidatedStatus();
+  };
 
   const quillInstances = new Map();
 
@@ -4214,7 +4257,11 @@
   let _autosaveInFlight = false;
   let _autosaveLastWrittenAt = null;
 
-  const setAutosaveStatus = statusSetter(autosaveStatusEl);
+  const setAutosaveStatus = (msg, kind = 'info') => {
+    _lastAutosaveMsg = msg || '';
+    _lastAutosaveKind = kind;
+    renderConsolidatedStatus();
+  };
 
   // Format "Saved 2 min ago" for the status pill. Tries to match the
   // cadence the user actually cares about — "just now" vs minutes vs

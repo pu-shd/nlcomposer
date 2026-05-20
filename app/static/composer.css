@@ -51,32 +51,25 @@ body {
 }
 
 .topbar .status {
-  font-size: 12px;
-  color: var(--muted);
-  text-align: left;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Autosave status pill — lives in the topbar next to .status. Color
-   reflects state via data-kind so the operator can glance at it and
-   know whether the loop is healthy. Empty state hides the pill so
-   it doesn't take horizontal room when there's nothing to say. */
-.topbar .autosave-status {
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.04);
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.topbar .autosave-status:empty { display: none; }
-.topbar .autosave-status[data-kind="saving"] { color: var(--accent); }
-.topbar .autosave-status[data-kind="saved"]  { color: #166534; background: rgba(22, 101, 52, 0.08); }
-.topbar .autosave-status[data-kind="error"]  { color: var(--danger); background: rgba(220, 38, 38, 0.08); }
-.topbar .autosave-status[data-kind="disabled"] { font-style: italic; }
+.topbar .status:empty { display: none; }
+.topbar .status[data-kind="saving"] { color: var(--accent); }
+.topbar .status[data-kind="saved"]  { color: #166534; background: rgba(22, 101, 52, 0.08); }
+.topbar .status[data-kind="ok"]     { color: #166534; background: rgba(22, 101, 52, 0.08); }
+.topbar .status[data-kind="error"]  { color: var(--danger); background: rgba(220, 38, 38, 0.08); }
+.topbar .status[data-kind="disabled"] { font-style: italic; }
+
+.topbar .autosave-status { display: none !important; }
 
 /* Visually-hidden helper for file inputs that get clicked
    programmatically. Using ``display: none`` (the ``hidden`` HTML
@@ -466,25 +459,40 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 
 .preview-frame {
   flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: stretch;
   background: var(--bg);
-  overflow: auto;
-  padding: 12px;
+  position: relative;
   min-height: 0;
+  overflow: auto;
 }
 #preview {
   background: white;
   border: 0;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  width: calc(100% - 24px);
+  height: calc(100% - 24px);
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-  transition: max-width 0.15s ease;
+  transition: max-width 0.15s ease, left 0.15s ease, transform 0.15s ease;
 }
-.preview-pane.vp-phone   #preview { max-width: 390px; }
-.preview-pane.vp-tablet  #preview { max-width: 768px; }
-.preview-pane.vp-desktop #preview { max-width: none; box-shadow: none; }
+.preview-pane.vp-phone #preview {
+  max-width: 390px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.preview-pane.vp-tablet #preview {
+  max-width: 768px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.preview-pane.vp-desktop #preview {
+  max-width: none;
+  box-shadow: none;
+  left: 12px;
+  transform: none;
+}
 
 .layout.preview-hidden { grid-template-columns: 1fr 6px auto; }
 .layout.preview-hidden .preview-frame { display: none; }
