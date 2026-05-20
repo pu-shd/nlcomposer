@@ -487,3 +487,13 @@ def test_settings_zero_disables_autosave_loop(client: TestClient):
     res = client.put("/api/settings", json={"autosave_interval_seconds": 0})
     assert res.status_code == 200
     assert res.json()["autosave_interval_seconds"] == 0
+
+
+def test_settings_round_trips_podcast_title(client: TestClient):
+    """AppSettings.podcast_title round-trips through SQLite and through the PUT/GET cycle."""
+    res = client.put("/api/settings", json={"podcast_title": "My Podcast Title"})
+    assert res.status_code == 200, res.text
+    assert res.json()["podcast_title"] == "My Podcast Title"
+
+    got = client.get("/api/settings").json()
+    assert got["podcast_title"] == "My Podcast Title"

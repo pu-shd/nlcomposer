@@ -303,6 +303,14 @@ class NewsletterIssue(BaseModel):
     # so renders are self-contained and round-trip safely without the
     # template needing access to the settings store).
     newsletter_name: str = "MyNewsletter"
+    podcast_title: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional title for the podcast section. If populated, it is "
+            "used instead of inserting the newsletter name at the beginning "
+            "of Podcast sections."
+        ),
+    )
 
     # Header / frontmatter
     issue_year: int = Field(description='e.g. 14 for "14th year"')

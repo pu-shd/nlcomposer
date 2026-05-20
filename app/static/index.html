@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Newsletter Composer</title>
-<link rel="stylesheet" href="/static/composer.css">
+<link rel="stylesheet" href="/static/composer.css?v=1.0.1">
 <!-- Quill WYSIWYG editor -->
 <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/quill-table-better@1/dist/quill-table-better.css" rel="stylesheet">
@@ -85,13 +85,14 @@
           <label class="span-2" hidden>Subject (auto-generated if blank)
             <input type="text" name="subject" placeholder="auto: 14.09 — BeijingAutoShow">
           </label>
-          <label class="span-2">Intro Message
+          <div class="span-2 rt-field-wrapper">
+            <span>Intro Message</span>
             <div class="rt-field" data-quill-field="intro_html">
               <div class="quill-container"></div>
               <textarea name="intro_html" rows="3" placeholder="<p>Greetings…</p>" hidden></textarea>
             </div>
             <small class="fetch-status" data-role="rt-status"></small>
-          </label>
+          </div>
         </div>
       </details>
 
@@ -100,12 +101,13 @@
       <details>
         <summary>Footer</summary>
         <div class="grid-2">
-          <label class="span-2">Footer HTML (optional)
+          <div class="span-2 rt-field-wrapper">
+            <span>Footer HTML (optional)</span>
             <div class="rt-field" data-quill-field="footer_html">
               <div class="quill-container"></div>
               <textarea name="footer_html" rows="2" placeholder="<p>This list is maintained by …</p>" hidden></textarea>
             </div>
-          </label>
+          </div>
           <label class="span-2">Unsubscribe URL
             <input type="url" name="unsubscribe_url" placeholder="https://… (leave empty to suppress the unsubscribe block)">
           </label>
@@ -239,26 +241,28 @@
       <label>Date text
         <input type="text" data-field="date_text" placeholder="Apr 27">
       </label>
-      <label class="span-2">Pull quote
+      <div class="span-2 rt-field-wrapper">
+        <span>Pull quote</span>
         <div class="rt-field" data-quill-field="pull_quote">
           <div class="quill-container"></div>
           <textarea data-field="pull_quote" rows="2" hidden></textarea>
         </div>
         <small class="fetch-status" data-role="rt-status"></small>
-      </label>
+      </div>
       <label hidden>Read-more label
         <input type="text" data-field="read_more_label" placeholder="Read more">
       </label>
       <label hidden>Read-more URL (defaults to URL)
         <input type="url" data-field="read_more_url">
       </label>
-      <label class="span-2">Comment
+      <div class="span-2 rt-field-wrapper">
+        <span>Comment</span>
         <div class="rt-field" data-quill-field="alain_comment">
           <div class="quill-container"></div>
           <textarea data-field="alain_comment" rows="2" hidden></textarea>
         </div>
         <small class="fetch-status" data-role="rt-status"></small>
-      </label>
+      </div>
     </div>
   </details>
 </template>
@@ -340,13 +344,14 @@
         <input type="checkbox" data-field="show_title" checked>
         Show title in newsletter
       </label>
-      <label class="span-2">Body
+      <div class="span-2 rt-field-wrapper">
+        <span>Body</span>
         <div class="static-richtext" data-quill-field="html" data-quill-static="true">
           <div class="quill-container"></div>
           <textarea data-field="html" rows="4" hidden></textarea>
         </div>
         <small class="fetch-status" data-role="static-rt-status"></small>
-      </label>
+      </div>
     </div>
   </details>
 </template>
@@ -465,6 +470,10 @@
           <input type="text" name="newsletter_name" placeholder="MyNewsletter">
         </label>
         <label class="settings-row">
+          <span class="lbl">Podcast Title (Optional)</span>
+          <input type="text" name="podcast_title" placeholder="e.g. SmartDrivingCars Podcast">
+        </label>
+        <label class="settings-row">
           <span class="lbl">Inception Date</span>
           <input type="date" name="initial_publication_date">
         </label>
@@ -551,20 +560,20 @@
         </label>
       </div>
 
-      <label class="settings-row settings-row-tall settings-row-full">
+      <div class="settings-row settings-row-tall settings-row-full">
         <span class="lbl">Default intro HTML</span>
         <div class="rt-field" data-quill-field="default_intro_html">
           <div class="quill-container"></div>
           <textarea name="default_intro_html" rows="2" placeholder="<p>Greetings…</p>" hidden></textarea>
         </div>
-      </label>
-      <label class="settings-row settings-row-tall settings-row-full">
+      </div>
+      <div class="settings-row settings-row-tall settings-row-full">
         <span class="lbl">Default footer HTML</span>
         <div class="rt-field" data-quill-field="default_footer_html">
           <div class="quill-container"></div>
           <textarea name="default_footer_html" rows="2" placeholder="<p>This list is maintained by …</p>" hidden></textarea>
         </div>
-      </label>
+      </div>
     </div>
     <footer class="dialog-actions">
       <small id="settings-status" class="status" aria-live="polite"></small>
@@ -705,31 +714,60 @@
       <h2 id="media-picker-title">Pick from Logos &amp; Media</h2>
       <button type="button" class="btn-remove" id="media-picker-close" aria-label="Close">&times;</button>
     </header>
-    <div class="media-picker-search">
-      <input type="text" id="media-picker-search-input" placeholder="Search by title..." aria-label="Search logos and media">
-    </div>
-    <p class="hint" id="media-picker-hint">Click an item to use it. Items missing an Image description are dimmed — set one in Logos &amp; Media before referencing.</p>
 
-    <ul class="templates-list media-list" id="media-picker-list" aria-live="polite"></ul>
-    <!-- Or fetch a brand-new asset by URL. The dialog uses its current
-         kind (logo / image) for the POST, then PUTs the alt-text so
-         the resulting item is immediately pickable (the static-block
-         image-embed path blocks insert on empty alt_text). -->
-    <form id="media-picker-url-form" autocomplete="off" class="templates-create">
-      <h3>Or fetch from a URL</h3>
-      <div class="grid-2">
-        <label class="span-2">Image URL
-          <input type="url" name="url" required placeholder="https://example.com/banner.png">
-        </label>
-        <label class="span-2">Image description (required)
-          <input type="text" name="alt_text" required maxlength="240" placeholder="Briefly describe the image">
-        </label>
+    <div class="dialog-tabs">
+      <button type="button" class="tab-btn active" data-tab="library">Pick from Library</button>
+      <button type="button" class="tab-btn" data-tab="upload">Upload File</button>
+      <button type="button" class="tab-btn" data-tab="url">Fetch from URL</button>
+    </div>
+
+    <!-- Tab 1: Library -->
+    <div class="tab-content active" id="picker-tab-library">
+      <div class="media-picker-search">
+        <input type="text" id="media-picker-search-input" placeholder="Search by title..." aria-label="Search logos and media">
       </div>
-      <footer class="dialog-actions">
-        <small id="media-picker-url-status" class="status" aria-live="polite"></small>
-        <button type="submit" class="btn primary">Fetch &amp; use</button>
-      </footer>
-    </form>
+      <p class="hint" id="media-picker-hint">Click an item to use it. Items missing an Image description are dimmed — set one in Logos &amp; Media before referencing.</p>
+      <ul class="templates-list media-list" id="media-picker-list" aria-live="polite"></ul>
+    </div>
+
+    <!-- Tab 2: Upload File -->
+    <div class="tab-content" id="picker-tab-upload" hidden>
+      <form id="media-picker-upload-form" autocomplete="off" class="templates-create">
+        <h3>Upload a file from your computer</h3>
+        <div class="grid-2">
+          <label class="span-2">Choose File <span class="required-star">*</span>
+            <input type="file" name="file" id="media-picker-file-input" required accept="image/png, image/jpeg">
+          </label>
+          <label class="span-2">Image description (required) <span class="required-star">*</span>
+            <input type="text" name="alt_text" id="media-picker-upload-alt" required maxlength="240" placeholder="Briefly describe the image">
+          </label>
+        </div>
+        <footer class="dialog-actions">
+          <small id="media-picker-upload-status" class="status" aria-live="polite"></small>
+          <button type="submit" class="btn primary">Upload &amp; use</button>
+        </footer>
+      </form>
+    </div>
+
+    <!-- Tab 3: Fetch from URL -->
+    <div class="tab-content" id="picker-tab-url" hidden>
+      <form id="media-picker-url-form" autocomplete="off" class="templates-create">
+        <h3>Or fetch from a URL</h3>
+        <div class="grid-2">
+          <label class="span-2">Image URL <span class="required-star">*</span>
+            <input type="url" name="url" required placeholder="https://example.com/banner.png">
+          </label>
+          <label class="span-2">Image description (required) <span class="required-star">*</span>
+            <input type="text" name="alt_text" required maxlength="240" placeholder="Briefly describe the image">
+          </label>
+        </div>
+        <footer class="dialog-actions">
+          <small id="media-picker-url-status" class="status" aria-live="polite"></small>
+          <button type="submit" class="btn primary">Fetch &amp; use</button>
+        </footer>
+      </form>
+    </div>
+
     <footer class="dialog-actions">
       <small id="media-picker-status" class="status" aria-live="polite"></small>
       <button type="button" class="btn ghost" id="media-picker-cancel">Cancel</button>
@@ -841,6 +879,6 @@
   </div>
 </dialog>
 
-<script src="/static/composer.js"></script>
+<script src="/static/composer.js?v=1.0.1"></script>
 </body>
 </html>

@@ -1389,3 +1389,33 @@ def test_legacy_masthead_alt_text_error_string_is_gone(client: TestClient):
     the new input."""
     js = client.get("/static/composer.js").text
     assert "Set its Image description in Logos & Media first" not in js
+
+
+def test_preview_endpoint_uses_podcast_title_if_set(sample_issue, client: TestClient):
+    """The preview endpoint must use the podcast_title (from AppSettings / payload)
+    instead of the newsletter_name at the beginning of Podcast sections if set."""
+    payload = sample_issue.model_dump(mode="json")
+    payload["podcast_title"] = "Override Podcast Title"
+    
+    res = client.post("/api/preview/html", json=payload)
+    assert res.status_code == 200, res.text
+    body = res.text
+    # It should render "Override Podcast Title" instead of "MyNewsletter" (newsletter_name default)
+    assert "Override Podcast Title" in body
+    assert "MyNewsletter" not in body
+
+
+def test_preview_endpoint_links_episode_title_to_youtube_url(sample_issue, client: TestClient):
+    """The preview endpoint must link the episode title to its youtube_video_url if set."""
+    payload = sample_issue.model_dump(mode="json")
+    # Make sure we have a podcast episode and set its youtube_video_url
+    assert len(payload["podcasts"]) > 0
+    payload["podcasts"][0]["youtube_video_url"] = "https://www.youtube.com/watch?v=TEST_EPISODE_VIDEO"
+    payload["podcasts"][0]["title"] = "Test Video Episode Title Link"
+
+    res = client.post("/api/preview/html", json=payload)
+    assert res.status_code == 200, res.text
+    body = res.text
+    # It should render a link wrapping the title
+    expected_link = '<a href="https://www.youtube.com/watch?v=TEST_EPISODE_VIDEO" style="color:#1a4480;text-decoration:none;">Test Video Episode Title Link</a>'
+    assert expected_link in body

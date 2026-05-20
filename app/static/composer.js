@@ -243,8 +243,8 @@
     if (quillInstances.has(textarea)) return quillInstances.get(textarea);
 
     const isStatic = scope.dataset.quillStatic === 'true';
-    const hasQTB = !!(isStatic && window.QuillTableBetter);
-    const tableButton = hasQTB ? 'table-better' : 'table';
+    const hasQTB = !!window.QuillTableBetter;
+    const tableButton = (isStatic && hasQTB) ? 'table-better' : 'table';
 
     const toolbarOptions = isStatic
       ? [['bold', 'italic'], [{ header: 2 }], ['link', 'image', tableButton]]
@@ -261,7 +261,7 @@
           'table-better': {
             language: 'en_US',
             menus: ['column', 'row', 'merge', 'table', 'cell', 'wrap', 'delete'],
-            toolbarTable: true
+            toolbarTable: isStatic
           },
           keyboard: {
             bindings: qtbClass ? (qtbClass.keyboardBindings || {}) : {}
@@ -335,10 +335,7 @@
       quill.root.innerHTML = textarea.value;
     }
 
-    // Always ensure the editor doesn't think it's bold if it's empty.
-    if (!textarea.value || textarea.value === '<p><br></p>') {
-      quill.format('bold', false, Quill.sources.SILENT);
-    }
+
 
     return quill;
   };
@@ -355,9 +352,6 @@
 
       if (currentNormalized !== targetNormalized) {
         quill.root.innerHTML = html;
-        if (!val || val === '<p><br></p>') {
-          quill.format('bold', false, Quill.sources.SILENT);
-        }
       }
     }
   };
@@ -1845,6 +1839,7 @@
     if (currentSettings) {
       [
         'newsletter_name',
+        'podcast_title',
         'from_name', 'from_email', 'to_email', 'reply_to',
         'masthead_logo_url',
       ].forEach((k) => {
@@ -2042,12 +2037,13 @@
 
   const doPreview = async () => {
     setStatus('Rendering…');
-    // Intercept missing required fields before POSTing — without this,
-    // pydantic returns a 422 and the iframe would surface the raw
-    // validation dump, which is hostile to a user mid-edit.
     if (!validateRequired()) {
-      renderRequiredFieldsPlaceholder();
-      setStatus('Issue Number and Issue Title are required.', 'error');
+      if (validateRequired.hasMissingDetails) {
+        renderRequiredFieldsPlaceholder();
+        setStatus('Issue Number and Issue Title are required.', 'error');
+      } else if (validateRequired.hasInvalidUrls) {
+        setStatus('Please correct all invalid Article Links before rendering preview.', 'error');
+      }
       return;
     }
     let issue;
@@ -2104,21 +2100,64 @@
         errEl.hidden = true;
       }
     });
+
+    let hasInvalidUrls = false;
+    // Validate Article Links
+    const articleCards = document.querySelectorAll('.article-card');
+    articleCards.forEach((card, idx) => {
+      const urlInput = card.querySelector('[data-field="url"]');
+      const statusEl = card.querySelector('[data-role="fetch-status"]');
+      const urlVal = (urlInput?.value ?? '').trim();
+      const headlineVal = (card.querySelector('[data-field="headline"]')?.value ?? '').trim();
+
+      if (urlVal || headlineVal) {
+        let valid = false;
+        try {
+          const parsed = new URL(urlVal);
+          valid = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+        } catch (e) {
+          valid = false;
+        }
+
+        if (!valid) {
+          errors.push(`article_${idx}_url`);
+          hasInvalidUrls = true;
+          if (statusEl) {
+            statusEl.textContent = 'Invalid URL format. Must start with http:// or https://';
+            statusEl.setAttribute('data-kind', 'error');
+          }
+        } else {
+          if (statusEl && statusEl.textContent.startsWith('Invalid URL')) {
+            statusEl.textContent = '';
+            statusEl.removeAttribute('data-kind');
+          }
+        }
+      }
+    });
+
     const dlBtn = document.getElementById('download-eml');
     if (dlBtn) {
       const blocked = errors.length > 0;
       dlBtn.disabled = blocked;
       dlBtn.title = blocked
-        ? 'Fill Issue Number and Issue Title before downloading.'
+        ? 'Fill Issue Details and correct all Article Links before downloading.'
         : '';
     }
+
+    validateRequired.hasInvalidUrls = hasInvalidUrls;
+    validateRequired.hasMissingDetails = errors.some(name => name === 'issue_number' || name === 'issue_title');
+
     return errors.length === 0;
   };
 
   // ───────── Download .eml ───────────────────────────────────────────
   const downloadEml = async () => {
     if (!validateRequired()) {
-      setStatus('Issue Number and Issue Title are required.', 'error');
+      if (validateRequired.hasMissingDetails) {
+        setStatus('Issue Number and Issue Title are required.', 'error');
+      } else if (validateRequired.hasInvalidUrls) {
+        setStatus('Please correct all invalid Article Links before downloading.', 'error');
+      }
       return;
     }
     setStatus('Building .eml…');
@@ -2461,6 +2500,7 @@
   const settingsStatus = document.getElementById('settings-status');
   const SETTINGS_FIELDS = [
     'newsletter_name',
+    'podcast_title',
     'from_name', 'from_email', 'to_email', 'reply_to',
     'unsubscribe_url', 'masthead_logo_url',
     // Hidden field — value is a Media Library id (int) for an uploaded
@@ -3786,12 +3826,24 @@
       mediaPickerHint.textContent =
         'Click an item to use it. Items missing an Image description are dimmed — set one in Logos & Media before referencing.';
     }
-    // Reset the URL-fetch form so values from the last open don't
-    // bleed across.
+
+    // Default to the Library tab when opening
+    if (typeof switchMediaPickerTab === 'function') {
+      switchMediaPickerTab('library');
+    }
+
+    // Reset forms so values from the last open don't bleed across
     if (mediaPickerUrlForm) {
       mediaPickerUrlForm.reset();
       setMediaPickerUrlStatus('');
     }
+    const mediaPickerUploadForm = document.getElementById('media-picker-upload-form');
+    const mediaPickerUploadStatus = document.getElementById('media-picker-upload-status');
+    if (mediaPickerUploadForm) {
+      mediaPickerUploadForm.reset();
+      if (mediaPickerUploadStatus) mediaPickerUploadStatus.textContent = '';
+    }
+
     setMediaPickerStatus('Loading…');
     try {
       const res = await fetch('/api/media');
@@ -3904,6 +3956,80 @@
         if (cb) cb(item);
       } catch (err) {
         setMediaPickerUrlStatus('Network error: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // Reusable tab switching inside media picker dialog
+  const switchMediaPickerTab = (tabName) => {
+    // Update active tab button
+    mediaPickerDialog.querySelectorAll('.dialog-tabs .tab-btn').forEach((btn) => {
+      if (btn.dataset.tab === tabName) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+    // Update tab contents
+    mediaPickerDialog.querySelectorAll('.tab-content').forEach((content) => {
+      if (content.id === `picker-tab-${tabName}`) {
+        content.classList.add('active');
+        content.removeAttribute('hidden');
+      } else {
+        content.classList.remove('active');
+        content.setAttribute('hidden', '');
+      }
+    });
+  };
+
+  mediaPickerDialog.querySelectorAll('.dialog-tabs .tab-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchMediaPickerTab(btn.dataset.tab);
+    });
+  });
+
+  const mediaPickerUploadForm = document.getElementById('media-picker-upload-form');
+  const mediaPickerUploadStatus = document.getElementById('media-picker-upload-status');
+  const mediaPickerFileInput = document.getElementById('media-picker-file-input');
+  const mediaPickerUploadAlt = document.getElementById('media-picker-upload-alt');
+  const setMediaPickerUploadStatus = statusSetter(mediaPickerUploadStatus);
+
+  if (mediaPickerUploadForm) {
+    mediaPickerUploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = mediaPickerFileInput.files[0];
+      const altText = trim(mediaPickerUploadAlt.value || '');
+      if (!file) {
+        setMediaPickerUploadStatus('Please select a file.', 'error');
+        return;
+      }
+      if (!altText) {
+        setMediaPickerUploadStatus('Image description is required.', 'error');
+        return;
+      }
+      setMediaPickerUploadStatus('Uploading…');
+      try {
+        const item = await uploadMedia({ file, kind: _pickerKind || 'image' });
+        // Stamp the Alt text
+        const altRes = await fetch(`/api/media/${item.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ alt_text: altText }),
+        });
+        let finalItem = item;
+        if (altRes.ok) {
+          finalItem = await altRes.json();
+        }
+        const cb = _pickerCallback;
+        closeLibraryPicker();
+        if (cb) cb(finalItem);
+      } catch (err) {
+        if (err instanceof Response) {
+          await surfaceUploadError(err, setMediaPickerUploadStatus);
+        } else {
+          setMediaPickerUploadStatus('Upload failed: ' + err.message, 'error');
+        }
       }
     });
   }

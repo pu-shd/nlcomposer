@@ -574,7 +574,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   cursor: not-allowed;
 }
 
-#composer label {
+#composer label,
+#composer .rt-field-wrapper {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -584,7 +585,8 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 /* The `display: flex` above wins over the UA `[hidden] { display: none }`
    rule, so an author-side override is required to actually hide labels
    marked with the `hidden` attribute (e.g. Year/Display date/Subject). */
-#composer label[hidden] { display: none; }
+#composer label[hidden],
+#composer .rt-field-wrapper[hidden] { display: none; }
 
 #composer label.checkbox {
   flex-direction: row;
@@ -2123,3 +2125,38 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 .episodes-picker-search select {
   width: 100%;
 }
+
+/* Reusable dialog tabs */
+.dialog-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  padding-bottom: 2px;
+}
+.dialog-tabs .tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+  transition: all 0.2s ease-in-out;
+}
+.dialog-tabs .tab-btn:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.dialog-tabs .tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+.tab-content[hidden] {
+  display: none !important;
+}
+

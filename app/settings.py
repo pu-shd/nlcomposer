@@ -34,11 +34,18 @@ class AppSettings(BaseModel):
     front-end can copy values across with no remapping table.
     """
 
-    # Newsletter branding (printed in masthead, podcast section, subject).
-    # Empty by default so the user types their own brand on first open
-    # — the renderer falls back to the model-default "MyNewsletter" if
-    # the operator never sets one (NewsletterIssue.newsletter_name).
     newsletter_name: str = ""
+
+    # Optional podcast title (printed at the beginning of Podcast sections).
+    # If populated, it is used instead of the newsletter name.
+    podcast_title: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional title for the podcast section. If populated, it is "
+            "used instead of inserting the newsletter name at the beginning "
+            "of Podcast sections."
+        ),
+    )
 
     # Email envelope defaults — all empty by default so a fresh install
     # doesn't ship a placeholder identity. The composer form pulls from

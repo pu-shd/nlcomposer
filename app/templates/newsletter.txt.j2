@@ -23,8 +23,8 @@
 {% endfor -%}
 {% elif section.type == "podcast" -%}
 {% for p in section.podcasts -%}
---- {{ issue.newsletter_name }} Podcast ---
-{% if p.title %}{{ p.title }}{% endif %}
+--- {{ issue.podcast_title if issue.podcast_title else issue.newsletter_name }} Podcast ---
+{% if p.title %}{{ p.title }}{% if p.youtube_video_url %} ({{ p.youtube_video_url }}){% endif %}{% endif %}
 {% if p.zoomcast_url %}ZoomCast: {{ p.zoomcast_url }}{% endif %}
 {% if p.podcast_url %}Podcasts: {{ p.podcast_url }}{% endif %}
 {% if p.summary %}{{ p.summary }}{% endif %}

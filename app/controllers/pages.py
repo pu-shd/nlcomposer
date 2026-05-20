@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 
@@ -20,7 +20,10 @@ def healthz() -> str:
 
 
 @router.get("/", response_class=HTMLResponse)
-def index() -> str:
+def index(response: Response) -> str:
     if not _INDEX_HTML.exists():
         raise HTTPException(status_code=500, detail="composer index.html missing")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     return _INDEX_HTML.read_text(encoding="utf-8")
