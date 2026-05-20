@@ -263,14 +263,14 @@ class HighlightRef(BaseModel):
 class FormSection(BaseModel):
     """Render-plan entry describing the position of a sortable form
     section in the issue. The SPA emits one of these per visible
-    Articles / Podcast / Static-blocks section, in DOM order, so the
+    Articles / Podcast / Blocks / Highlights section, in DOM order, so the
     template can lay them out in the user's dragged order rather than
-    the model-default "all articles, then podcast, then static blocks"
+    the model-default "all articles, then podcast, then blocks"
     sequence.
 
-    For ``articles`` and ``static_blocks``, ``count`` is the number of
-    entries the section contributes to the corresponding flat list on
-    NewsletterIssue. The renderer walks that list with per-type
+    For ``articles``, ``static_blocks``, and ``highlights``, ``count`` is the
+    number of entries the section contributes to the corresponding flat
+    list on NewsletterIssue. The renderer walks that list with per-type
     cursors so the slice for each section is contiguous in the model
     and rendered back-to-back in the output.
 
@@ -279,12 +279,12 @@ class FormSection(BaseModel):
     ``NewsletterIssue.podcast`` slot.
     """
 
-    type: Literal["articles", "podcast", "static_blocks"]
+    type: Literal["articles", "podcast", "static_blocks", "highlights"]
     id: Optional[str] = None
     count: Optional[int] = Field(
         default=None,
         ge=0,
-        description="For articles / static_blocks: number of entries in this section.",
+        description="For articles / blocks / highlights: number of entries in this section.",
     )
     enabled: Optional[bool] = Field(
         default=None,
