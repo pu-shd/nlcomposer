@@ -73,17 +73,18 @@ def download_eml(
         masthead_logo_filename=masthead_filename,
     )
     filename = build_eml_filename(issue)
-    
-    create_archive(
-        conn,
-        ArchiveCreate(
-            slug=issue.header_slug(),
-            subject=issue.effective_subject(),
-            filename=filename,
-            payload=issue.model_dump(mode="json"),
-            eml_bytes=eml_bytes,
-        ),
-    )
+    settings = load_settings(conn)
+    if settings.auto_archive_on_download:
+        create_archive(
+            conn,
+            ArchiveCreate(
+                slug=issue.header_slug(),
+                subject=issue.effective_subject(),
+                filename=filename,
+                payload=issue.model_dump(mode="json"),
+                eml_bytes=eml_bytes,
+            ),
+        )
     return Response(
         content=eml_bytes,
         media_type="message/rfc822",

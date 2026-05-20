@@ -841,10 +841,10 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 #composer .article-card > .grid-2, #composer .podcast-card > .grid-2, #composer .static-card > .grid-2 { padding: 12px; }
 
-#composer .row.inline {
+.row.inline {
   width: 100%;
 }
-#composer .row.inline > input { flex: 1; }
+.row.inline > input { flex: 1; }
 #composer .btn-fetch {
   flex: 0 0 auto;
   font-size: 12px;
@@ -1036,13 +1036,13 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   font-size: 1.1em;
   vertical-align: baseline;
 }
-#composer .row.inline {
+.row.inline {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 4px;
 }
-#composer .row.inline > input { flex: 1; min-width: 0; }
+.row.inline > input { flex: 1; min-width: 0; }
 #composer .logo-thumb {
   width: 22px;
   height: 22px;

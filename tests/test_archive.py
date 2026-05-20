@@ -177,6 +177,20 @@ def test_eml_download_auto_archives_when_enabled(sample_issue, client: TestClien
     assert re_download.content == res.content
 
 
+def test_eml_download_does_not_archive_when_disabled(sample_issue, client: TestClient):
+    settings_payload = client.get("/api/settings").json()
+    settings_payload["auto_archive_on_download"] = False
+    put_res = client.put("/api/settings", json=settings_payload)
+    assert put_res.status_code == 200
+
+    payload = sample_issue.model_dump(mode="json")
+    res = client.post("/api/eml", json=payload)
+    assert res.status_code == 200
+
+    listing = client.get("/api/archive").json()
+    assert len(listing) == 0
+
+
 
 
 

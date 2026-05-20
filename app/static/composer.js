@@ -2362,7 +2362,7 @@
     'masthead_logo_media_id',
     'initial_publication_date',
     'default_intro_html', 'default_footer_html',
-    'preview_debounce_ms', 'auto_archive_on_download',
+    'preview_debounce_ms',
     'include_read_more_link', 'confirm_before_delete',
     'embed_all_media',
     // Autosave loop interval (0 = disabled). Wired up by the

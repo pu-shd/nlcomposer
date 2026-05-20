@@ -106,6 +106,10 @@ class AppSettings(BaseModel):
             "click can disable this from the confirm dialog itself."
         ),
     )
+    auto_archive_on_download: bool = Field(
+        default=True,
+        description="Automatically archive issues when downloaded.",
+    )
     embed_all_media: bool = Field(
         default=True,
         description=(
