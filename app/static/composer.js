@@ -2822,6 +2822,19 @@
     String(s == null ? '' : s).replace(/[<>&"']/g, (c) =>
       ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  const getColorHash = (str) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const colors = [
+      '#1a4480', '#2b6cb0', '#319795', '#2c7a7b', '#2b6cb0',
+      '#4a5568', '#b7791f', '#744210', '#9b2c2c', '#7b341e'
+    ];
+    const index = Math.abs(hash) % colors.length;
+    return colors[index];
+  };
+
   // Trash-icon SVG markup reused by every delete affordance (templates,
   // drafts, archive). Bundled here so tweaks happen in one place.
   const TRASH_ICON_SVG = (
@@ -3827,10 +3840,13 @@
       if (!res.ok) return;
       const channels = await res.json();
       episodesChannelsList.innerHTML = channels.map((c) => `
-        <li data-channel-id="${c.id}" class="template-item ${selectedChannelId === c.id ? 'active' : ''}">
-          <div class="template-meta">
-            <strong>${escapeHtml(c.name)}</strong>
-            <small>${escapeHtml(c.handle)}</small>
+        <li data-channel-id="${c.id}" class="channel-card ${selectedChannelId === c.id ? 'active' : ''}">
+          <div class="channel-avatar" style="background-color: ${getColorHash(c.name)}">
+            ${c.name.charAt(0).toUpperCase()}
+          </div>
+          <div class="channel-info">
+            <span class="channel-name">${escapeHtml(c.name)}</span>
+            <span class="channel-handle">${escapeHtml(c.handle)}</span>
           </div>
         </li>
       `).join('');
@@ -3876,11 +3892,25 @@
         episodesList.innerHTML = '<li class="hint">No episodes found. Click Refresh to fetch from YouTube.</li>';
       } else {
         episodesList.innerHTML = episodes.map((e) => `
-          <li class="template-item episode-selectable" data-video-id="${e.video_id}">
-            <img class="episode-thumb" src="${e.thumbnail_url || ''}" alt="">
+          <li class="template-item" data-video-id="${e.video_id}">
+            <div class="episode-thumb-container">
+              <img src="${e.thumbnail_url || ''}" alt="">
+              <div class="episode-play-overlay">
+                <svg viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </div>
+            </div>
             <div class="episode-info">
-              <span class="episode-title">${escapeHtml(e.title)}</span>
-              <span class="episode-meta">${new Date(e.published_at).toLocaleDateString()}</span>
+              <div class="episode-header">
+                <span class="episode-title">${escapeHtml(e.title)}</span>
+              </div>
+              <div class="episode-meta-row">
+                <span>${new Date(e.published_at).toLocaleDateString()}</span>
+                <a href="https://www.youtube.com/watch?v=${e.video_id}" class="watch-link" target="_blank" rel="noopener noreferrer">
+                  Watch on YouTube ↗
+                </a>
+              </div>
               <p class="episode-desc">${escapeHtml(e.description || '')}</p>
             </div>
           </li>
@@ -3925,7 +3955,9 @@
         episodesPickerList.innerHTML = episodes.map((e) => `
           <li class="template-item" data-video-id="${e.video_id}">
             <input type="checkbox" class="episode-checkbox" aria-label="Select episode">
-            <img class="episode-thumb" src="${e.thumbnail_url || ''}" alt="">
+            <div class="episode-thumb-container">
+              <img src="${e.thumbnail_url || ''}" alt="">
+            </div>
             <div class="episode-info">
               <span class="episode-title">${escapeHtml(e.title)}</span>
               <span class="episode-meta">${new Date(e.published_at).toLocaleDateString()}</span>
@@ -4032,6 +4064,24 @@
 
   episodesPickerChannelSelect.addEventListener('change', () => {
     refreshPickerEpisodesList(episodesPickerChannelSelect.value);
+  });
+
+  episodesPickerList.addEventListener('click', (e) => {
+    if (e.target.classList.contains('episode-checkbox')) {
+      const li = e.target.closest('li');
+      if (li) {
+        li.classList.toggle('selected', e.target.checked);
+      }
+      return;
+    }
+    const li = e.target.closest('li[data-video-id]');
+    if (li) {
+      const cb = li.querySelector('.episode-checkbox');
+      if (cb) {
+        cb.checked = !cb.checked;
+        li.classList.toggle('selected', cb.checked);
+      }
+    }
   });
 
   document.getElementById('episodes-picker-add-btn').addEventListener('click', async () => {
