@@ -23,7 +23,7 @@ The module is named ``media_store`` (not ``media``) for symmetry with
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from .db import now_iso
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -105,8 +105,7 @@ class MediaItem(BaseModel):
         return bool(self.alt_text.strip())
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+
 
 
 def _row_to_item(row: sqlite3.Row) -> MediaItem:
@@ -198,7 +197,7 @@ def upsert_by_url(
     if existing is not None:
         return existing
 
-    now = _now_iso()
+    now = now_iso()
     cur = conn.execute(
         """
         INSERT INTO media
@@ -228,7 +227,7 @@ def create_upload(
     if not content_bytes:
         raise ValueError("content_bytes must be non-empty for uploads")
 
-    now = _now_iso()
+    now = now_iso()
     cur = conn.execute(
         """
         INSERT INTO media
@@ -248,7 +247,7 @@ def update_alt_text(
     """Set the user-supplied Image description. Returns the updated row."""
     cur = conn.execute(
         "UPDATE media SET alt_text = ?, updated_at = ? WHERE id = ?",
-        (alt_text, _now_iso(), media_id),
+        (alt_text, now_iso(), media_id),
     )
     if cur.rowcount == 0:
         return None
@@ -279,7 +278,7 @@ def mark_ready(
                updated_at = ?
          WHERE id = ?
         """,
-        (content_type, content_bytes, _now_iso(), media_id),
+        (content_type, content_bytes, now_iso(), media_id),
     )
     if cur.rowcount == 0:
         return None
@@ -299,7 +298,7 @@ def mark_failed(
                updated_at = ?
          WHERE id = ?
         """,
-        (error[:500], _now_iso(), media_id),
+        (error[:500], now_iso(), media_id),
     )
     if cur.rowcount == 0:
         return None

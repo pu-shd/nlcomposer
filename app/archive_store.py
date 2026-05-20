@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from .db import now_iso
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -61,8 +61,7 @@ class ArchiveEntry(BaseModel):
     payload: dict[str, Any]
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+
 
 
 def _row_to_summary(row: sqlite3.Row) -> ArchiveSummary:
@@ -131,7 +130,7 @@ def get_archive_eml(
 
 def create_archive(conn: sqlite3.Connection, data: ArchiveCreate) -> ArchiveSummary:
     """Insert a finalized issue. Returns the persisted summary (no payload)."""
-    now = _now_iso()
+    now = now_iso()
     payload_json = json.dumps(data.payload, ensure_ascii=False)
     cur = conn.execute(
         """

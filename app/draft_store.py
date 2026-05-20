@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from .db import now_iso
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -48,8 +48,7 @@ class Draft(DraftSummary):
     payload: dict[str, Any]
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+
 
 
 def _row_to_summary(row: sqlite3.Row) -> DraftSummary:
@@ -102,7 +101,7 @@ def get_latest_draft(conn: sqlite3.Connection) -> Optional[Draft]:
 
 def create_draft(conn: sqlite3.Connection, data: DraftCreate) -> Draft:
     """Insert a new draft. Returns the persisted row."""
-    now = _now_iso()
+    now = now_iso()
     payload_json = json.dumps(data.payload, ensure_ascii=False)
     cur = conn.execute(
         """
@@ -134,7 +133,7 @@ def update_draft(
            SET name = ?, payload = ?, updated_at = ?
          WHERE id = ?
         """,
-        (new_name, payload_json, _now_iso(), draft_id),
+        (new_name, payload_json, now_iso(), draft_id),
     )
     return get_draft(conn, draft_id)
 

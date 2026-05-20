@@ -469,9 +469,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border: 0;
   position: absolute;
   top: 12px;
-  bottom: 12px;
   left: 12px;
-  right: 12px;
   width: calc(100% - 24px);
   height: calc(100% - 24px);
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);

@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date as _date, datetime, timezone
+from datetime import date as _date
 from typing import Optional
+
+from .db import now_iso
 
 from pydantic import BaseModel, Field
 
@@ -193,8 +195,7 @@ class AppSettings(BaseModel):
     )
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+
 
 
 def load_settings(conn: sqlite3.Connection) -> AppSettings:
@@ -212,7 +213,7 @@ def load_settings(conn: sqlite3.Connection) -> AppSettings:
 def save_settings(conn: sqlite3.Connection, settings: AppSettings) -> AppSettings:
     """Upsert the single settings row. Returns the validated payload."""
     payload = settings.model_dump_json()
-    now = _now_iso()
+    now = now_iso()
     conn.execute(
         """
         INSERT INTO settings (id, payload, updated_at)

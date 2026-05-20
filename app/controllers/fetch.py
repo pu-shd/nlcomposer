@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -71,6 +73,22 @@ def _explain_transport_error(exc: httpx.HTTPError, url: str) -> str:
     return f"fetch failed ({name}): {exc}"
 
 
+@contextmanager
+def handle_fetch_errors(url: str):
+    try:
+        yield
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=_explain_upstream_status(e.response.status_code, url),
+        )
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=502, detail=_explain_transport_error(e, url)
+        )
+
+
+
 @router.get("/article")
 def fetch_article(
     url: str = Query(..., description="Public article URL to scrape."),
@@ -88,17 +106,8 @@ def fetch_article(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    try:
+    with handle_fetch_errors(url):
         meta: ArticleMetadata = fetch_article_metadata(url)
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=_explain_upstream_status(e.response.status_code, url),
-        )
-    except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=502, detail=_explain_transport_error(e, url)
-        )
 
     return JSONResponse(content=dict(meta))
 
@@ -137,16 +146,7 @@ def fetch_youtube(
             # Fallback to scraping if API fails
             print(f"YouTube API failed, falling back to scraping: {e}")
 
-    try:
+    with handle_fetch_errors(url):
         meta: YoutubeMetadata = fetch_youtube_metadata(url)
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=_explain_upstream_status(e.response.status_code, url),
-        )
-    except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=502, detail=_explain_transport_error(e, url)
-        )
 
     return JSONResponse(content=dict(meta))

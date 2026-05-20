@@ -22,6 +22,8 @@ from ..episode_store import (
 )
 from ..models import YouTubeChannel, YouTubeEpisode
 from ..youtube import fetch_channel_by_handle, fetch_recent_uploads
+from .utils import or_404
+
 
 router = APIRouter(prefix="/api/episodes", tags=["Episodes"])
 
@@ -101,10 +103,8 @@ def get_channel_details(
     conn: sqlite3.Connection = Depends(get_db)
 ):
     """Get details for a managed YouTube channel."""
-    channel = get_channel(conn, channel_id)
-    if not channel:
-        raise HTTPException(status_code=404, detail="Channel not found.")
-    return channel
+    return or_404(get_channel(conn, channel_id), "Channel")
+
 
 
 @router.delete("/channels/{channel_id}")
@@ -133,9 +133,8 @@ def sync_channel_episodes(
     conn: sqlite3.Connection = Depends(get_db)
 ):
     """Fetch recent uploads from YouTube and update the local cache."""
-    channel = get_channel(conn, channel_id)
-    if not channel:
-        raise HTTPException(status_code=404, detail="Channel not found.")
+    channel = or_404(get_channel(conn, channel_id), "Channel")
+
     
     playlist_id = channel.uploads_playlist_id
     if not playlist_id:

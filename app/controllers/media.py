@@ -100,10 +100,7 @@ def api_get_media(
     media_id: int,
     conn: sqlite3.Connection = Depends(get_db),
 ) -> MediaItem:
-    item = get_media(conn, media_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Media not found")
-    return item
+    return or_404(get_media(conn, media_id), "Media")
 
 
 @router.post("", response_model=MediaItem, status_code=201)
@@ -239,10 +236,7 @@ def api_update_media_alt(
     body: MediaAltUpdate,
     conn: sqlite3.Connection = Depends(get_db),
 ) -> MediaItem:
-    updated = update_alt_text(conn, media_id, body.alt_text)
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Media not found")
-    return updated
+    return or_404(update_alt_text(conn, media_id, body.alt_text), "Media")
 
 
 @router.delete("/{media_id}", status_code=204)

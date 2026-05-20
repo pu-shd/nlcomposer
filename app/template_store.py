@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from .db import now_iso
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -58,8 +58,7 @@ class Template(TemplateSummary):
     payload: dict[str, Any]
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+
 
 
 def _row_to_summary(row: sqlite3.Row) -> TemplateSummary:
@@ -114,7 +113,7 @@ def create_template(
     conn: sqlite3.Connection, data: TemplateCreate, *, builtin: bool = False
 ) -> Template:
     """Insert a new template. Raises ``TemplateNameConflictError`` on duplicate name."""
-    now = _now_iso()
+    now = now_iso()
     payload_json = json.dumps(data.payload, ensure_ascii=False)
     try:
         cur = conn.execute(
@@ -162,7 +161,7 @@ def update_template(
                SET name = ?, description = ?, payload = ?, updated_at = ?
              WHERE id = ?
             """,
-            (new_name, new_desc, payload_json, _now_iso(), template_id),
+            (new_name, new_desc, payload_json, now_iso(), template_id),
         )
     except sqlite3.IntegrityError as e:
         if "templates.name" in str(e) or "UNIQUE" in str(e).upper():

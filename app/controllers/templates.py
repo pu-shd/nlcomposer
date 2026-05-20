@@ -63,9 +63,7 @@ def api_update_template(
         updated = update_template(conn, template_id, body)
     except TemplateNameConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Template not found")
-    return updated
+    return or_404(updated, "Template")
 
 
 @router.delete("/{template_id}", status_code=204)

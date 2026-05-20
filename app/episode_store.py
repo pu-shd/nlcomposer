@@ -8,14 +8,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from .db import now_iso
 from typing import Optional
 
 from .models import YouTubeChannel, YouTubeEpisode
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+
 
 
 def _row_to_channel(row: sqlite3.Row) -> YouTubeChannel:
@@ -67,7 +66,7 @@ def get_channel_by_handle(conn: sqlite3.Connection, handle: str) -> Optional[You
 
 
 def create_channel(conn: sqlite3.Connection, handle: str, name: str, yt_channel_id: str, uploads_playlist_id: str) -> YouTubeChannel:
-    now = _now_iso()
+    now = now_iso()
     cur = conn.execute(
         """
         INSERT INTO youtube_channels (handle, name, channel_id, uploads_playlist_id, created_at, updated_at)
@@ -117,7 +116,7 @@ def upsert_episode(
     thumbnail_url: str,
     payload: dict,
 ) -> YouTubeEpisode:
-    now = _now_iso()
+    now = now_iso()
     payload_json = json.dumps(payload, ensure_ascii=False)
     conn.execute(
         """

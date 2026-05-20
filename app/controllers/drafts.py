@@ -45,10 +45,7 @@ def api_get_draft(
     draft_id: int,
     conn: sqlite3.Connection = Depends(get_db),
 ) -> Draft:
-    d = get_draft(conn, draft_id)
-    if d is None:
-        raise HTTPException(status_code=404, detail="Draft not found")
-    return d
+    return or_404(get_draft(conn, draft_id), "Draft")
 
 
 @router.post("", response_model=Draft, status_code=201)
