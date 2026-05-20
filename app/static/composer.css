@@ -456,6 +456,12 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-radius: 4px;
 }
 .menu-trigger .dropdown button:hover { background: var(--accent-soft); color: var(--accent); }
+.menu-trigger .dropdown button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: transparent !important;
+  color: var(--muted) !important;
+}
 .menu-trigger #open-menu[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); }
 
 .preview-frame {
@@ -1253,19 +1259,30 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 #drafts-dialog .dialog-header,
 #archive-dialog .dialog-header,
 #media-dialog .dialog-header,
-#media-picker-dialog .dialog-header {
+#media-picker-dialog .dialog-header,
+#episodes-dialog .dialog-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 16px;
   border-bottom: 1px solid var(--border);
   padding-bottom: 8px;
   margin: 0;
+}
+#templates-dialog .dialog-header .btn-remove,
+#drafts-dialog .dialog-header .btn-remove,
+#archive-dialog .dialog-header .btn-remove,
+#media-dialog .dialog-header .btn-remove,
+#media-picker-dialog .dialog-header .btn-remove,
+#episodes-dialog .dialog-header .btn-remove {
+  margin-left: auto;
 }
 #templates-dialog .dialog-header h2,
 #drafts-dialog .dialog-header h2,
 #archive-dialog .dialog-header h2,
 #media-dialog .dialog-header h2,
-#media-picker-dialog .dialog-header h2 {
+#media-picker-dialog .dialog-header h2,
+#episodes-dialog .dialog-header h2 {
   margin: 0;
   font-size: 15px;
   color: var(--accent);

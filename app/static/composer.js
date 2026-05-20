@@ -3211,7 +3211,7 @@
     }
   });
 
-  document.getElementById('open-drafts').addEventListener('click', openDraftsDialog);
+  document.getElementById('open-drafts').addEventListener('click', () => switchView('drafts'));
   document.getElementById('drafts-close').addEventListener('click', (e) => {
     e.preventDefault();
     closeDraftsDialog();
@@ -3331,7 +3331,7 @@
 
   const closeArchiveDialog = () => closeDialog(archiveDialog);
 
-  document.getElementById('open-archive').addEventListener('click', openArchiveDialog);
+  document.getElementById('open-archive').addEventListener('click', () => switchView('archive'));
   document.getElementById('archive-close').addEventListener('click', (e) => {
     e.preventDefault();
     closeArchiveDialog();
@@ -3589,7 +3589,7 @@
     });
   }
 
-  document.getElementById('open-media').addEventListener('click', openMediaDialog);
+  document.getElementById('open-media').addEventListener('click', () => switchView('media'));
   document.getElementById('media-close').addEventListener('click', (e) => {
     e.preventDefault();
     closeMediaDialog();
@@ -4071,7 +4071,7 @@
     }
   });
 
-  document.getElementById('open-episodes').addEventListener('click', openEpisodesDialog);
+  document.getElementById('open-episodes').addEventListener('click', () => switchView('episodes'));
   document.getElementById('episodes-close').addEventListener('click', () => closeDialog(episodesDialog));
   document.getElementById('episodes-picker-close').addEventListener('click', () => closeDialog(episodesPickerDialog));
   document.getElementById('episodes-picker-cancel').addEventListener('click', () => closeDialog(episodesPickerDialog));
@@ -4385,6 +4385,90 @@
   settingsForm.querySelectorAll('[data-quill-field]').forEach((scope) => {
     wireQuillEditor(scope);
   });
+
+  // ───────── Hamburger Menu Persistence and Switch Logic ───────────────────
+  let isTransitioningView = false;
+
+  function updateMenuState(activeView) {
+    const menuTriggerContainer = document.querySelector('.menu-trigger');
+    if (!menuTriggerContainer) return;
+
+    let targetHeader;
+    if (activeView === 'composition') {
+      targetHeader = document.querySelector('.topbar');
+    } else {
+      targetHeader = document.querySelector(`#${activeView}-dialog .dialog-header`);
+    }
+
+    if (targetHeader) {
+      targetHeader.insertBefore(menuTriggerContainer, targetHeader.firstChild);
+    }
+
+    const items = {
+      composition: document.getElementById('open-composition'),
+      drafts: document.getElementById('open-drafts'),
+      archive: document.getElementById('open-archive'),
+      media: document.getElementById('open-media'),
+      episodes: document.getElementById('open-episodes')
+    };
+
+    for (const [key, btn] of Object.entries(items)) {
+      if (!btn) continue;
+      if (key === activeView) {
+        btn.disabled = true;
+        btn.setAttribute('aria-disabled', 'true');
+      } else {
+        btn.disabled = false;
+        btn.removeAttribute('aria-disabled');
+      }
+    }
+  }
+
+  async function switchView(targetView) {
+    isTransitioningView = true;
+    closeDialog(draftsDialog);
+    closeDialog(archiveDialog);
+    closeDialog(mediaDialog);
+    closeDialog(episodesDialog);
+    isTransitioningView = false;
+
+    if (targetView === 'composition') {
+      updateMenuState('composition');
+    } else if (targetView === 'drafts') {
+      await openDraftsDialog();
+      updateMenuState('drafts');
+    } else if (targetView === 'archive') {
+      await openArchiveDialog();
+      updateMenuState('archive');
+    } else if (targetView === 'media') {
+      await openMediaDialog();
+      updateMenuState('media');
+    } else if (targetView === 'episodes') {
+      await openEpisodesDialog();
+      updateMenuState('episodes');
+    }
+  }
+
+  function onDialogClose() {
+    if (isTransitioningView) return;
+    const anyOpen = draftsDialog.open || archiveDialog.open || mediaDialog.open || episodesDialog.open;
+    if (!anyOpen) {
+      updateMenuState('composition');
+    }
+  }
+
+  if (draftsDialog) draftsDialog.addEventListener('close', onDialogClose);
+  if (archiveDialog) archiveDialog.addEventListener('close', onDialogClose);
+  if (mediaDialog) mediaDialog.addEventListener('close', onDialogClose);
+  if (episodesDialog) episodesDialog.addEventListener('close', onDialogClose);
+
+  // Initialize composition view menu state
+  updateMenuState('composition');
+
+  const openCompositionBtn = document.getElementById('open-composition');
+  if (openCompositionBtn) {
+    openCompositionBtn.addEventListener('click', () => switchView('composition'));
+  }
 
   // Pull settings before the first preview so any saved defaults
   // (from_name/from_email/etc.) end up in the rendered .eml.
