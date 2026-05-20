@@ -29,16 +29,22 @@ def get_youtube_client():
     a YOUTUBE_API_KEY environment variable if set.
     """
     api_key = os.environ.get("YOUTUBE_API_KEY")
+    import httplib2
+    import google_auth_httplib2
+
+    # Enforce a resilient 15.0 second timeout
+    http_client = httplib2.Http(timeout=15.0)
     
     try:
         # Try ADC first
         credentials, project = google.auth.default(
             scopes=["https://www.googleapis.com/auth/youtube.readonly"]
         )
-        return build("youtube", "v3", credentials=credentials)
+        authorized_http = google_auth_httplib2.AuthorizedHttp(credentials, http=http_client)
+        return build("youtube", "v3", http=authorized_http)
     except Exception as e:
         if api_key:
-            return build("youtube", "v3", developerKey=api_key)
+            return build("youtube", "v3", developerKey=api_key, http=http_client)
         raise RuntimeError("YouTube API is not configured or credentials are invalid.") from e
 
 

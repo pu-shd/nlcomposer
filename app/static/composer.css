@@ -1826,6 +1826,24 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   color: var(--muted);
 }
 
+.channel-refresh-stats {
+  font-size: 10px;
+  margin-top: 2px;
+  font-weight: 500;
+}
+
+.channel-refresh-stats.success {
+  color: #2e7d32;
+}
+
+.channel-refresh-stats.failed {
+  color: #c62828;
+}
+
+.channel-refresh-stats.never {
+  color: var(--muted);
+}
+
 .episodes-main {
   display: flex;
   flex-direction: column;

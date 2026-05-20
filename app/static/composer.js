@@ -3877,22 +3877,87 @@
   const setEpisodesStatus = statusSetter(episodesStatus);
   const setEpisodesPickerStatus = statusSetter(episodesPickerStatus);
 
+  const formatTimeAgo = (isoString) => {
+    if (!isoString) return 'Never';
+    try {
+      const date = new Date(isoString);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffSec = Math.floor(diffMs / 1000);
+      const diffMin = Math.floor(diffSec / 60);
+      const diffHr = Math.floor(diffMin / 60);
+      const diffDays = Math.floor(diffHr / 24);
+
+      if (diffSec < 0) return 'Just now';
+      if (diffSec < 60) return 'Just now';
+      if (diffMin < 60) return `${diffMin}m ago`;
+      if (diffHr < 24) return `${diffHr}h ago`;
+      return `${diffDays}d ago`;
+    } catch (e) {
+      return 'Never';
+    }
+  };
+
+  let episodesPollInterval = null;
+
+  const startEpisodesPolling = () => {
+    if (episodesPollInterval) clearInterval(episodesPollInterval);
+    episodesPollInterval = setInterval(async () => {
+      if (episodesDialog && episodesDialog.open) {
+        await refreshEpisodesChannels();
+        if (selectedChannelId) {
+          await refreshEpisodesList(selectedChannelId);
+        }
+      } else {
+        stopEpisodesPolling();
+      }
+    }, 5000);
+  };
+
+  const stopEpisodesPolling = () => {
+    if (episodesPollInterval) {
+      clearInterval(episodesPollInterval);
+      episodesPollInterval = null;
+    }
+  };
+
   const refreshEpisodesChannels = async () => {
     try {
       const res = await fetch('/api/episodes/channels');
       if (!res.ok) return;
       const channels = await res.json();
-      episodesChannelsList.innerHTML = channels.map((c) => `
-        <li data-channel-id="${c.id}" class="channel-card ${selectedChannelId === c.id ? 'active' : ''}">
-          <div class="channel-avatar" style="background-color: ${getColorHash(c.name)}">
-            ${c.name.charAt(0).toUpperCase()}
-          </div>
-          <div class="channel-info">
-            <span class="channel-name">${escapeHtml(c.name)}</span>
-            <span class="channel-handle">${escapeHtml(c.handle)}</span>
-          </div>
-        </li>
-      `).join('');
+      episodesChannelsList.innerHTML = channels.map((c) => {
+        let statsText = '';
+        let statsClass = 'never';
+        if (c.last_refresh_at) {
+          const timeAgo = formatTimeAgo(c.last_refresh_at);
+          if (c.last_refresh_status === 'success') {
+            statsText = `Synced ${timeAgo} (+${c.last_refresh_added_count || 0})`;
+            statsClass = 'success';
+          } else {
+            const errMsg = c.last_refresh_error ? `: ${c.last_refresh_error}` : '';
+            const truncatedErr = errMsg.length > 25 ? errMsg.slice(0, 22) + '...' : errMsg;
+            statsText = `Failed ${timeAgo}${truncatedErr}`;
+            statsClass = 'failed';
+          }
+        } else {
+          statsText = 'Never synced';
+        }
+        return `
+          <li data-channel-id="${c.id}" class="channel-card ${selectedChannelId === c.id ? 'active' : ''}">
+            <div class="channel-avatar" style="background-color: ${getColorHash(c.name)}">
+              ${c.name.charAt(0).toUpperCase()}
+            </div>
+            <div class="channel-info">
+              <span class="channel-name">${escapeHtml(c.name)}</span>
+              <span class="channel-handle">${escapeHtml(c.handle)}</span>
+              <span class="channel-refresh-stats ${statsClass}" title="${escapeHtml(c.last_refresh_error || '')}">
+                ${escapeHtml(statsText)}
+              </span>
+            </div>
+          </li>
+        `;
+      }).join('');
 
       // Update picker select
       episodesPickerChannelSelect.innerHTML = channels.map((c) =>
@@ -3974,6 +4039,7 @@
     selectedChannelId = null;
     await refreshEpisodesChannels();
     openDialog(episodesDialog);
+    startEpisodesPolling();
   };
 
   const openEpisodesPicker = async (onPick) => {
@@ -4557,7 +4623,12 @@
   if (draftsDialog) draftsDialog.addEventListener('close', onDialogClose);
   if (archiveDialog) archiveDialog.addEventListener('close', onDialogClose);
   if (mediaDialog) mediaDialog.addEventListener('close', onDialogClose);
-  if (episodesDialog) episodesDialog.addEventListener('close', onDialogClose);
+  if (episodesDialog) {
+    episodesDialog.addEventListener('close', () => {
+      stopEpisodesPolling();
+      onDialogClose();
+    });
+  }
 
   // Initialize composition view menu state
   updateMenuState('composition');

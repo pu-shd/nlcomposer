@@ -101,6 +101,10 @@ class YouTubeChannel(BaseModel):
     uploads_playlist_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    last_refresh_at: Optional[str] = None
+    last_refresh_status: Optional[str] = None
+    last_refresh_error: Optional[str] = None
+    last_refresh_added_count: Optional[int] = None
 
 
 class YouTubeEpisode(BaseModel):

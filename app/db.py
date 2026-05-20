@@ -162,7 +162,11 @@ CREATE TABLE IF NOT EXISTS youtube_channels (
     channel_id  TEXT    NOT NULL UNIQUE,
     uploads_playlist_id TEXT,
     created_at  TEXT    NOT NULL,
-    updated_at  TEXT    NOT NULL
+    updated_at  TEXT    NOT NULL,
+    last_refresh_at TEXT,
+    last_refresh_status TEXT,
+    last_refresh_error TEXT,
+    last_refresh_added_count INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS youtube_episodes (
@@ -184,6 +188,21 @@ CREATE INDEX IF NOT EXISTS idx_yt_episodes_published ON youtube_episodes(publish
 def init_db(conn: sqlite3.Connection) -> None:
     """Create all tables if they do not exist. Idempotent."""
     conn.executescript(_SCHEMA)
+    
+    # Check if the new columns exist in youtube_channels and add them if not
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(youtube_channels)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if columns:  # table exists
+        if "last_refresh_at" not in columns:
+            conn.execute("ALTER TABLE youtube_channels ADD COLUMN last_refresh_at TEXT")
+        if "last_refresh_status" not in columns:
+            conn.execute("ALTER TABLE youtube_channels ADD COLUMN last_refresh_status TEXT")
+        if "last_refresh_error" not in columns:
+            conn.execute("ALTER TABLE youtube_channels ADD COLUMN last_refresh_error TEXT")
+        if "last_refresh_added_count" not in columns:
+            conn.execute("ALTER TABLE youtube_channels ADD COLUMN last_refresh_added_count INTEGER")
+            
     conn.commit()
 
 

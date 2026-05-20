@@ -90,3 +90,127 @@ def test_get_youtube_client_raises_runtime_error():
         with patch("google.auth.default", side_effect=DefaultCredentialsError("No ADC found")):
             with pytest.raises(RuntimeError, match="YouTube API is not configured or credentials are invalid."):
                 get_youtube_client()
+
+
+@patch("app.controllers.episodes.fetch_recent_uploads")
+def test_auto_refresh_on_channels_list_success(mock_uploads, client):
+    # First add a channel
+    with patch("app.controllers.episodes.fetch_channel_by_handle") as mock_channel:
+        mock_channel.return_value = {
+            "channel_id": "UC_test_auto_id",
+            "name": "Auto Channel",
+            "handle": "@autochannel",
+            "uploads_playlist_id": "UU_test_auto_id"
+        }
+        mock_uploads.return_value = []
+        response = client.post("/api/episodes/channels", json={"handle": "@autochannel"})
+        assert response.status_code == 200
+        data = response.json()
+        channel_id = data["id"]
+        # Clear mock history from initial add-channel sync
+        mock_uploads.reset_mock()
+
+    # Clear last_refresh_at to simulate a channel that needs auto-refresh
+    from app.db import session
+    with session() as conn:
+        conn.execute("UPDATE youtube_channels SET last_refresh_at = NULL WHERE id = ?", (channel_id,))
+
+    # Define mock uploads for the auto-refresh run
+    mock_uploads.return_value = [
+        {
+            "video_id": "auto_vid",
+            "title": "Auto Video",
+            "description": "Auto Desc",
+            "published_at": "2024-05-20T12:00:00Z",
+            "thumbnail_url": "http://auto_thumb"
+        }
+    ]
+
+    # Get channels list -> triggers background auto-refresh
+    response = client.get("/api/episodes/channels")
+    assert response.status_code == 200
+    
+    # Re-fetch channel details to verify stats are updated (since background task runs after route returns)
+    response = client.get(f"/api/episodes/channels/{channel_id}")
+    assert response.status_code == 200
+    target_channel = response.json()
+    assert target_channel["last_refresh_status"] == "success"
+    assert target_channel["last_refresh_added_count"] == 1
+    assert target_channel["last_refresh_at"] is not None
+
+    # Check that the episode was actually synced
+    response = client.get(f"/api/episodes/channels/{channel_id}/episodes")
+    assert response.status_code == 200
+    episodes = response.json()
+    assert len(episodes) == 1
+    assert episodes[0]["video_id"] == "auto_vid"
+
+
+@patch("app.controllers.episodes.fetch_recent_uploads")
+def test_auto_refresh_on_channels_list_failure(mock_uploads, client):
+    # First add a channel
+    with patch("app.controllers.episodes.fetch_channel_by_handle") as mock_channel:
+        mock_channel.return_value = {
+            "channel_id": "UC_test_fail_id",
+            "name": "Fail Channel",
+            "handle": "@failchannel",
+            "uploads_playlist_id": "UU_test_fail_id"
+        }
+        mock_uploads.return_value = []
+        response = client.post("/api/episodes/channels", json={"handle": "@failchannel"})
+        assert response.status_code == 200
+        channel_id = response.json()["id"]
+
+    # Clear last_refresh_at to simulate a channel that needs auto-refresh
+    from app.db import session
+    with session() as conn:
+        conn.execute("UPDATE youtube_channels SET last_refresh_at = NULL WHERE id = ?", (channel_id,))
+
+    # Make the uploads call raise an error to simulate YouTube API error
+    mock_uploads.side_effect = Exception("Quota Exceeded")
+
+    # Get channels list -> triggers background auto-refresh
+    response = client.get("/api/episodes/channels")
+    assert response.status_code == 200
+    
+    # Re-fetch channel details to verify refresh failure status
+    response = client.get(f"/api/episodes/channels/{channel_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["last_refresh_status"] == "failed"
+    assert "Quota Exceeded" in data["last_refresh_error"]
+    assert data["last_refresh_at"] is not None
+
+
+@patch("app.controllers.episodes.fetch_recent_uploads")
+def test_auto_refresh_respects_cache(mock_uploads, client):
+    # Add a channel
+    with patch("app.controllers.episodes.fetch_channel_by_handle") as mock_channel:
+        mock_channel.return_value = {
+            "channel_id": "UC_test_cache_id",
+            "name": "Cache Channel",
+            "handle": "@cachechannel",
+            "uploads_playlist_id": "UU_test_cache_id"
+        }
+        mock_uploads.return_value = []
+        response = client.post("/api/episodes/channels", json={"handle": "@cachechannel"})
+        assert response.status_code == 200
+        channel_id = response.json()["id"]
+        mock_uploads.reset_mock()
+
+    # Set last_refresh_at to 30 minutes ago (cache hit, should NOT refresh)
+    from app.db import session
+    from datetime import datetime, timezone, timedelta
+    with session() as conn:
+        thirty_mins_ago = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        conn.execute(
+            "UPDATE youtube_channels SET last_refresh_at = ?, last_refresh_status = 'success' WHERE id = ?",
+            (thirty_mins_ago, channel_id)
+        )
+
+    # Get channels list
+    response = client.get("/api/episodes/channels")
+    assert response.status_code == 200
+
+    # Verify fetch_recent_uploads was not called
+    mock_uploads.assert_not_called()

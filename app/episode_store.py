@@ -26,6 +26,11 @@ def _row_to_channel(row: sqlite3.Row) -> YouTubeChannel:
         uploads_playlist_id=row["uploads_playlist_id"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        last_refresh_at=row["last_refresh_at"] if "last_refresh_at" in row.keys() else None,
+        last_refresh_status=row["last_refresh_status"] if "last_refresh_status" in row.keys() else None,
+        last_refresh_error=row["last_refresh_error"] if "last_refresh_error" in row.keys() else None,
+        last_refresh_added_count=row["last_refresh_added_count"] if "last_refresh_added_count" in row.keys() else None,
+
     )
 
 
@@ -154,3 +159,26 @@ def upsert_episode(
 
 def clear_channel_episodes(conn: sqlite3.Connection, channel_id: int) -> None:
     conn.execute("DELETE FROM youtube_episodes WHERE channel_id = ?", (channel_id,))
+
+
+def update_channel_refresh_stats(
+    conn: sqlite3.Connection,
+    channel_id: int,
+    status: str,
+    error: Optional[str] = None,
+    added_count: int = 0
+) -> None:
+    now = now_iso()
+    conn.execute(
+        """
+        UPDATE youtube_channels
+           SET last_refresh_at = ?,
+               last_refresh_status = ?,
+               last_refresh_error = ?,
+               last_refresh_added_count = ?,
+               updated_at = ?
+         WHERE id = ?
+        """,
+        (now, status, error, added_count, now, channel_id),
+    )
+
