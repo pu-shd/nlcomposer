@@ -21,6 +21,20 @@ from .links import sanitize_url
 # and the rest of the app only ever sees the real target.
 SanitizedHttpUrl = Annotated[AnyHttpUrl, BeforeValidator(sanitize_url)]
 
+import re
+
+def collapse_html_line_breaks(v: str | None) -> str | None:
+    if not v or not isinstance(v, str):
+        return v
+    # 1. Collapse multiple consecutive <br> tags (case-insensitive, with optional trailing slash, whitespace, or newlines)
+    v = re.sub(r'(?:<br\s*/?>\s*){2,}', '<br/>', v, flags=re.IGNORECASE)
+    # 2. Collapse multiple consecutive empty paragraphs to a single empty paragraph
+    v = re.sub(r'(?:<p>(?:\s|<br\s*/?>|&nbsp;|&#160;)*</p>\s*){2,}', '<p><br></p>\n', v, flags=re.IGNORECASE)
+    return v
+
+CollapsedHtml = Annotated[Optional[str], BeforeValidator(collapse_html_line_breaks)]
+CollapsedRequiredHtml = Annotated[str, BeforeValidator(collapse_html_line_breaks)]
+
 
 class Article(BaseModel):
     """One linked article in the body of the newsletter.
@@ -37,7 +51,7 @@ class Article(BaseModel):
         default=None,
         description='Free-form date as printed in the byline, e.g. "Apr 27"',
     )
-    pull_quote: Optional[str] = None
+    pull_quote: CollapsedHtml = None
     read_more_label: str = "Read more"
     read_more_url: Optional[SanitizedHttpUrl] = Field(
         default=None,
@@ -59,7 +73,7 @@ class Article(BaseModel):
             "use a public URL via the Logo URL field for now.)"
         ),
     )
-    alain_comment: Optional[str] = Field(
+    alain_comment: CollapsedHtml = Field(
         default=None,
         description='Optional "Hmmmm... Alain" commentary appended after Read more.',
     )
@@ -130,7 +144,7 @@ class StaticBlock(BaseModel):
     """
 
     title: str
-    html: str
+    html: CollapsedRequiredHtml
     show_title: bool = True
 
 
@@ -336,7 +350,7 @@ class NewsletterIssue(BaseModel):
         default=None,
         description="Content-ID for an inline-attached logo image (set by the eml builder).",
     )
-    intro_html: Optional[str] = Field(
+    intro_html: CollapsedHtml = Field(
         default=None,
         description="Optional intro paragraph(s) above the first article. Raw HTML.",
     )
@@ -364,7 +378,7 @@ class NewsletterIssue(BaseModel):
     # rendered_sections() for the resolution logic.
     form_sections: list[FormSection] = Field(default_factory=list)
 
-    footer_html: Optional[str] = None
+    footer_html: CollapsedHtml = None
     unsubscribe_url: Optional[SanitizedHttpUrl] = None
 
     # Render-time toggle propagated from AppSettings.include_read_more_link

@@ -2470,6 +2470,15 @@
       } else if (t.matches('[data-field="title"]')) {
         const card = t.closest('.podcast-card');
         if (card) updatePodcastHeaderPreview(card);
+      } else if (t.matches('[data-field="youtube_video_url"]')) {
+        const card = t.closest('.podcast-card');
+        if (card) {
+          const zc = card.querySelector('[data-field="zoomcast_url"]');
+          if (zc) {
+            zc.value = t.value;
+            zc.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
       }
     }
   });
@@ -2480,7 +2489,21 @@
     if (e.target && e.target.name === 'issue_date') updateYearDisplay();
   });
   form.addEventListener('change', (e) => {
-    if (e.target && e.target.name === 'issue_date') updateYearDisplay();
+    const t = e.target;
+    if (t && t.matches) {
+      if (t.name === 'issue_date') {
+        updateYearDisplay();
+      } else if (t.matches('[data-field="youtube_video_url"]')) {
+        const card = t.closest('.podcast-card');
+        if (card) {
+          const zc = card.querySelector('[data-field="zoomcast_url"]');
+          if (zc) {
+            zc.value = t.value;
+            zc.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      }
+    }
   });
   // Re-validate required fields on every keystroke so the inline error
   // hides the moment the user types something and the Download button

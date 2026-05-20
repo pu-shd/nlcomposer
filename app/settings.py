@@ -23,7 +23,7 @@ from .db import now_iso
 
 from pydantic import BaseModel, Field
 
-from .models import SanitizedHttpUrl
+from .models import CollapsedHtml, SanitizedHttpUrl
 
 
 class AppSettings(BaseModel):
@@ -70,11 +70,11 @@ class AppSettings(BaseModel):
             "missing or not yet ready."
         ),
     )
-    default_intro_html: Optional[str] = Field(
+    default_intro_html: CollapsedHtml = Field(
         default=None,
         description="Carry-forward intro paragraph(s) for new drafts. Raw HTML.",
     )
-    default_footer_html: Optional[str] = Field(
+    default_footer_html: CollapsedHtml = Field(
         default=None,
         description="Carry-forward footer for new drafts. Raw HTML.",
     )

@@ -1419,3 +1419,35 @@ def test_preview_endpoint_links_episode_title_to_youtube_url(sample_issue, clien
     # It should render a link wrapping the title
     expected_link = '<a href="https://www.youtube.com/watch?v=TEST_EPISODE_VIDEO" style="color:#1a4480;text-decoration:none;">Test Video Episode Title Link</a>'
     assert expected_link in body
+
+
+def test_collapse_html_line_breaks_validation():
+    """Verify that multiple consecutive empty paragraphs and line breaks are collapsed by the validator."""
+    from datetime import date
+    from app.models import NewsletterIssue
+    from app.settings import AppSettings
+    
+    raw_intro = "<p>First paragraph</p><p><br></p><p><br></p><p>Second paragraph</p>"
+    raw_footer = "<p>Some text</p><br><br><br><p>Other text</p>"
+    
+    issue = NewsletterIssue(
+        issue_year=14,
+        issue_number=1,
+        issue_title="test",
+        issue_date=date(2026, 5, 20),
+        intro_html=raw_intro,
+        footer_html=raw_footer,
+    )
+    
+    # Assert they are collapsed down to at most a single line break/paragraph spacing
+    assert issue.intro_html == "<p>First paragraph</p><p><br></p>\n<p>Second paragraph</p>"
+    assert issue.footer_html == "<p>Some text</p><br/><p>Other text</p>"
+
+    # Test in AppSettings
+    settings = AppSettings(
+        default_intro_html="<p>A</p><p><br></p><p>&nbsp;</p><p><br></p><p>B</p>",
+        default_footer_html="<p>C</p><br /><br/><p>D</p>"
+    )
+    assert settings.default_intro_html == "<p>A</p><p><br></p>\n<p>B</p>"
+    assert settings.default_footer_html == "<p>C</p><br/><p>D</p>"
+
