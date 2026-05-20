@@ -207,16 +207,25 @@
 
   const quillInstances = new Map();
 
-  // Register Quill Table Icon
+  // Register Quill Table Icon and Better Table Module
   if (window.Quill) {
     const icons = Quill.import('ui/icons');
-    icons['table'] = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    const tableSvg = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
       <line x1="1.5" y1="8" x2="14.5" y2="8"/>
       <line x1="1.5" y1="4.5" x2="14.5" y2="4.5"/>
       <line x1="1.5" y1="11.5" x2="14.5" y2="11.5"/>
       <line x1="8" y1="1.5" x2="8" y2="14.5"/>
     </svg>`;
+    icons['table'] = tableSvg;
+    icons['table-better'] = tableSvg;
+
+    if (window.QuillTableBetter) {
+      const QTB = window.QuillTableBetter.default || window.QuillTableBetter;
+      Quill.register({
+        'modules/table-better': QTB
+      }, true);
+    }
   }
 
 
@@ -234,15 +243,30 @@
     if (quillInstances.has(textarea)) return quillInstances.get(textarea);
 
     const isStatic = scope.dataset.quillStatic === 'true';
+    const hasQTB = !!(isStatic && window.QuillTableBetter);
+    const tableButton = hasQTB ? 'table-better' : 'table';
+
     const toolbarOptions = isStatic
-      ? [['bold', 'italic'], [{ header: 2 }], ['link', 'image', 'table']]
+      ? [['bold', 'italic'], [{ header: 2 }], ['link', 'image', tableButton]]
       : [['bold', 'italic'], ['link']];
+
+    const qtbClass = window.QuillTableBetter ? (window.QuillTableBetter.default || window.QuillTableBetter) : null;
 
     const quill = new Quill(container, {
       theme: 'snow',
       modules: {
         toolbar: toolbarOptions,
-        table: isStatic ? true : false,
+        table: false, // disable native table
+        ...(hasQTB ? {
+          'table-better': {
+            language: 'en_US',
+            menus: ['column', 'row', 'merge', 'table', 'cell', 'wrap', 'delete'],
+            toolbarTable: true
+          },
+          keyboard: {
+            bindings: qtbClass ? (qtbClass.keyboardBindings || {}) : {}
+          }
+        } : {})
       },
       placeholder: textarea.placeholder || '',
     });
@@ -292,12 +316,14 @@
           },
         });
       });
-      toolbar.addHandler('table', () => {
-        const table = quill.getModule('table');
-        if (table) {
-          table.insertTable(3, 3);
-        }
-      });
+      if (!hasQTB) {
+        toolbar.addHandler('table', () => {
+          const table = quill.getModule('table');
+          if (table) {
+            table.insertTable(3, 3);
+          }
+        });
+      }
     }
 
     quillInstances.set(textarea, quill);
