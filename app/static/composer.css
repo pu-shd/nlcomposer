@@ -590,7 +590,10 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   gap: 6px;
   color: var(--text);
   font-size: 13px;
+  height: 32px;
+  margin-top: auto;
 }
+
 
 #composer input[type="text"],
 #composer input[type="email"],
@@ -1688,6 +1691,16 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
 }
 .static-richtext .ql-editor {
   min-height: 80px;
+}
+.static-richtext .ql-editor table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+}
+.static-richtext .ql-editor td {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  min-width: 2em;
 }
 .ql-toolbar.ql-snow {
   border: none;

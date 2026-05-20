@@ -207,6 +207,19 @@
 
   const quillInstances = new Map();
 
+  // Register Quill Table Icon
+  if (window.Quill) {
+    const icons = Quill.import('ui/icons');
+    icons['table'] = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
+      <line x1="1.5" y1="8" x2="14.5" y2="8"/>
+      <line x1="1.5" y1="4.5" x2="14.5" y2="4.5"/>
+      <line x1="1.5" y1="11.5" x2="14.5" y2="11.5"/>
+      <line x1="8" y1="1.5" x2="8" y2="14.5"/>
+    </svg>`;
+  }
+
+
   /**
    * Initialize a Quill editor on a [data-quill-field] scope.
    * Syncs content back to the hidden sibling textarea on every change.
@@ -222,13 +235,14 @@
 
     const isStatic = scope.dataset.quillStatic === 'true';
     const toolbarOptions = isStatic
-      ? [['bold', 'italic'], [{ header: 2 }], ['link', 'image']]
+      ? [['bold', 'italic'], [{ header: 2 }], ['link', 'image', 'table']]
       : [['bold', 'italic'], ['link']];
 
     const quill = new Quill(container, {
       theme: 'snow',
       modules: {
         toolbar: toolbarOptions,
+        table: isStatic ? true : false,
       },
       placeholder: textarea.placeholder || '',
     });
@@ -277,6 +291,12 @@
             quill.setSelection(range.index + 1, Quill.sources.SILENT);
           },
         });
+      });
+      toolbar.addHandler('table', () => {
+        const table = quill.getModule('table');
+        if (table) {
+          table.insertTable(3, 3);
+        }
       });
     }
 
@@ -4288,8 +4308,8 @@
   );
   addStatic(
     {
-      title: 'Sponsor / book / conference',
-      html: '<p>Add your own content here.</p>',
+      title: '',
+      html: '',
       show_title: true,
     },
     staticsContainerOf(seedStaticsSection),
