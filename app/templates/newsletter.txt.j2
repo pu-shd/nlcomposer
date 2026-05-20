@@ -35,8 +35,8 @@
 {% endfor -%}
 
 {% elif section.type == "static_blocks" -%}
-{% for block in section.blocks if block.enabled -%}
-{% if block.title %}--- {{ block.title }} ---{% endif %}
+{% for block in section.blocks -%}
+{% if block.show_title and block.title %}--- {{ block.title }} ---{% endif %}
 {{ block.html | striptags }}
 
 {% endfor -%}

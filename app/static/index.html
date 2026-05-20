@@ -128,7 +128,7 @@
           </button>
           <button type="button" data-add-type="static_blocks" role="menuitem">
             <span class="fab-menu-icon" aria-hidden="true">＋</span>
-            <span>Static blocks section</span>
+            <span>Blocks section</span>
           </button>
         </div>
         <button type="button" id="add-section-fab" class="fab" aria-label="Add a section" aria-haspopup="menu" aria-expanded="false" title="Add a section">
@@ -317,15 +317,25 @@
 </template>
 
 <template id="static-template">
-  <fieldset class="card">
-    <legend>Block <span class="idx"></span> <button type="button" class="btn-remove" aria-label="Remove">×</button></legend>
+  <details class="card static-card" open>
+    <summary class="card-header">
+      <span class="drag-handle" aria-label="Drag to reorder" title="Drag to reorder">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="6" cy="3.5" r="1.1" fill="currentColor"/><circle cx="10" cy="3.5" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="8" r="1.1" fill="currentColor"/><circle cx="10" cy="8" r="1.1" fill="currentColor"/>
+          <circle cx="6" cy="12.5" r="1.1" fill="currentColor"/><circle cx="10" cy="12.5" r="1.1" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="card-title">Block <span class="idx"></span><span class="card-title-preview"></span></span>
+      <button type="button" class="btn-remove" aria-label="Remove">×</button>
+    </summary>
     <div class="grid-2">
-      <label>Title
+      <label>Title <span class="required-star">*</span>
         <input type="text" data-field="title" required>
       </label>
       <label class="checkbox">
-        <input type="checkbox" data-field="enabled" checked>
-        Enabled
+        <input type="checkbox" data-field="show_title" checked>
+        Show title in newsletter
       </label>
       <label class="span-2">HTML
         <div class="static-richtext" data-quill-field="html" data-quill-static="true">
@@ -335,7 +345,7 @@
         <small class="fetch-status" data-role="static-rt-status"></small>
       </label>
     </div>
-  </fieldset>
+  </details>
 </template>
 
 <template id="articles-section-template">
@@ -384,10 +394,9 @@
           <circle cx="6" cy="12.5" r="1.1" fill="currentColor"/><circle cx="10" cy="12.5" r="1.1" fill="currentColor"/>
         </svg>
       </span>
-      <span class="section-title">Static blocks <span class="count" data-role="static-count">0</span></span>
-      <button type="button" class="btn-remove section-remove" aria-label="Remove Static blocks section" title="Remove Static blocks section">&times;</button>
+      <span class="section-title">Blocks <span class="count" data-role="static-count">0</span></span>
+      <button type="button" class="btn-remove section-remove" aria-label="Remove Blocks section" title="Remove Blocks section">&times;</button>
     </summary>
-    <p class="hint">Sponsor blurb, book promo, ATS/BTR conferences, etc. Carry these forward across issues.</p>
     <div class="statics-container repeating" data-role="statics-container"></div>
     <button type="button" class="btn add" data-action="add-static">+ Add block</button>
   </details>

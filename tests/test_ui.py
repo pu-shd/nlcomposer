@@ -25,7 +25,7 @@ def test_index_serves_composer_page(client: TestClient):
         "Issue Details",
         "Articles",
         "Podcast",
-        "Static blocks",
+        "Blocks",
         "Footer",
     ):
         assert legend in body, f"composer page missing section: {legend}"

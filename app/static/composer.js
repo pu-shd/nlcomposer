@@ -64,7 +64,7 @@
   const allArticleCards = () =>
     [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="articles"] .articles-container .article-card')];
   const allStaticCards = () =>
-    [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="static_blocks"] .statics-container fieldset.card')];
+    [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="static_blocks"] .statics-container .static-card')];
   const allPodcastCards = () =>
     [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="podcast"] .podcasts-container .podcast-card')];
 
@@ -426,6 +426,14 @@
     preview.textContent = h ? ` — ${h.length > 60 ? h.slice(0, 57) + '…' : h}` : '';
   };
 
+  const updateStaticHeaderPreview = (card) => {
+    const preview = card.querySelector('.card-title-preview');
+    const input = card.querySelector('[data-field="title"]');
+    if (!preview || !input) return;
+    const h = (input.value || '').trim();
+    preview.textContent = h ? ` — ${h.length > 60 ? h.slice(0, 57) + '…' : h}` : '';
+  };
+
   const renumber = () => {
     // Article numbering is global across every Articles section so that
     // a highlight reference like "#3" still maps to a unique card even
@@ -438,6 +446,7 @@
     allStaticCards().forEach((card, i) => {
       const idx = card.querySelector('.idx');
       if (idx) idx.textContent = `#${i + 1}`;
+      updateStaticHeaderPreview(card);
     });
     allPodcastCards().forEach((card, i) => {
       const idx = card.querySelector('.idx');
@@ -451,7 +460,7 @@
     });
     sortableSectionsOfType('static_blocks').forEach((sec) => {
       const badge = sec.querySelector('[data-role="static-count"]');
-      if (badge) badge.textContent = sec.querySelectorAll('fieldset.card').length;
+      if (badge) badge.textContent = sec.querySelectorAll('.static-card').length;
     });
     sortableSectionsOfType('podcast').forEach((sec) => {
       const badge = sec.querySelector('[data-role="podcast-count"]');
@@ -834,6 +843,29 @@
     });
   };
 
+  const wireStaticDragHandle = (card) => {
+    const handle = card.querySelector('.drag-handle');
+    if (!handle) return;
+    handle.addEventListener('mousedown', () => { card.draggable = true; });
+    handle.addEventListener('mouseup', () => { card.draggable = false; });
+    // Click on the handle (no drag) would otherwise toggle <details>.
+    handle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+    card.addEventListener('dragstart', (e) => {
+      if (!card.draggable) return;
+      draggingEl = card;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', 'static');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      card.draggable = false;
+      if (draggingEl === card) draggingEl = null;
+      renumber();
+      schedulePreview();
+    });
+  };
+
   const podcastsContainerAtPoint = (x, y) => {
     const sections = [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="podcast"]')];
     for (const sec of sections) {
@@ -846,8 +878,31 @@
     return null;
   };
 
+  const staticsContainerAtPoint = (x, y) => {
+    const sections = [...sortableSections.querySelectorAll(':scope > .sortable-section[data-section-type="static_blocks"]')];
+    for (const sec of sections) {
+      if (!sec.open) continue;
+      const box = sec.getBoundingClientRect();
+      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) {
+        return sec.querySelector('.statics-container');
+      }
+    }
+    return null;
+  };
+
   const getPodcastDragAfterElement = (container, y) => {
     const els = [...container.querySelectorAll(':scope > .podcast-card:not(.dragging)')];
+    let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+    els.forEach((child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) closest = { offset, element: child };
+    });
+    return closest.element;
+  };
+
+  const getStaticDragAfterElement = (container, y) => {
+    const els = [...container.querySelectorAll(':scope > .static-card:not(.dragging)')];
     let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
     els.forEach((child) => {
       const box = child.getBoundingClientRect();
@@ -898,6 +953,13 @@
       if (!container) return;
       e.preventDefault();
       const after = getDragAfterElement(container, e.clientY);
+      if (after == null) container.appendChild(draggingEl);
+      else if (after !== draggingEl) container.insertBefore(draggingEl, after);
+    } else if (draggingEl.classList.contains('static-card')) {
+      const container = staticsContainerAtPoint(e.clientX, e.clientY);
+      if (!container) return;
+      e.preventDefault();
+      const after = getStaticDragAfterElement(container, e.clientY);
       if (after == null) container.appendChild(draggingEl);
       else if (after !== draggingEl) container.insertBefore(draggingEl, after);
     } else if (draggingEl.classList.contains('highlight-row')) {
@@ -1145,7 +1207,7 @@
     return node;
   };
 
-  // ───────── Static blocks ───────────────────────────────────────────
+  // ───────── Blocks ──────────────────────────────────────────────────
   const addStatic = (data = {}, container = null) => {
     const targetContainer = container
       || (sortableSectionsOfType('static_blocks')[0]?.querySelector('[data-role="statics-container"]'));
@@ -1157,11 +1219,22 @@
       if (el.type === 'checkbox') el.checked = !!v;
       else if (v !== null && v !== undefined) el.value = v;
     });
-    node.querySelector('.btn-remove').addEventListener('click', () => {
+    const removeBtn = node.querySelector('.btn-remove');
+    removeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       node.remove();
       renumber();
       schedulePreview();
     });
+    const titleInput = node.querySelector('[data-field="title"]');
+    if (titleInput) {
+      titleInput.addEventListener('input', () => {
+        updateStaticHeaderPreview(node);
+        schedulePreview();
+      });
+    }
+    wireStaticDragHandle(node);
     node.querySelectorAll('[data-quill-field]').forEach((scope) => {
       wireQuillEditor(scope);
     });
@@ -1171,7 +1244,7 @@
   };
 
   // ───────── Sortable section management ────────────────────────────
-  // Sections (Articles / Podcast / Static blocks) live in #sortable-
+  // Sections (Articles / Podcast / Blocks) live in #sortable-
   // sections. They are added via the floating "+" button or seeded as
   // defaults at init. When more than one section exists, drag handles on
   // each section's summary bar appear and the user can reorder them
@@ -1245,11 +1318,11 @@
         e.stopPropagation();
         const type = section.dataset.sectionType;
         const label = type === 'articles' ? 'Articles' :
-                      type === 'podcast' ? 'Podcast' : 'Static blocks';
+                      type === 'podcast' ? 'Podcast' : 'Blocks';
         // Only prompt if the section actually has content the user
         // would lose; an empty newly-spawned section deletes silently.
         const hasContent =
-          section.querySelectorAll('.article-card, fieldset.card').length > 0 ||
+          section.querySelectorAll('.article-card, .static-card').length > 0 ||
           (type === 'podcast' && !!podcastNodeOf(section));
         if (hasContent) {
           const ok = await confirmDelete(`Remove this ${label} section? Its contents will be discarded.`);
@@ -1741,14 +1814,14 @@
         });
         formSections.push({ type, id: sectionId, count });
       } else if (type === 'static_blocks') {
-        const cards = [...section.querySelectorAll('fieldset.card')];
+        const cards = [...section.querySelectorAll('.static-card')];
         let count = 0;
         cards.forEach((card) => {
           const fields = collectFields(card);
           const block = {
             title: fields.title || '',
             html: fields.html || '',
-            enabled: !!fields.enabled,
+            show_title: fields.show_title !== false,
           };
           if (block.title || block.html) {
             issue.static_blocks.push(block);
@@ -4057,8 +4130,8 @@
   addStatic(
     {
       title: 'Sponsor / book / conference',
-      html: '<p>Carry-forward block — duplicate from last issue.</p>',
-      enabled: true,
+      html: '<p>Add your own content here.</p>',
+      show_title: true,
     },
     staticsContainerOf(seedStaticsSection),
   );

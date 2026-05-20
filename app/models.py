@@ -119,16 +119,15 @@ class YouTubeEpisode(BaseModel):
 
 
 class StaticBlock(BaseModel):
-    """A repeated/static block — sponsor blurb, book promo, conference promo, etc.
+    """A block item (sponsor blurb, book promo, etc.) displayed in the newsletter.
 
-    Stored as raw HTML so Alain can hand-tune the rendering once and reuse it
-    across issues. The composer UI offers a "carry forward from last issue"
-    button to populate these.
+    Stored as raw HTML. Individual blocks can be collapsed and reordered
+    within a Blocks section in the composer.
     """
 
     title: str
     html: str
-    enabled: bool = True
+    show_title: bool = True
 
 
 class HighlightRef(BaseModel):
