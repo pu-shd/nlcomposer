@@ -113,3 +113,42 @@ def test_toggle_preview_pinning(client: TestClient):
     assert ".preview-frame {" in css
     frame_block = css[css.index(".preview-frame {"):]
     assert "overflow: auto" in frame_block[:150]
+
+
+def test_safari_centering_and_containment_regression(client: TestClient):
+    """Verify CSS containment properties and HTML centering wrappers to prevent Safari layout regression."""
+    css = client.get("/static/composer.css").text
+
+    # 1. Verify min-width: 0 on .form-pane to prevent grid column expansion
+    assert ".form-pane {" in css
+    form_pane_block = css[css.index(".form-pane {"):]
+    assert "min-width: 0" in form_pane_block[:200]
+
+    # 2. Verify min-width: 0 on .preview-pane to prevent grid column expansion
+    assert ".preview-pane {" in css
+    preview_pane_block = css[css.index(".preview-pane {"):]
+    assert "min-width: 0" in preview_pane_block[:200]
+
+    # 3. Verify HTML centering wrapper is present in newsletter.html.j2 template
+    with open("app/templates/newsletter.html.j2", "r", encoding="utf-8") as f:
+        tmpl_content = f.read()
+
+    assert '<div style="margin:0 auto;max-width:640px;width:100%;">' in tmpl_content
+    assert '<table role="presentation" align="center" width="640"' in tmpl_content
+
+
+def test_iframe_recreation_on_preview_update(client: TestClient):
+    """Verify that composer.js recreates the preview iframe on updates to prevent Safari cumulative scaling cache bugs."""
+    js = client.get("/static/composer.js").text
+
+    # Ensure updatePreviewContent function exists and contains the iframe recreation logic
+    assert "const updatePreviewContent =" in js
+    update_func = js[js.index("const updatePreviewContent ="):]
+
+    # Verify it creates a new iframe element and replaces it in DOM
+    assert "document.createElement('iframe')" in update_func[:500]
+    assert "newPreview.id = 'preview'" in update_func[:500]
+    assert "newPreview.setAttribute('sandbox', 'allow-same-origin allow-scripts')" in update_func[:500]
+    assert "preview.parentNode.replaceChild(newPreview, preview)" in update_func[:500]
+    assert "preview = newPreview" in update_func[:500]
+
