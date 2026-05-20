@@ -29,7 +29,7 @@
     });
 
   const form = document.getElementById('composer');
-  const preview = document.getElementById('preview');
+  let preview = document.getElementById('preview');
   const previewMeta = document.getElementById('preview-meta');
   const status = document.getElementById('status');
 
@@ -1998,11 +1998,19 @@
 
   const updatePreviewContent = (html) => {
     try {
+      const newPreview = document.createElement('iframe');
+      newPreview.id = 'preview';
+      newPreview.title = 'Newsletter preview';
+      newPreview.setAttribute('sandbox', 'allow-same-origin allow-scripts');
+      preview.parentNode.replaceChild(newPreview, preview);
+      preview = newPreview;
+
       const doc = preview.contentDocument || preview.contentWindow.document;
       doc.open();
       doc.write(html);
       doc.close();
     } catch (e) {
+      console.warn("Recreating iframe failed, falling back to srcdoc:", e);
       preview.srcdoc = html;
     }
   };
