@@ -1857,6 +1857,11 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   color: var(--muted);
 }
 
+.channel-refresh-stats.syncing {
+  color: #1565c0;
+  font-style: italic;
+}
+
 .episodes-main {
   display: flex;
   flex-direction: column;

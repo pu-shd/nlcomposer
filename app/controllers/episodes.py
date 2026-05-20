@@ -94,6 +94,7 @@ def get_channels(
     now = datetime.now(timezone.utc)
     for c in channels:
         if c.id in _syncing_channels:
+            c.last_refresh_status = "syncing"
             continue
 
         is_stale = False
@@ -194,7 +195,10 @@ def get_channel_details(
     conn: sqlite3.Connection = Depends(get_db)
 ):
     """Get details for a managed YouTube channel."""
-    return or_404(get_channel(conn, channel_id), "Channel")
+    channel = or_404(get_channel(conn, channel_id), "Channel")
+    if channel.id in _syncing_channels:
+        channel.last_refresh_status = "syncing"
+    return channel
 
 
 

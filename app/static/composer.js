@@ -3918,6 +3918,7 @@
     }
   };
 
+  const _lastEpisodesJson = {};
   let episodesPollInterval = null;
 
   const startEpisodesPolling = () => {
@@ -3926,12 +3927,12 @@
       if (episodesDialog && episodesDialog.open) {
         await refreshEpisodesChannels();
         if (selectedChannelId) {
-          await refreshEpisodesList(selectedChannelId);
+          await refreshEpisodesList(selectedChannelId, true);
         }
       } else {
         stopEpisodesPolling();
       }
-    }, 5000);
+    }, 10000);
   };
 
   const stopEpisodesPolling = () => {
@@ -3949,7 +3950,10 @@
       episodesChannelsList.innerHTML = channels.map((c) => {
         let statsText = '';
         let statsClass = 'never';
-        if (c.last_refresh_at) {
+        if (c.last_refresh_status === 'syncing') {
+          statsText = 'Syncing...';
+          statsClass = 'syncing';
+        } else if (c.last_refresh_at) {
           const timeAgo = formatTimeAgo(c.last_refresh_at);
           if (c.last_refresh_status === 'success') {
             statsText = `Synced ${timeAgo} (+${c.last_refresh_added_count || 0})`;
@@ -4002,20 +4006,32 @@
       const channel = await res.json();
       episodesSelectedChannelName.textContent = channel.name;
       episodesMainActions.hidden = false;
-      await refreshEpisodesList(id);
+      await refreshEpisodesList(id, false);
     }
   };
 
-  const refreshEpisodesList = async (channelId) => {
-    setEpisodesStatus('Loading episodes...');
+  const refreshEpisodesList = async (channelId, silent = false) => {
+    if (!silent) {
+      setEpisodesStatus('Loading episodes...');
+    }
     try {
       const res = await fetch(`/api/episodes/channels/${channelId}/episodes`);
       if (!res.ok) {
-        setEpisodesStatus('Failed to load episodes.', 'error');
+        if (!silent) setEpisodesStatus('Failed to load episodes.', 'error');
         return;
       }
       const episodes = await res.json();
-      setEpisodesStatus('');
+      if (!silent) {
+        setEpisodesStatus('');
+      }
+
+      // Check if episodes have changed to avoid unnecessary DOM updates and flashing
+      const currentIds = episodes.map(e => e.video_id).join(',');
+      if (silent && _lastEpisodesJson[channelId] === currentIds) {
+        return; // No changes, skip DOM rewrite!
+      }
+      _lastEpisodesJson[channelId] = currentIds;
+
       if (episodes.length === 0) {
         episodesList.innerHTML = '<li class="hint">No episodes found. Click Refresh to fetch from YouTube.</li>';
       } else {
@@ -4045,7 +4061,7 @@
         `).join('');
       }
     } catch (err) {
-      setEpisodesStatus(`Network error: ${err.message}`, 'error');
+      if (!silent) setEpisodesStatus(`Network error: ${err.message}`, 'error');
     }
   };
 
