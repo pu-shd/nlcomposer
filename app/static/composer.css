@@ -199,6 +199,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   border-right: 1px solid var(--border);
   background: var(--bg);
   min-height: 0;
+  min-width: 0;
 }
 #composer {
   grid-area: stack;
@@ -352,6 +353,7 @@ body.layout-resizing { cursor: col-resize; user-select: none; }
   display: flex;
   flex-direction: column;
   background: var(--panel);
+  min-width: 0;
 }
 
 .preview-header {
