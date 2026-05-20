@@ -1972,16 +1972,6 @@
     }
   };
 
-  // ───────── Wiring ──────────────────────────────────────────────────
-  // Per-section "+ Add article" / "+ Add block" buttons live inside each
-  // sortable-section clone and are wired by wireSection(); the only
-  // top-level adder still living in the fixed Highlights section is
-  // "+ Add highlight" below.
-  document.getElementById('add-highlight').addEventListener('click', () => {
-    addHighlight();
-    schedulePreview();
-  });
-
   // ───────── Floating "+" Add-section button ───────────────────────
   const addSectionFab = document.getElementById('add-section-fab');
   const addSectionMenu = document.getElementById('add-section-menu');
