@@ -1996,6 +1996,17 @@
     }, previewDebounceMs);
   };
 
+  const updatePreviewContent = (html) => {
+    try {
+      const doc = preview.contentDocument || preview.contentWindow.document;
+      doc.open();
+      doc.write(html);
+      doc.close();
+    } catch (e) {
+      preview.srcdoc = html;
+    }
+  };
+
   // Friendly placeholder shown in the iframe when required fields are
   // missing. Saves the user from seeing the raw 422 / pydantic dump
   // mid-edit; the inline field errors (under each input) tell them
@@ -2017,7 +2028,7 @@
         <p style="margin:8px 0 0;font-size:12px;color:#6b7280;">The Download button is disabled until both are set.</p>
       </div>`;
 
-    preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>${previewStyles}</style></head><body>${html}</body></html>`;
+    updatePreviewContent(`<!doctype html><html><head><meta charset="utf-8"><style>${previewStyles}</style></head><body>${html}</body></html>`);
     previewMeta.textContent = '';
   };
 
@@ -2047,12 +2058,12 @@
       if (!res.ok) {
         const detail = await res.text();
         const trimmed = detail.length > 240 ? detail.slice(0, 240) + '…' : detail;
-        preview.srcdoc = `<!doctype html><html><body style="font-family:ui-monospace,monospace;padding:16px;color:#b91c1c;"><strong>${res.status} ${res.statusText}</strong><pre style="white-space:pre-wrap;">${trimmed.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</pre></body></html>`;
+        updatePreviewContent(`<!doctype html><html><body style="font-family:ui-monospace,monospace;padding:16px;color:#b91c1c;"><strong>${res.status} ${res.statusText}</strong><pre style="white-space:pre-wrap;">${trimmed.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</pre></body></html>`);
         setStatus(`Preview ${res.status}`, 'error');
         return;
       }
       const html = await res.text();
-      preview.srcdoc = html;
+      updatePreviewContent(html);
       previewMeta.textContent = `${html.length.toLocaleString()} bytes`;
       setStatus('Updated', 'ok');
     } catch (e) {
