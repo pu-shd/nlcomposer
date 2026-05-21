@@ -69,6 +69,7 @@ def download_eml(
     issue, masthead_bytes, masthead_filename = _resolve_masthead_logo(issue, conn)
     eml_bytes = build_eml(
         issue,
+        conn=conn,
         masthead_logo_bytes=masthead_bytes,
         masthead_logo_filename=masthead_filename,
     )

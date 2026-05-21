@@ -267,3 +267,189 @@ def test_render_html_passes_intro_pull_quote_and_comment_through_safe(sample_iss
     assert "Hello <strong>everyone</strong>!" in html
     assert "quote with <em>emphasis</em>" in html
     assert '<a href="https://example.com/x">link</a>' in html
+
+
+# ───────── Inline media embedding (embed_all_media) ──────────────────
+
+
+def test_build_eml_embeds_all_media_when_enabled(sample_issue):
+    from app.db import connect, init_db
+    from app.settings import save_settings, AppSettings
+    from app.media_store import create_upload, upsert_by_url, mark_ready
+    from app.models import Article, StaticBlock
+
+    conn = connect()
+    init_db(conn)
+    try:
+        save_settings(conn, AppSettings(embed_all_media=True))
+
+        # Upload an article logo
+        upload_item = create_upload(
+            conn,
+            kind="logo",
+            filename="publogo.png",
+            content_type="image/png",
+            content_bytes=b"fake_pub_logo_bytes",
+        )
+
+        # Import a block image by URL and mark ready
+        url_item = upsert_by_url(
+            conn, url="https://example.com/blockimg.jpg", kind="image"
+        )
+        mark_ready(
+            conn,
+            url_item.id,
+            content_type="image/jpeg",
+            content_bytes=b"fake_block_bytes",
+        )
+
+        # Attach these in a custom issue
+        issue = sample_issue.model_copy(
+            update={
+                "articles": [
+                    sample_issue.articles[0].model_copy(
+                        update={"publication_logo_media_id": upload_item.id}
+                    )
+                ],
+                "static_blocks": [
+                    StaticBlock(
+                        title="Sponsor Block",
+                        html=f'<p>Check out our sponsor: <img src="/api/media/{url_item.id}/content" alt="Sponsor"></p>',
+                        show_title=True,
+                    )
+                ],
+            }
+        )
+
+        raw = build_eml(issue, conn=conn)
+        msg = email.message_from_bytes(raw, policy=policy.default)
+
+        # We should find two inline-related images (publogo.png and blockimg.jpg)
+        image_parts = [
+            p for p in msg.walk() if p.get_content_type().startswith("image/")
+        ]
+        assert len(image_parts) == 2
+
+        # Verify MIME types and filenames/bytes
+        pub_part = next(p for p in image_parts if p.get_filename() == "publogo.png")
+        assert pub_part.get_content_type() == "image/png"
+        assert pub_part.get_content() == b"fake_pub_logo_bytes"
+
+        block_part = next(
+            p for p in image_parts if p.get_filename() == "media-2.png" or "blockimg" in p.get_filename()
+        )
+        assert block_part.get_content_type() == "image/jpeg"
+        assert block_part.get_content() == b"fake_block_bytes"
+
+        html_part = next(p for p in msg.walk() if p.get_content_type() == "text/html")
+        html_content = html_part.get_content()
+
+        # The image src attributes must have been rewritten to the cids
+        pub_cid = pub_part.get("Content-ID").strip("<>")
+        block_cid = block_part.get("Content-ID").strip("<>")
+        assert f'src="cid:{pub_cid}"' in html_content
+        assert f'src="cid:{block_cid}"' in html_content
+    finally:
+        conn.close()
+
+
+def test_build_eml_embeds_all_media_fallback_to_url(sample_issue, capsys):
+    from app.db import connect, init_db
+    from app.settings import save_settings, AppSettings
+    from app.media_store import upsert_by_url
+    from app.models import StaticBlock
+
+    conn = connect()
+    init_db(conn)
+    try:
+        save_settings(conn, AppSettings(embed_all_media=True))
+
+        # Import a URL item but leave it pending (no bytes)
+        url_item = upsert_by_url(
+            conn, url="https://example.com/pending_blockimg.jpg", kind="image"
+        )
+
+        issue = sample_issue.model_copy(
+            update={
+                "static_blocks": [
+                    StaticBlock(
+                        title="Sponsor Block",
+                        html=f'<p><img src="/api/media/{url_item.id}/content" alt="Sponsor"></p>',
+                        show_title=True,
+                    )
+                ],
+            }
+        )
+
+        raw = build_eml(issue, conn=conn)
+        msg = email.message_from_bytes(raw, policy=policy.default)
+
+        # No inline image should be attached
+        image_parts = [
+            p for p in msg.walk() if p.get_content_type().startswith("image/")
+        ]
+        assert len(image_parts) == 0
+
+        html_part = next(p for p in msg.walk() if p.get_content_type() == "text/html")
+        html_content = html_part.get_content()
+
+        # Should fall back to the public URL
+        assert 'src="https://example.com/pending_blockimg.jpg"' in html_content
+
+        # Should have output a warning to stdout
+        captured = capsys.readouterr()
+        assert "Warning: Media bytes not found" in captured.out
+    finally:
+        conn.close()
+
+
+def test_build_eml_embeds_all_media_disabled(sample_issue):
+    from app.db import connect, init_db
+    from app.settings import save_settings, AppSettings
+    from app.media_store import upsert_by_url, mark_ready
+    from app.models import StaticBlock
+
+    conn = connect()
+    init_db(conn)
+    try:
+        save_settings(conn, AppSettings(embed_all_media=False))
+
+        # Create a URL item with bytes
+        url_item = upsert_by_url(
+            conn, url="https://example.com/blockimg.jpg", kind="image"
+        )
+        mark_ready(
+            conn,
+            url_item.id,
+            content_type="image/jpeg",
+            content_bytes=b"fake_block_bytes",
+        )
+
+        issue = sample_issue.model_copy(
+            update={
+                "static_blocks": [
+                    StaticBlock(
+                        title="Sponsor Block",
+                        html=f'<p><img src="/api/media/{url_item.id}/content" alt="Sponsor"></p>',
+                        show_title=True,
+                    )
+                ],
+            }
+        )
+
+        raw = build_eml(issue, conn=conn)
+        msg = email.message_from_bytes(raw, policy=policy.default)
+
+        # No image should be attached (embed_all_media is False)
+        image_parts = [
+            p for p in msg.walk() if p.get_content_type().startswith("image/")
+        ]
+        assert len(image_parts) == 0
+
+        html_part = next(p for p in msg.walk() if p.get_content_type() == "text/html")
+        html_content = html_part.get_content()
+
+        # Should use the public URL
+        assert 'src="https://example.com/blockimg.jpg"' in html_content
+    finally:
+        conn.close()
