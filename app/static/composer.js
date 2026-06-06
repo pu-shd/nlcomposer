@@ -682,10 +682,10 @@
       }
       const url = logoInput?.value;
       const mediaId = mediaIdInput?.value;
-      if (mediaId) {
+      if (mediaId && /^[a-zA-Z0-9\-_]+$/.test(mediaId)) {
         thumbImg.src = `/api/media/${mediaId}/content`;
         thumbImg.hidden = false;
-      } else if (url) {
+      } else if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'))) {
         thumbImg.src = url;
         thumbImg.hidden = false;
       } else {
@@ -3811,7 +3811,7 @@
 
     if (filtered.length === 0) {
       const msg = query
-        ? `No matches for "${query}".`
+        ? `No matches for "${escapeHtml(query)}".`
         : `No ${kindFilter || 'media'} entries yet — add one in Logos & Media first.`;
       mediaPickerList.innerHTML = `<li class="hint">${msg}</li>`;
       return;
