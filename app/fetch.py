@@ -11,7 +11,9 @@ network call without touching the public Internet.
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import socket
 from datetime import date, datetime
 from typing import Any, Iterable, Optional, TypedDict
 from urllib.parse import urljoin, urlparse
@@ -61,13 +63,41 @@ class ArticleMetadata(TypedDict, total=False):
     read_more_url: str
 
 
+def _is_public_ip(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return not (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_multicast
+        or addr.is_reserved
+        or addr.is_unspecified
+    )
+
+
+def _host_resolves_public(host: str) -> bool:
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        sockaddr = info[4]
+        ip = sockaddr[0] if sockaddr else ""
+        if not _is_public_ip(ip):
+            return False
+    return True
+
+
 def validate_fetch_url(url: str) -> str:
     """Validate a URL is safe(ish) to fetch from this local tool.
 
-    Rejects non-http(s) schemes, missing hosts, and obvious loopback
-    targets. This is not a hardened SSRF filter — the composer is intended
-    to run on a developer's laptop — but it stops the most embarrassing
-    accidents (``file://``, ``http://localhost``).
+    Rejects non-http(s) schemes, missing hosts, loopback/private targets,
+    and hosts that fail DNS resolution to public IPs.
     """
 
     cleaned = sanitize_url(url.strip()) or ""
@@ -80,6 +110,8 @@ def validate_fetch_url(url: str) -> str:
     if host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or host.endswith(
         ".localhost"
     ):
+        raise ValueError("URL host is not allowed")
+    if not _host_resolves_public(host):
         raise ValueError("URL host is not allowed")
     return cleaned
 
