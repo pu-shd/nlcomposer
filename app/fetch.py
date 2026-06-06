@@ -82,7 +82,10 @@ def _host_resolves_public(host: str) -> bool:
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror:
-        return False
+        # If DNS resolution fails, it is not resolving to a private/loopback IP.
+        # Let the HTTP client handle the connection/resolution failure, which
+        # will correctly result in a 502 (network failure) error.
+        return True
     if not infos:
         return False
     for info in infos:

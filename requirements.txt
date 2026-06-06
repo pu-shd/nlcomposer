@@ -5,6 +5,7 @@ pydantic>=2.5
 python-multipart>=0.0.9
 httpx>=0.27
 beautifulsoup4>=4.12
+starlette>=1.0.1
 
 # YouTube / Google API surface for the planned Episodes import.
 # google-api-python-client wraps the YouTube Data API v3 (channel +
