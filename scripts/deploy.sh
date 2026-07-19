@@ -132,6 +132,7 @@ AZ_ENTRA_APP="${AZ_ENTRA_APP}"
 AZ_ENTRA_PRINCIPALS="${AZ_ENTRA_PRINCIPALS}"
 AZ_ENTRA_MINIMAL_PERMS="${AZ_ENTRA_MINIMAL_PERMS}"
 GH_REPO="${GH_REPO}"
+TARGET_SUFFIX="${TARGET_SUFFIX:-}"
 EOF
   ok "Saved configuration to ${ENV_FILE}"
 }
@@ -201,6 +202,7 @@ ensure_config() {
                       "Strip Graph permissions from Entra app (avoid admin-consent prompt for OIDC sign-in)? [true/false]" \
                       "true"
   prompt_with_default GH_REPO           "GitHub repo (owner/name) for CI"     "${default_repo}"
+  prompt_with_default TARGET_SUFFIX     "Target Suffix (appended to GitHub secrets, e.g. _SDC)" "_SDC"
 
   # Lower-case the storage and ACR names to satisfy Azure naming rules.
   AZ_STORAGE="${AZ_STORAGE:l}"
@@ -219,6 +221,7 @@ ensure_config() {
   info "Allowed      : ${AZ_ENTRA_PRINCIPALS:-<tenant-wide>}"
   info "Minimal perms: ${AZ_ENTRA_MINIMAL_PERMS} (clear requiredResourceAccess on app reg)"
   info "GitHub repo  : ${GH_REPO:-<not set>}"
+  info "Target Suffix: ${TARGET_SUFFIX:-<none>}"
 
   confirm "Save and continue with these values?" || { err "Aborted by user."; exit 1; }
   write_env_file
@@ -915,23 +918,24 @@ EOF
   fi
 
   step "Set GitHub repo secrets via gh CLI"
+  local suffix="${TARGET_SUFFIX:-}"
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     local tenant_id; tenant_id=$(query az account show --query tenantId -o tsv)
-    run gh secret set AZURE_CLIENT_ID       --repo "$GH_REPO" --body "$sp_id"
-    run gh secret set AZURE_TENANT_ID       --repo "$GH_REPO" --body "$tenant_id"
-    run gh secret set AZURE_SUBSCRIPTION_ID --repo "$GH_REPO" --body "$sub_id"
-    run gh secret set AZURE_RESOURCE_GROUP  --repo "$GH_REPO" --body "$AZ_RG"
-    run gh secret set AZURE_ACR_NAME        --repo "$GH_REPO" --body "$AZ_ACR"
-    run gh secret set AZURE_ACA_APP         --repo "$GH_REPO" --body "$AZ_ACA_APP"
-    ok "Secrets set on ${GH_REPO}"
+    run gh secret set "AZURE_CLIENT_ID${suffix}"       --repo "$GH_REPO" --body "$sp_id"
+    run gh secret set "AZURE_TENANT_ID${suffix}"       --repo "$GH_REPO" --body "$tenant_id"
+    run gh secret set "AZURE_SUBSCRIPTION_ID${suffix}" --repo "$GH_REPO" --body "$sub_id"
+    run gh secret set "AZURE_RESOURCE_GROUP${suffix}"  --repo "$GH_REPO" --body "$AZ_RG"
+    run gh secret set "AZURE_ACR_NAME${suffix}"        --repo "$GH_REPO" --body "$AZ_ACR"
+    run gh secret set "AZURE_ACA_APP${suffix}"         --repo "$GH_REPO" --body "$AZ_ACA_APP"
+    ok "Secrets with suffix '${suffix}' set on ${GH_REPO}"
   else
     pause_for_manual "Set GitHub repo secrets manually" \
-      "AZURE_CLIENT_ID=${sp_id}" \
-      "AZURE_TENANT_ID=$(query az account show --query tenantId -o tsv 2>/dev/null || echo '<tenant>')" \
-      "AZURE_SUBSCRIPTION_ID=${sub_id}" \
-      "AZURE_RESOURCE_GROUP=${AZ_RG}" \
-      "AZURE_ACR_NAME=${AZ_ACR}" \
-      "AZURE_ACA_APP=${AZ_ACA_APP}"
+      "AZURE_CLIENT_ID${suffix}=${sp_id}" \
+      "AZURE_TENANT_ID${suffix}=$(query az account show --query tenantId -o tsv 2>/dev/null || echo '<tenant>')" \
+      "AZURE_SUBSCRIPTION_ID${suffix}=${sub_id}" \
+      "AZURE_RESOURCE_GROUP${suffix}=${AZ_RG}" \
+      "AZURE_ACR_NAME${suffix}=${AZ_ACR}" \
+      "AZURE_ACA_APP${suffix}=${AZ_ACA_APP}"
   fi
 
   pause_for_manual "(Optional) GitHub App for richer CI/CD" \
@@ -978,10 +982,11 @@ teardown() {
 
   if [[ -n "${GH_REPO:-}" ]] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     step "Removing GitHub repo secrets"
+    local suffix="${TARGET_SUFFIX:-}"
     for s in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_ACR_NAME AZURE_ACA_APP; do
-      run gh secret delete "$s" --repo "$GH_REPO" 2>/dev/null || true
+      run gh secret delete "${s}${suffix}" --repo "$GH_REPO" 2>/dev/null || true
     done
-    ok "Secrets removed (where present)"
+    ok "Secrets with suffix '${suffix}' removed (where present)"
   fi
 
   pause_for_manual "Verify GitHub App / portal cleanup" \

@@ -1,4 +1,4 @@
-name: Deploy to Azure Container Apps
+name: Deploy to SDC Container App
 
 # Manual-dispatch only. Mirrors `scripts/deploy.sh update` and (optionally)
 # `scripts/deploy.sh wipe-data`. Two confirmation inputs gate any
@@ -10,14 +10,14 @@ name: Deploy to Azure Container Apps
 #                    Requires the extra wipe_confirm input set to "WIPE".
 #
 # Required repo secrets (set by `scripts/deploy.sh setup`):
-#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
-#   AZURE_RESOURCE_GROUP, AZURE_ACR_NAME, AZURE_ACA_APP
+#   AZURE_CLIENT_ID_SDC, AZURE_TENANT_ID_SDC, AZURE_SUBSCRIPTION_ID_SDC,
+#   AZURE_RESOURCE_GROUP_SDC, AZURE_ACR_NAME_SDC, AZURE_ACA_APP_SDC
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "deploy" to confirm. Rolls a new container revision in PRODUCTION.'
+        description: 'Type "deploy" to confirm. Rolls a new container revision in PRODUCTION (SDC).'
         required: true
         default: ""
       image_tag:
@@ -46,6 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Gate — confirm input
+         # Type "deploy" to confirm
         run: |
           echo "::warning::This workflow modifies the LIVE deployment. Review the inputs before proceeding."
           if [ "${{ inputs.confirm }}" != "deploy" ]; then
@@ -67,24 +68,24 @@ jobs:
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID_SDC }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID_SDC }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_SDC }}
 
       - name: Wipe app.db on Azure Files share (DESTRUCTIVE — gated above)
         if: ${{ inputs.wipe_database == 'true' }}
         run: |
           echo "::warning::Deleting app.db on share '${{ inputs.file_share }}'…"
           STORAGE=$(az storage account list \
-            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP_SDC }}" \
             --query "[?starts_with(name, 'st')].name | [0]" -o tsv)
           if [ -z "$STORAGE" ]; then
-            echo "::error::Could not auto-detect storage account in RG ${{ secrets.AZURE_RESOURCE_GROUP }}."
+            echo "::error::Could not auto-detect storage account in RG ${{ secrets.AZURE_RESOURCE_GROUP_SDC }}."
             exit 1
           fi
           echo "Using storage account: $STORAGE"
           KEY=$(az storage account keys list \
-            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP_SDC }}" \
             -n "$STORAGE" --query "[0].value" -o tsv)
           if az storage file show --account-name "$STORAGE" --account-key "$KEY" \
                --share-name "${{ inputs.file_share }}" --path app.db >/dev/null 2>&1; then
@@ -98,8 +99,8 @@ jobs:
       - name: Build & push image to ACR
         run: |
           az acr build \
-            --registry "${{ secrets.AZURE_ACR_NAME }}" \
-            --image "${{ secrets.AZURE_ACA_APP }}:${{ inputs.image_tag }}" \
+            --registry "${{ secrets.AZURE_ACR_NAME_SDC }}" \
+            --image "${{ secrets.AZURE_ACA_APP_SDC }}:${{ inputs.image_tag }}" \
             --file Dockerfile \
             .
 
@@ -111,22 +112,22 @@ jobs:
         # the running replicas keep serving the previous digest.
         run: |
           az containerapp secret set \
-            --name "${{ secrets.AZURE_ACA_APP }}" \
-            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-            --secrets "youtube-api-key=${{ secrets.YOUTUBE_API_KEY }}"
+            --name "${{ secrets.AZURE_ACA_APP_SDC }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP_SDC }}" \
+            --secrets "youtube-api-key=${{ secrets.YOUTUBE_API_KEY_SDC }}"
 
           SUFFIX="r${{ github.run_number }}-$(echo "${{ github.sha }}" | cut -c1-7)"
           az containerapp update \
-            --name "${{ secrets.AZURE_ACA_APP }}" \
-            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
-            --image "${{ secrets.AZURE_ACR_NAME }}.azurecr.io/${{ secrets.AZURE_ACA_APP }}:${{ inputs.image_tag }}" \
+            --name "${{ secrets.AZURE_ACA_APP_SDC }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP_SDC }}" \
+            --image "${{ secrets.AZURE_ACR_NAME_SDC }}.azurecr.io/${{ secrets.AZURE_ACA_APP_SDC }}:${{ inputs.image_tag }}" \
             --revision-suffix "$SUFFIX" \
             --set-env-vars "YOUTUBE_API_KEY=secretref:youtube-api-key"
 
       - name: Show new revision
         run: |
           az containerapp revision list \
-            --name "${{ secrets.AZURE_ACA_APP }}" \
-            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AZURE_ACA_APP_SDC }}" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP_SDC }}" \
             --query "[?properties.active].{name:name, created:properties.createdTime, image:properties.template.containers[0].image}" \
             -o table
