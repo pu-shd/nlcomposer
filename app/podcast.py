@@ -51,10 +51,10 @@ class YoutubeMetadata(TypedDict, total=False):
 # Matches H:MM:SS or M:SS / MM:SS, then a separator, then a non-empty label.
 _TIMECODE_LINE = re.compile(
     r"""
-    ^[ \t]*(?:[\-•*–>]+[ \t]*)?
+    ^[ \t\-•*–>]*
     (?P<tc>(?:(?P<h>\d{1,2}):)?(?P<m>\d{1,2}):(?P<s>\d{2}))
     [ \t\-:–—]+
-    (?P<label>\S[^\n]*?)[ \t]*$
+    (?P<label>\S[^\n]*)$
     """,
     re.MULTILINE | re.VERBOSE,
 )

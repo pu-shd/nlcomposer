@@ -76,12 +76,26 @@ CONTROLLER_MODULES = (
 
 def _registered_routes() -> set[tuple[str, str]]:
     pairs: set[tuple[str, str]] = set()
-    for r in app.routes:
-        # ``Mount`` (e.g. /static) has no .methods — skip.
+
+    def get_all_routes(routes, prefix=""):
+        results = []
+        for r in routes:
+            if hasattr(r, "original_router"):
+                results.extend(get_all_routes(r.original_router.routes, prefix=prefix + (r.include_context.prefix or "")))
+            elif hasattr(r, "path"):
+                path = r.path
+                if prefix:
+                    if path == "/":
+                        full_path = prefix
+                    else:
+                        full_path = prefix + path
+                else:
+                    full_path = path
+                results.append((r, full_path))
+        return results
+
+    for r, path in get_all_routes(app.routes):
         methods = getattr(r, "methods", None) or set()
-        path = getattr(r, "path", None)
-        if not path:
-            continue
         for m in methods:
             if m == "HEAD":
                 continue
