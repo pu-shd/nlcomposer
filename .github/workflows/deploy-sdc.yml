@@ -23,6 +23,11 @@ on:
       - "LICENSE.md"
       - "plan.txt"
       - "ralph.yml"
+  # PRs run the test job only (the required status check for branch
+  # protection). Deliberately unfiltered: a path-skipped required check
+  # would leave docs-only PRs blocked forever.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       confirm:
@@ -50,18 +55,15 @@ permissions:
   id-token: write
   contents: read
 
-# Never run two deploys against the same Container App at once, and never
-# cancel one mid-flight (a half-applied revision update is worse than a queue).
-concurrency:
-  group: deploy-sdc
-  cancel-in-progress: false
+# Runner image and actions are pinned (actions by full commit SHA) so a
+# label migration or a moved tag can't silently change what deploys prod.
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build test image
         run: docker build -t nlcomposer-test .
@@ -71,7 +73,14 @@ jobs:
 
   deploy:
     needs: test
-    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-26.04
+    # Scoped to this job so PR test runs never queue behind (or cancel a
+    # pending) deploy. Never cancel mid-flight: a half-applied revision
+    # update is worse than a queue.
+    concurrency:
+      group: deploy-sdc
+      cancel-in-progress: false
     env:
       AZ_RG: ${{ secrets.AZURE_RESOURCE_GROUP_SDC }}
       AZ_ACR: ${{ secrets.AZURE_ACR_NAME_SDC }}
@@ -105,10 +114,10 @@ jobs:
           echo "Confirmation gate passed."
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Azure login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID_SDC }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID_SDC }}

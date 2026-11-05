@@ -147,3 +147,53 @@ def test_gate_rejects_wipe_without_wipe_confirm(wf):
 def test_gate_accepts_wipe_with_both_confirms(wf):
     r = _run_gate(wf, EVENT_NAME="workflow_dispatch", CONFIRM="deploy", WIPE_DATABASE="true", WIPE_CONFIRM="WIPE")
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# --- Supply-chain pinning ----------------------------------------------------
+
+PINNED_RUNNER = "ubuntu-26.04"
+
+
+def test_every_job_uses_pinned_runner(wf):
+    for name, job in wf["jobs"].items():
+        assert job["runs-on"] == PINNED_RUNNER, f"{name}: {job['runs-on']!r}"
+
+
+def test_every_action_pinned_to_full_commit_sha(wf):
+    for name, job in wf["jobs"].items():
+        for step in job["steps"]:
+            uses = step.get("uses")
+            if uses:
+                assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", uses), f"{name}: {uses}"
+
+
+def test_pinned_actions_carry_version_comment():
+    """A bare SHA is unreviewable; keep the human-readable tag beside it."""
+    for line in WORKFLOW.read_text().splitlines():
+        if re.search(r"uses:\s*\S+@[0-9a-f]{40}", line):
+            assert re.search(r"#\s*v\d+\.\d+\.\d+", line), line
+
+
+# --- Pull requests: test only, never deploy -----------------------------------
+
+def test_pull_requests_to_main_run_tests(wf):
+    pr = wf["on"].get("pull_request")
+    assert pr is not None, "branch protection needs a PR status check"
+    assert pr.get("branches") == ["main"]
+
+
+def test_pull_request_check_is_never_path_filtered(wf):
+    """A required check that is skipped by a path filter blocks the PR forever."""
+    pr = wf["on"]["pull_request"]
+    assert "paths" not in pr and "paths-ignore" not in pr
+
+
+def test_deploy_job_never_runs_for_pull_requests(wf):
+    cond = wf["jobs"]["deploy"].get("if", "")
+    assert "github.event_name != 'pull_request'" in cond
+
+
+def test_pr_runs_cannot_cancel_pending_deploys(wf):
+    """Concurrency must scope to the deploy job, not the whole workflow."""
+    assert "concurrency" not in wf
+    assert wf["jobs"]["deploy"]["concurrency"]["group"] == "deploy-sdc"

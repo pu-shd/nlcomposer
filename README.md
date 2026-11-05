@@ -349,6 +349,12 @@ then does the same `az acr build` + `az containerapp update` pair as
 every running revision traces back to a commit. Deploys are serialized
 and never cancelled mid-flight.
 
+`main` is branch-protected: changes land via pull request, and the
+workflow's `test` job (which runs on every PR, never path-filtered) is a
+required status check. PR runs never deploy. The runner image
+(`ubuntu-26.04`) and every action (full commit SHA, version in a trailing
+comment) are pinned.
+
 Manual dispatch is still available for re-deploys; it requires a typed
 `confirm` input. The optional `wipe_database` toggle is dispatch-only and
 requires a separate `wipe_confirm` acknowledgement — it can never run
