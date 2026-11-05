@@ -342,12 +342,20 @@ scripts/deploy.sh wipe-data # DELETE app.db on the share (guarded; for
 scripts/deploy.sh teardown  # remove the resource group + Entra apps + secrets
 ```
 
-CI/CD: `.github/workflows/deploy.yml` is a manual-dispatch workflow
-that does the same `az acr build` + `az containerapp update` pair as
-`update` above, gated behind a typed `confirm` input and an optional
-`wipe_database` toggle that itself requires a separate `wipe_confirm`
-acknowledgement. Authentication is via the OIDC federated credential
-created during `setup`; no PATs or stored credentials.
+CI/CD (GitOps): `.github/workflows/deploy-sdc.yml` deploys on every push
+to `main` (docs-only changes excepted). It runs the test suite in Docker,
+then does the same `az acr build` + `az containerapp update` pair as
+`update` above, tagging the image and revision with the commit SHA so
+every running revision traces back to a commit. Deploys are serialized
+and never cancelled mid-flight.
+
+Manual dispatch is still available for re-deploys; it requires a typed
+`confirm` input. The optional `wipe_database` toggle is dispatch-only and
+requires a separate `wipe_confirm` acknowledgement — it can never run
+from a push. Authentication is via the OIDC federated credential
+(scoped to `refs/heads/main`) created during `setup`; no PATs or stored
+credentials. Repo secrets carry the target suffix (`_SDC`) chosen at
+`setup` time.
 
 ---
 
