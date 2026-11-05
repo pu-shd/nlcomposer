@@ -358,7 +358,9 @@ the pinned commit (`<app>:<tag>-<sha7>`, reused if present).
 
 **CI identity.** A user-assigned managed identity per deployment, with
 Contributor on that deployment's resource group only, federated (OIDC) to
-`repo:<config repo>:environment:<unit>`. The config repo stores its client,
+`<subject prefix>:environment:<unit>`, where the prefix is what GitHub
+reports for the config repo (`repo:<owner>@<id>/<repo>@<id>` in orgs on
+immutable OIDC subjects; `deploy.sh setup` reads it). The config repo stores its client,
 tenant and subscription IDs as repository variables; there are no secrets.
 App secrets (for example `youtube-api-key`) live on the Container App and
 are referenced, never passed through GitHub.

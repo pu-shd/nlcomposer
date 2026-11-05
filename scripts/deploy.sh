@@ -906,13 +906,23 @@ ensure_github_oidc() {
     ok "Contributor on RG granted"
   fi
 
-  local subject="repo:${GH_REPO}:environment:${GH_ENVIRONMENT}"
+  # GitHub reports the exact subject prefix its tokens carry for this repo.
+  # Orgs on immutable subjects use repo:<owner>@<id>/<repo>@<id>, which a
+  # name-based subject never matches (AADSTS700213). Read-only, so it runs
+  # under --dry-run too; fall back to the classic form if unavailable.
+  local sub_prefix
+  sub_prefix=$(gh api "repos/${GH_REPO}/actions/oidc/customization/sub" \
+    --jq '.sub_claim_prefix // empty' 2>/dev/null || true)
+  local subject="${sub_prefix:-repo:${GH_REPO}}:environment:${GH_ENVIRONMENT}"
   local fed_name="gh-${GH_REPO//\//-}-${GH_ENVIRONMENT}"
   step "Federated credential: ${subject}"
-  if (( ! DRY_RUN )) && az identity federated-credential show -n "$fed_name" \
-       --identity-name "$AZ_CI_IDENTITY" -g "$AZ_RG" >/dev/null 2>&1; then
+  local existing=""
+  (( DRY_RUN )) || existing=$(az identity federated-credential show -n "$fed_name" \
+       --identity-name "$AZ_CI_IDENTITY" -g "$AZ_RG" --query subject -o tsv 2>/dev/null || true)
+  if [[ "$existing" == "$subject" ]]; then
     ok "Already exists"
   else
+    [[ -n "$existing" ]] && warn "Replacing stale subject ${existing}"
     run az identity federated-credential create -n "$fed_name" \
       --identity-name "$AZ_CI_IDENTITY" -g "$AZ_RG" \
       --issuer "https://token.actions.githubusercontent.com" \

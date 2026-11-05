@@ -305,6 +305,9 @@ _MOCK_CLI = """#!/usr/bin/env bash
 printf '%s %s\\n' "$(basename "$0")" "$*" >> "$MOCK_LOG"
 case "$(basename "$0") $1 $2" in
   "az group exists") echo true ;;
+  "gh api repos/"*"/actions/oidc/customization/sub")
+    [ -n "${MOCK_SUB_PREFIX:-}" ] && { echo "$MOCK_SUB_PREFIX"; exit 0; }
+    exit 1 ;;
 esac
 exit 0
 """
@@ -395,3 +398,16 @@ def test_update_delegates_to_ci_deploy(tmp_path):
     assert res.returncode == 0, out
     assert "acrunitx.azurecr.io/unitx-app:dev-0123456" in out
     assert "dry-run: would build" in out
+
+
+def test_federated_subject_uses_githubs_immutable_prefix(tmp_path):
+    """Orgs on immutable OIDC subjects present repo:<owner>@<id>/<repo>@<id>;
+    a name-based subject never matches (AADSTS700213)."""
+    unit = _unit_dir(tmp_path)
+    prefix = "repo:pu-unitx@111/nlcomposer-config@222"
+    res = _run_deploy(["setup", "--config", str(unit), "--yes", "--dry-run"],
+                      env={**_mock_path(tmp_path), "MOCK_SUB_PREFIX": prefix})
+    out = res.stdout + res.stderr
+    assert res.returncode == 0, out
+    assert f"--subject {prefix}:environment:unitx" in out
+    assert "--subject repo:pu-unitx/nlcomposer-config:" not in out

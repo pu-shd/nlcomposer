@@ -43,8 +43,8 @@ answers. A failed revision never takes traffic; the previous one keeps serving.
 3. Fill `<unit>/deploy.env` and `<unit>/instance.json`.
 4. From an engine checkout:
    `scripts/deploy.sh setup --config ../nlcomposer-config/<unit>` provisions
-   Azure, the CI managed identity (federated to
-   `repo:pu-<unit>/nlcomposer-config:environment:<unit>`), the GitHub
+   Azure, the CI managed identity (federated to the subject GitHub reports
+   for the repo plus `:environment:<unit>`), the GitHub
    Environment and the `AZURE_*` repository variables.
 5. Settings → Actions → General: allow GitHub Actions to create pull requests
    (for the update check).
