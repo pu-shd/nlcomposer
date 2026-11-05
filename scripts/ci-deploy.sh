@@ -94,8 +94,10 @@ if [ -n "${NLC_PYTHON:-}" ]; then
 else
   command -v docker >/dev/null || die "docker (or NLC_PYTHON) is required to validate $INSTANCE"
   docker build -q -t nlcomposer-instance-check "$ENGINE_ROOT" >/dev/null
-  docker run --rm --network none -v "$INSTANCE_ABS:/cfg/instance.json:ro" \
-    nlcomposer-instance-check python -m app.instance check /cfg/instance.json \
+  # stdin, not a bind mount: Docker Desktop shares only some host paths, and
+  # a file mounted from elsewhere arrives as an empty directory.
+  docker run --rm -i --network none nlcomposer-instance-check \
+    python -m app.instance check /dev/stdin < "$INSTANCE" \
     || die "$INSTANCE failed validation"
 fi
 INSTANCE_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), separators=(",", ":")))' "$INSTANCE")"

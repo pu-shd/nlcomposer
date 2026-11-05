@@ -251,3 +251,45 @@ def test_dry_run_makes_no_calls(env):
     assert r.returncode == 0, r.stderr
     assert "would build" in r.stdout
     assert calls(env) == []
+
+
+# ── container-based instance check (no NLC_PYTHON) ───────────────────────
+
+MOCK_DOCKER = r"""#!/usr/bin/env bash
+printf 'docker %s\n' "$*" >> "$MOCK_LOG"
+case "$1" in
+  build) exit 0 ;;
+  run)
+    for a in "$@"; do case "$a" in -v|--volume|--mount) echo "bind mounts are not portable" >&2; exit 97 ;; esac; done
+    cat > "$MOCK_DIR/stdin.json"
+    exit "${MOCK_CHECK_RC:-0}" ;;
+esac
+exit 99
+"""
+
+
+@pytest.fixture
+def docker_env(env):
+    p = Path(env["env"]["PATH"].split(os.pathsep)[0]) / "docker"
+    p.write_text(MOCK_DOCKER)
+    p.chmod(p.stat().st_mode | stat.S_IEXEC)
+    e = {k: v for k, v in env["env"].items() if k != "NLC_PYTHON"}
+    return {**env, "env": e}
+
+
+def test_container_check_streams_config_on_stdin_without_bind_mount(docker_env):
+    """Docker Desktop only shares some host paths; a file bind-mount from
+    elsewhere arrives as an empty directory. stdin always works."""
+    r = run(docker_env, "--check-only")
+    assert r.returncode == 0, r.stdout + r.stderr
+    sent = json.loads((docker_env["tmp"] / "stdin.json").read_text())
+    assert sent["default_template"]["name"] == "Example Default"
+    runs = [c for c in calls(docker_env) if c.startswith("docker run")]
+    assert runs and "-i" in runs[0].split() and "--network none" in runs[0]
+
+
+def test_container_check_failure_stops_deploy(docker_env):
+    r = run(docker_env, MOCK_CHECK_RC="1")
+    assert r.returncode != 0
+    assert "failed validation" in r.stderr
+    assert az_calls(docker_env) == [] or all(c.startswith("docker ") for c in az_calls(docker_env))
