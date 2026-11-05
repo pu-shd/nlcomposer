@@ -1,0 +1,41 @@
+name: Validate
+
+# Required status check. Validates template.lock against the engine's tag and
+# this deployment's config against the pinned engine, with no Azure access.
+# The update check dispatches this on its PR branch, because PRs opened with
+# the default token do not trigger pull_request workflows.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-26.04
+    env:
+      UNIT: example
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify template.lock
+        id: lock
+        run: tools/lock.sh template.lock
+      - name: Check out the pinned engine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: pu-shd/nlcomposer
+          ref: ${{ steps.lock.outputs.sha }}
+          path: .engine
+          persist-credentials: false
+      - name: Validate deployment config against the engine
+        env:
+          ENGINE_ROOT: .engine
+          ENGINE_REF: ${{ steps.lock.outputs.ref }}
+        run: bash .engine/scripts/ci-deploy.sh --config "$UNIT" --engine-ref "$ENGINE_REF" --check-only

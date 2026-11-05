@@ -1,0 +1,16 @@
+{
+  "footer_fallback_html": "<p style=\"margin:0 0 6px 0;\">This newsletter is maintained by the Example Department.</p>",
+  "settings_defaults": {
+    "newsletter_name": "Example Newsletter",
+    "initial_publication_date": "2024-09-01"
+  },
+  "default_template": {
+    "name": "Example Newsletter Default",
+    "description": "Starter issue for Example Newsletter.",
+    "payload": {
+      "from_name": "Example Department",
+      "from_email": "news@example.edu",
+      "to_email": "subscribers@example.edu"
+    }
+  }
+}

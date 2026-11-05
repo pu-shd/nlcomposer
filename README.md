@@ -121,6 +121,7 @@ The composer is configured at two layers.
 | --- | --- | --- |
 | `SDC_DATA_DIR` | `./data` | Directory holding `app.db`. Bind a volume here in production. |
 | `SDC_SQLITE_VFS` | *(platform default)* | Set to `unix-dotfile` when `SDC_DATA_DIR` is a network share (Azure Files SMB, NFSv2/3). SQLite's default POSIX locks are unreliable on those filesystems. |
+| `NLC_INSTANCE_JSON` / `NLC_INSTANCE_FILE` | *(unset: neutral engine)* | This deployment's brand config (JSON text, or a path to it; not both). See [Instance configuration](#instance-configuration). Invalid config stops startup. |
 
 ### Per-instance settings (UI-editable)
 
@@ -293,6 +294,10 @@ not from constants. To rebrand a deployment:
    anchor used to compute the "Nth year" enumeration printed in the
    masthead. Set it to the date your newsletter first shipped.
 
+Defaults that should hold for every editor of a deployment (brand name,
+inception date, footer, the starter template) belong in that deployment's
+`instance.json` — see [Instance configuration](#instance-configuration).
+
 The default template seeded into the `templates` table on first run is
 intentionally empty — it's the starting point a new editor sees when
 they click **Compose New**. Save your own as a Template once you have
@@ -324,44 +329,81 @@ empty volume self-bootstraps on the first request.
 
 ## Deploying to Azure Container Apps
 
-`scripts/deploy.sh` is an interactive zsh CLI that stands up a complete
-Azure deployment: Resource Group → Storage Account + File share →
-Azure Container Registry → Container Apps environment + Container App
-→ Entra ID app registration (Easy Auth) → GitHub OIDC federated
-credential + repo secrets for CI/CD. Designed for macOS zsh; requires
-`az`, `gh`, and (for local builds) `docker`.
+This repository is the **engine**: public, unit-agnostic, and holding no
+deployment credentials. Each department, unit or program that runs a
+newsletter keeps a small **private config repo** that pins an engine
+release and deploys it through GitOps. The template is
+[`examples/config-repo/`](examples/config-repo/); copy it to start one.
 
-```bash
-scripts/deploy.sh setup     # interactive end-to-end provision (idempotent)
-scripts/deploy.sh update    # rebuild + roll a new revision
-scripts/deploy.sh domain    # bind a custom hostname + managed cert
-scripts/deploy.sh status    # show current state of every Azure resource
-scripts/deploy.sh wipe-data # DELETE app.db on the share (guarded; for
-                            # post-schema-change resets before there is
-                            # production data worth migrating)
-scripts/deploy.sh teardown  # remove the resource group + Entra apps + secrets
+```
+pu-<unit>/nlcomposer-config (private)          pu-shd/nlcomposer (public, this repo)
+├── template.lock ── pins tag + commit sha ──▶ release vX.Y.Z (template.lock asset)
+├── <unit>/deploy.env      Azure targets (not secret)
+├── <unit>/instance.json   brand: footer, settings defaults, starter template
+└── .github/workflows/
+    ├── deploy.yml         merge to main → tools/lock.sh → checkout engine@sha
+    │                      → scripts/ci-deploy.sh (build in the unit's ACR,
+    │                        roll revision, wait healthy, smoke test)
+    ├── validate.yml       required check: lock + config vs pinned engine
+    └── update-check.yml   daily: newer release → PR changing only template.lock
 ```
 
-CI/CD (GitOps): `.github/workflows/deploy-sdc.yml` deploys on every push
-to `main` (docs-only changes excepted). It runs the test suite in Docker,
-then does the same `az acr build` + `az containerapp update` pair as
-`update` above, tagging the image and revision with the commit SHA so
-every running revision traces back to a commit. Deploys are serialized
-and never cancelled mid-flight.
+**Shipping a change.** Merge to `main` here (tests are the required
+check), then tag `vX.Y.Z` on the merged commit. `release.yml` re-runs the
+tests, checks the commit is on `main`, and publishes a release with
+`template.lock`. Each config repo's update check opens a PR bumping its
+lock; **merging that PR is the deploy**. Nothing is pushed to a registry:
+each deployment builds the image in its own Azure Container Registry from
+the pinned commit (`<app>:<tag>-<sha7>`, reused if present).
 
-`main` is branch-protected: changes land via pull request, and the
-workflow's `test` job (which runs on every PR, never path-filtered) is a
-required status check. PR runs never deploy. The runner image
-(`ubuntu-26.04`) and every action (full commit SHA, version in a trailing
-comment) are pinned.
+**CI identity.** A user-assigned managed identity per deployment, with
+Contributor on that deployment's resource group only, federated (OIDC) to
+`repo:<config repo>:environment:<unit>`. The config repo stores its client,
+tenant and subscription IDs as repository variables; there are no secrets.
+App secrets (for example `youtube-api-key`) live on the Container App and
+are referenced, never passed through GitHub.
 
-Manual dispatch is still available for re-deploys; it requires a typed
-`confirm` input. The optional `wipe_database` toggle is dispatch-only and
-requires a separate `wipe_confirm` acknowledgement — it can never run
-from a push. Authentication is via the OIDC federated credential
-(scoped to `refs/heads/main`) created during `setup`; no PATs or stored
-credentials. Repo secrets carry the target suffix (`_SDC`) chosen at
-`setup` time.
+### Instance configuration
+
+Anything brand-specific comes from `<unit>/instance.json`, passed to the
+container as `NLC_INSTANCE_JSON` (or `NLC_INSTANCE_FILE` for local runs).
+It is validated strictly at startup — a bad file stops the container, and
+the previous revision keeps serving — and in CI via
+`python -m app.instance check <file>`.
+
+```json
+{
+  "footer_fallback_html": "<p>This newsletter is maintained by …</p>",
+  "settings_defaults": {"newsletter_name": "…", "initial_publication_date": "2013-01-01"},
+  "default_template": {"name": "… Default", "description": "…", "payload": {"from_name": "…"}}
+}
+```
+
+| Key | Effect |
+|---|---|
+| `footer_fallback_html` | Footer rendered when an issue has no `footer_html` (HTML and plain-text renderings). |
+| `settings_defaults` | Starting values for any `AppSettings` field. Precedence: engine default < instance default < value saved in Settings, so these shape a fresh install and fill keys an older saved row predates, but never overwrite a user's edit. |
+| `default_template` | Name, description and payload (merged over the neutral starter) of the built-in template. Seeding matches by name, so keep the name stable once deployed. |
+
+### Operator CLI
+
+`scripts/deploy.sh` provisions a new deployment end to end — resource
+group, storage + file share, ACR, Container Apps environment and app,
+Entra ID (Easy Auth), and the CI identity wiring above. macOS zsh;
+requires `az` and `gh`.
+
+```bash
+scripts/deploy.sh setup     --config ../nlcomposer-config/<unit>   # interactive, idempotent
+scripts/deploy.sh domain    --config ../nlcomposer-config/<unit>   # custom hostname + managed cert
+scripts/deploy.sh status    --config ../nlcomposer-config/<unit>
+scripts/deploy.sh update    --config ../nlcomposer-config/<unit>   # roll this working tree (dev-<sha7>)
+scripts/deploy.sh wipe-data --config ../nlcomposer-config/<unit>   # DELETE app.db (guarded)
+scripts/deploy.sh teardown  --config ../nlcomposer-config/<unit>
+```
+
+`update` runs the same `scripts/ci-deploy.sh` as CI, from a clean working
+tree; normal deploys go through the config repo. Every command accepts
+`--dry-run`.
 
 ---
 
@@ -387,9 +429,12 @@ app/
   controllers/         # one APIRouter per resource
   templates/           # Jinja: newsletter.html.j2 / newsletter.txt.j2
   static/              # SPA: index.html, composer.js, composer.css
-tests/                 # pytest suite (~340 tests)
-scripts/deploy.sh      # Azure deployment CLI
-.github/workflows/     # manual-dispatch deploy workflow
+app/instance.py        # per-deployment instance config (NLC_INSTANCE_JSON / _FILE)
+tests/                 # pytest suite
+scripts/deploy.sh      # operator CLI: provision / domain / teardown a deployment
+scripts/ci-deploy.sh   # the rollout a config repo's CI runs
+examples/config-repo/  # template for a unit's private config repo
+.github/workflows/     # ci.yml (tests + actionlint), release.yml (template.lock)
 ```
 
 Coding conventions:

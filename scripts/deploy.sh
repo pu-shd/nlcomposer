@@ -7,7 +7,12 @@
 #   - Azure Storage Account + File Share (persistent SQLite)
 #   - Azure Container Apps environment + Container App
 #   - Entra ID app registration (built-in auth for the Container App)
-#   - GitHub OIDC federated credential + repo secrets for CI/CD
+#   - CI identity: a user-assigned managed identity federated (OIDC) to the
+#     deployment's config repo GitHub Environment, plus repo variables there
+#
+# Configuration lives in a config repo directory (see examples/config-repo):
+#   scripts/deploy.sh <command> --config <config-repo>/<unit>
+# reads/writes <unit>/deploy.env; `update` also applies <unit>/instance.json.
 #
 # Designed for macOS zsh. Requires `az`, `gh`, and (for local builds) `docker`.
 # Where automation cannot drive a step (portal-only consents, GitHub App
@@ -22,6 +27,7 @@ REPO_ROOT="${SCRIPT_DIR:h}"
 # keep multiple stage configs side-by-side. Defaults to .deploy.env in
 # the repo root for the normal one-environment-per-checkout case.
 ENV_FILE="${DEPLOY_ENV_FILE:-${REPO_ROOT}/.deploy.env}"
+CONFIG_DIR=""
 SUBSCRIPTION=""
 ASSUME_YES=0
 DRY_RUN=0
@@ -88,7 +94,10 @@ confirm() {
 
 run() {
   if (( DRY_RUN )); then
-    print -P "${C_DIM}    \$ $*${C_RESET}"
+    # stderr: call sites redirect stdout to /dev/null, which would hide the
+    # very commands a dry run exists to show. printf, not print -P, so a
+    # literal % in an argument is not taken as a prompt escape.
+    printf '%s    $ %s%s\n' "$C_DIM" "$*" "$C_RESET" >&2
     return 0
   fi
   "$@"
@@ -117,8 +126,9 @@ query() {
 # ───── env file ────────────────────────────────────────────────────────
 write_env_file() {
   cat > "$ENV_FILE" <<EOF
-# Newsletter Composer — Azure deployment env
-# Sourced by scripts/deploy.sh. Safe to edit; rerun \`deploy.sh setup\`.
+# Deployment targets for one newsletter. Not secret: never put credentials here.
+# Read by the engine's scripts/deploy.sh (operator: setup, domain, teardown)
+# and scripts/ci-deploy.sh (CI: AZ_RG, AZ_ACR, AZ_ACA_APP, AZ_CUSTOM_DOMAIN).
 AZ_SUBSCRIPTION="${AZ_SUBSCRIPTION}"
 AZ_LOCATION="${AZ_LOCATION}"
 AZ_RG="${AZ_RG}"
@@ -131,8 +141,10 @@ AZ_IMAGE_TAG="${AZ_IMAGE_TAG}"
 AZ_ENTRA_APP="${AZ_ENTRA_APP}"
 AZ_ENTRA_PRINCIPALS="${AZ_ENTRA_PRINCIPALS}"
 AZ_ENTRA_MINIMAL_PERMS="${AZ_ENTRA_MINIMAL_PERMS}"
+AZ_CUSTOM_DOMAIN="${AZ_CUSTOM_DOMAIN:-}"
+AZ_CI_IDENTITY="${AZ_CI_IDENTITY}"
 GH_REPO="${GH_REPO}"
-TARGET_SUFFIX="${TARGET_SUFFIX:-}"
+GH_ENVIRONMENT="${GH_ENVIRONMENT}"
 EOF
   ok "Saved configuration to ${ENV_FILE}"
 }
@@ -177,10 +189,6 @@ ensure_config() {
     exit 2
   fi
 
-  local default_repo=""
-  if command -v gh >/dev/null 2>&1; then
-    default_repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)
-  fi
   local short_user="${USER:-dev}"
   local stamp="${RANDOM}${RANDOM}"
   stamp="${stamp:0:5}"
@@ -201,8 +209,10 @@ ensure_config() {
   prompt_with_default AZ_ENTRA_MINIMAL_PERMS \
                       "Strip Graph permissions from Entra app (avoid admin-consent prompt for OIDC sign-in)? [true/false]" \
                       "true"
-  prompt_with_default GH_REPO           "GitHub repo (owner/name) for CI"     "${default_repo}"
-  prompt_with_default TARGET_SUFFIX     "Target Suffix (appended to GitHub secrets, e.g. _SDC)" "_SDC"
+  prompt_with_default AZ_CUSTOM_DOMAIN  "Custom domain (empty = none)"        ""
+  prompt_with_default AZ_CI_IDENTITY    "CI managed identity name"            "id-${AZ_ACA_APP}-ci"
+  prompt_with_default GH_REPO           "Config repo (owner/name) that deploys this" ""
+  prompt_with_default GH_ENVIRONMENT    "GitHub Environment in the config repo" "${CONFIG_DIR:+${CONFIG_DIR:t}}"
 
   # Lower-case the storage and ACR names to satisfy Azure naming rules.
   AZ_STORAGE="${AZ_STORAGE:l}"
@@ -220,8 +230,9 @@ ensure_config() {
   info "Entra app    : ${AZ_ENTRA_APP}"
   info "Allowed      : ${AZ_ENTRA_PRINCIPALS:-<tenant-wide>}"
   info "Minimal perms: ${AZ_ENTRA_MINIMAL_PERMS} (clear requiredResourceAccess on app reg)"
-  info "GitHub repo  : ${GH_REPO:-<not set>}"
-  info "Target Suffix: ${TARGET_SUFFIX:-<none>}"
+  info "Domain       : ${AZ_CUSTOM_DOMAIN:-<none>}"
+  info "CI identity  : ${AZ_CI_IDENTITY}"
+  info "Config repo  : ${GH_REPO:-<not set>} (environment ${GH_ENVIRONMENT:-<not set>})"
 
   confirm "Save and continue with these values?" || { err "Aborted by user."; exit 1; }
   write_env_file
@@ -867,83 +878,63 @@ ensure_entra_principal_assignments() {
 }
 
 ensure_github_oidc() {
-  if [[ -z "${GH_REPO:-}" ]]; then
-    warn "GH_REPO empty — skipping GitHub OIDC wiring."
+  if [[ -z "${GH_REPO:-}" || -z "${GH_ENVIRONMENT:-}" ]]; then
+    warn "GH_REPO / GH_ENVIRONMENT empty — skipping CI identity wiring."
     return 0
   fi
-  step "GitHub OIDC service principal for CI"
-
-  local sp_name="sp-${AZ_ACA_APP}-cicd"
-  local sp_id
-  sp_id=$(query az ad app list --display-name "$sp_name" --query "[0].appId" -o tsv 2>/dev/null || echo "")
-  if (( DRY_RUN )); then sp_id=""; fi
-  if [[ -z "$sp_id" ]]; then
-    sp_id=$(run_capture az ad app create --display-name "$sp_name" --query appId -o tsv)
-    run az ad sp create --id "$sp_id" >/dev/null 2>&1 || true
-    ok "Created service principal: ${sp_name} (${sp_id})"
+  step "CI managed identity: ${AZ_CI_IDENTITY}"
+  if (( ! DRY_RUN )) && az identity show -n "$AZ_CI_IDENTITY" -g "$AZ_RG" >/dev/null 2>&1; then
+    ok "Already exists"
   else
-    ok "Service principal exists: ${sp_name} (${sp_id})"
+    run az identity create -n "$AZ_CI_IDENTITY" -g "$AZ_RG" -l "$AZ_LOCATION" >/dev/null
+    ok "Created"
   fi
-
-  local sub_id rg_id
+  local client_id principal_id sub_id tenant_id rg_id
+  client_id=$(query az identity show -n "$AZ_CI_IDENTITY" -g "$AZ_RG" --query clientId -o tsv)
+  principal_id=$(query az identity show -n "$AZ_CI_IDENTITY" -g "$AZ_RG" --query principalId -o tsv)
   sub_id=$(query az account show --query id -o tsv)
+  tenant_id=$(query az account show --query tenantId -o tsv)
   rg_id=$(query az group show -n "$AZ_RG" --query id -o tsv)
-  if (( ! DRY_RUN )) && az role assignment list --assignee "$sp_id" --scope "$rg_id" --role Contributor --query "[0].id" -o tsv 2>/dev/null | grep -q .; then
+
+  # Contributor on this deployment's resource group only. CI cannot change
+  # role assignments (Contributor excludes them), including its own.
+  if (( ! DRY_RUN )) && az role assignment list --assignee "$principal_id" --scope "$rg_id" --role Contributor --query "[0].id" -o tsv 2>/dev/null | grep -q .; then
     ok "Contributor on RG already granted"
   else
-    run az role assignment create --assignee "$sp_id" --role Contributor --scope "$rg_id" >/dev/null
+    run az role assignment create --assignee-object-id "$principal_id" \
+      --assignee-principal-type ServicePrincipal --role Contributor --scope "$rg_id" >/dev/null
     ok "Contributor on RG granted"
   fi
 
-  step "Federated credential for ${GH_REPO}@refs/heads/main"
-  local fed_name="gh-${AZ_ACA_APP}-main"
-  local fed_exists
-  fed_exists=$(query az ad app federated-credential list --id "$sp_id" --query "[?name=='${fed_name}'].name" -o tsv 2>/dev/null || echo "")
-  if (( DRY_RUN )); then fed_exists=""; fi
-  if [[ -n "$fed_exists" ]]; then
-    ok "Federated credential already exists"
+  local subject="repo:${GH_REPO}:environment:${GH_ENVIRONMENT}"
+  local fed_name="gh-${GH_REPO//\//-}-${GH_ENVIRONMENT}"
+  step "Federated credential: ${subject}"
+  if (( ! DRY_RUN )) && az identity federated-credential show -n "$fed_name" \
+       --identity-name "$AZ_CI_IDENTITY" -g "$AZ_RG" >/dev/null 2>&1; then
+    ok "Already exists"
   else
-    local tmpfc; tmpfc=$(mktemp -t fc-XXXX.json)
-    cat > "$tmpfc" <<EOF
-{
-  "name": "${fed_name}",
-  "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:${GH_REPO}:ref:refs/heads/main",
-  "audiences": ["api://AzureADTokenExchange"]
-}
-EOF
-    run az ad app federated-credential create --id "$sp_id" --parameters "@${tmpfc}" >/dev/null
-    rm -f "$tmpfc"
-    ok "Federated credential created"
+    run az identity federated-credential create -n "$fed_name" \
+      --identity-name "$AZ_CI_IDENTITY" -g "$AZ_RG" \
+      --issuer "https://token.actions.githubusercontent.com" \
+      --subject "$subject" --audiences "api://AzureADTokenExchange" >/dev/null
+    ok "Created"
   fi
 
-  step "Set GitHub repo secrets via gh CLI"
-  local suffix="${TARGET_SUFFIX:-}"
+  step "Config repo ${GH_REPO}: environment '${GH_ENVIRONMENT}' + Azure variables"
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    local tenant_id; tenant_id=$(query az account show --query tenantId -o tsv)
-    run gh secret set "AZURE_CLIENT_ID${suffix}"       --repo "$GH_REPO" --body "$sp_id"
-    run gh secret set "AZURE_TENANT_ID${suffix}"       --repo "$GH_REPO" --body "$tenant_id"
-    run gh secret set "AZURE_SUBSCRIPTION_ID${suffix}" --repo "$GH_REPO" --body "$sub_id"
-    run gh secret set "AZURE_RESOURCE_GROUP${suffix}"  --repo "$GH_REPO" --body "$AZ_RG"
-    run gh secret set "AZURE_ACR_NAME${suffix}"        --repo "$GH_REPO" --body "$AZ_ACR"
-    run gh secret set "AZURE_ACA_APP${suffix}"         --repo "$GH_REPO" --body "$AZ_ACA_APP"
-    ok "Secrets with suffix '${suffix}' set on ${GH_REPO}"
+    # Deployments only from protected branches (main).
+    run gh api -X PUT "repos/${GH_REPO}/environments/${GH_ENVIRONMENT}" \
+      -F "deployment_branch_policy[protected_branches]=true" \
+      -F "deployment_branch_policy[custom_branch_policies]=false" >/dev/null
+    run gh variable set AZURE_CLIENT_ID       --repo "$GH_REPO" --body "$client_id"
+    run gh variable set AZURE_TENANT_ID       --repo "$GH_REPO" --body "$tenant_id"
+    run gh variable set AZURE_SUBSCRIPTION_ID --repo "$GH_REPO" --body "$sub_id"
+    ok "Environment and variables set (identifiers, not secrets)"
   else
-    pause_for_manual "Set GitHub repo secrets manually" \
-      "AZURE_CLIENT_ID${suffix}=${sp_id}" \
-      "AZURE_TENANT_ID${suffix}=$(query az account show --query tenantId -o tsv 2>/dev/null || echo '<tenant>')" \
-      "AZURE_SUBSCRIPTION_ID${suffix}=${sub_id}" \
-      "AZURE_RESOURCE_GROUP${suffix}=${AZ_RG}" \
-      "AZURE_ACR_NAME${suffix}=${AZ_ACR}" \
-      "AZURE_ACA_APP${suffix}=${AZ_ACA_APP}"
+    pause_for_manual "Configure ${GH_REPO} manually" \
+      "Create environment '${GH_ENVIRONMENT}' (deployment branches: protected only)" \
+      "Repo variables: AZURE_CLIENT_ID=${client_id} AZURE_TENANT_ID=${tenant_id} AZURE_SUBSCRIPTION_ID=${sub_id}"
   fi
-
-  pause_for_manual "(Optional) GitHub App for richer CI/CD" \
-    "If you prefer a GitHub App (vs Actions OIDC) for deploys:" \
-    "1. https://github.com/settings/apps/new — name 'sdc-composer-deploy'" \
-    "2. Permissions: contents:read, actions:write, deployments:write" \
-    "3. Install on ${GH_REPO} and copy the App ID + private key" \
-    "4. Store the private key as repo secret DEPLOY_APP_PRIVATE_KEY"
 }
 
 # ───── teardown ────────────────────────────────────────────────────────
@@ -951,7 +942,7 @@ teardown() {
   load_env
   heading "Teardown"
   warn "This will DELETE the resource group ${AZ_RG} (and everything in it),"
-  warn "the Entra app ${AZ_ENTRA_APP}, and the CI service principal."
+  warn "the Entra app ${AZ_ENTRA_APP}, and the config repo's Azure variables."
   if ! confirm "Are you absolutely sure?"; then
     err "Aborted."; exit 1
   fi
@@ -980,17 +971,18 @@ teardown() {
     fi
   done
 
+  # The CI managed identity and its federated credential live in the RG and
+  # go with it. Remove the config repo's pointers to it.
   if [[ -n "${GH_REPO:-}" ]] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    step "Removing GitHub repo secrets"
-    local suffix="${TARGET_SUFFIX:-}"
-    for s in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_ACR_NAME AZURE_ACA_APP; do
-      run gh secret delete "${s}${suffix}" --repo "$GH_REPO" 2>/dev/null || true
+    step "Removing Azure variables and environment from ${GH_REPO}"
+    for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+      run gh variable delete "$v" --repo "$GH_REPO" 2>/dev/null || true
     done
-    ok "Secrets with suffix '${suffix}' removed (where present)"
+    [[ -n "${GH_ENVIRONMENT:-}" ]] && { run gh api -X DELETE "repos/${GH_REPO}/environments/${GH_ENVIRONMENT}" >/dev/null 2>&1 || true; }
+    ok "Removed (where present)"
   fi
 
-  pause_for_manual "Verify GitHub App / portal cleanup" \
-    "If you created a GitHub App for deploys, uninstall it from ${GH_REPO:-<repo>}." \
+  pause_for_manual "Verify portal cleanup" \
     "Confirm the resource group eventually disappears in the portal."
 
   ok "Teardown complete (RG delete continues asynchronously)."
@@ -1035,6 +1027,10 @@ do_setup() {
 }
 
 do_update() {
+  if [[ -z "$CONFIG_DIR" ]]; then
+    err "update needs --config <config-repo>/<unit> (deploy.env + instance.json)."
+    exit 2
+  fi
   load_env
   preflight
   heading "Build & redeploy"
@@ -1047,8 +1043,16 @@ do_update() {
   if ! confirm "Build the image and roll the new revision?"; then
     err "Aborted."; exit 1
   fi
-  build_and_push_image
-  ensure_container_app
+  # Same rollout as the config repo's CI, from this working tree. The image
+  # tag records the local commit (dev-<sha7>); a dirty tree is refused so the
+  # tag never lies about what is running.
+  if (( ! DRY_RUN )) && [[ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null)" ]]; then
+    err "Working tree has uncommitted changes; commit them first."
+    exit 1
+  fi
+  local -a ci_args=(--config "$CONFIG_DIR" --engine-ref dev)
+  (( DRY_RUN )) && ci_args+=(--dry-run)
+  ENGINE_ROOT="$REPO_ROOT" bash "${SCRIPT_DIR}/ci-deploy.sh" "${ci_args[@]}"
   ok "Update complete."
 }
 
@@ -1272,10 +1276,12 @@ Commands:
   wipe-data   DELETE app.db from the Azure Files share. Destructive; required
               after non-forward-compatible schema changes when there is no
               production data to migrate. Prompts for typed share-name confirm.
-  teardown    Remove the resource group, Entra apps, and CI secrets
+  teardown    Remove the resource group, Entra app, and config repo variables
   help        This message
 
 Options:
+  --config DIR     Deployment directory in a config repo (DIR/deploy.env,
+                   DIR/instance.json). Required for update.
   -y, --yes        Assume yes / use defaults at every prompt
   --dry-run        Print az/gh commands without executing
   --subscription S Override Azure subscription for this invocation
@@ -1291,6 +1297,7 @@ while [[ $# -gt 0 ]]; do
     -y|--yes) ASSUME_YES=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --subscription) SUBSCRIPTION="$2"; shift ;;
+    --config) CONFIG_DIR="${2:a}"; ENV_FILE="${CONFIG_DIR}/deploy.env"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) err "Unknown option: $1"; usage; exit 2 ;;
   esac

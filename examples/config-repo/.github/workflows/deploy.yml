@@ -1,0 +1,61 @@
+name: Deploy (GitOps)
+
+# Merging to main deploys. template.lock pins the engine release; example/
+# holds this deployment's targets (deploy.env) and brand (instance.json).
+# Copy the job and change UNIT/environment to add another deployment.
+#
+# Azure access is OIDC federated to a managed identity, scoped to the
+# GitHub Environment below (subject repo:<owner>/<repo>:environment:example).
+# No secret is stored in this repository.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "example/**"
+      - "template.lock"
+      - "tools/lock.sh"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-26.04
+    environment: example
+    concurrency:
+      group: deploy-example
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    timeout-minutes: 45
+    env:
+      UNIT: example
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify template.lock
+        id: lock
+        run: tools/lock.sh template.lock
+      - name: Check out the pinned engine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: pu-shd/nlcomposer
+          ref: ${{ steps.lock.outputs.sha }}
+          path: .engine
+          persist-credentials: false
+      - name: Azure login (OIDC, no stored credential)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy
+        env:
+          ENGINE_ROOT: .engine
+          ENGINE_REF: ${{ steps.lock.outputs.ref }}
+        run: bash .engine/scripts/ci-deploy.sh --config "$UNIT" --engine-ref "$ENGINE_REF"

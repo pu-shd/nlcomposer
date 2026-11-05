@@ -1,0 +1,45 @@
+name: CI
+
+# Tests (in Docker) and workflow lint on every PR and on main. `test` is the
+# required status check for branch protection; it is never path-filtered,
+# because a skipped required check blocks a PR forever.
+#
+# The engine holds no deployment credentials: nothing here can reach Azure.
+# Deployments happen from each unit's config repo (see examples/config-repo).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build test image
+        run: docker build -t nlcomposer-test .
+      - name: Run test suite in Docker
+        # zsh for the deploy.sh tests; NLC_FAIL_ON_SKIP turns any skipped test into a failure.
+        run: |
+          docker run --rm -e NLC_FAIL_ON_SKIP=1 nlcomposer-test sh -c \
+            'apt-get update -qq && apt-get install -y -qq --no-install-recommends zsh >/dev/null && pytest -q -rs'
+
+  actionlint:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint engine and config-repo template workflows
+        run: |
+          docker run --rm -v "$PWD":/repo -w /repo \
+            rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -config-file .github/actionlint.yaml \
+            .github/workflows/*.yml examples/config-repo/.github/workflows/*.yml

@@ -1,0 +1,69 @@
+name: Engine update check
+
+# Daily: if pu-shd/nlcomposer has a newer release, open a PR that changes only
+# template.lock, then dispatch Validate on it (the required check). Merging
+# the PR deploys. Requires "Allow GitHub Actions to create and approve pull
+# requests" in this repository's Actions settings.
+
+on:
+  schedule:
+    - cron: "23 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compare with the latest engine release
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$(gh api repos/pu-shd/nlcomposer/releases/latest --jq .tag_name)"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::latest release tag '$tag' is not vX.Y.Z"; exit 1; }
+          current="$(python3 -c 'import json; print(json.load(open("template.lock"))["ref"])')"
+          newest="$(printf '%s\n%s\n' "$current" "$tag" | sort -V | tail -n 1)"
+          if [ "$tag" = "$current" ] || [ "$newest" != "$tag" ]; then
+            echo "Up to date: pinned $current, latest release $tag." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh release download "$tag" -R pu-shd/nlcomposer -p template.lock -O "$RUNNER_TEMP/template.lock"
+          cp "$RUNNER_TEMP/template.lock" template.lock
+          tools/lock.sh template.lock >/dev/null
+          sha="$(python3 -c 'import json; print(json.load(open("template.lock"))["sha"])')"
+          status="$(gh api "repos/pu-shd/nlcomposer/compare/$sha...main" --jq .status)"
+          case "$status" in ahead|identical) ;; *) echo "::error::$tag ($sha) is not on pu-shd/nlcomposer main ($status)"; exit 1 ;; esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Open the PR and dispatch Validate
+        if: steps.latest.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          set -euo pipefail
+          branch="auto/engine-$TAG"
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "PR for $branch already open." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add template.lock
+          git commit -m "Pin engine $TAG"
+          git push --force -u origin "$branch"
+          gh pr create --base main --head "$branch" --title "Pin engine $TAG" --body \
+            "Release notes: https://github.com/pu-shd/nlcomposer/releases/tag/$TAG
+
+          Changes only \`template.lock\`. **Merging deploys.**"
+          gh workflow run validate.yml --ref "$branch"

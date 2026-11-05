@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -296,3 +297,101 @@ def test_principals_prompt_round_trips_through_env_file(tmp_path):
     assert "alice@example.com,Engineering Team" in combined
     # Re-saved env file preserves the value verbatim.
     assert 'AZ_ENTRA_PRINCIPALS="alice@example.com,Engineering Team"' in env_path.read_text()
+
+# ───────── Config-repo layout + managed-identity CI wiring ───────────
+
+
+_MOCK_CLI = """#!/usr/bin/env bash
+printf '%s %s\\n' "$(basename "$0")" "$*" >> "$MOCK_LOG"
+case "$(basename "$0") $1 $2" in
+  "az group exists") echo true ;;
+esac
+exit 0
+"""
+
+
+def _mock_path(tmp_path: Path) -> dict:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name in ("az", "gh"):
+        p = bin_dir / name
+        p.write_text(_MOCK_CLI)
+        p.chmod(0o755)
+    return {
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        "MOCK_LOG": str(tmp_path / "calls.log"),
+    }
+
+
+def _unit_dir(tmp_path: Path) -> Path:
+    unit = tmp_path / "cfgrepo" / "unitx"
+    unit.mkdir(parents=True)
+    (unit / "deploy.env").write_text("\n".join([
+        'AZ_SUBSCRIPTION="sub-unitx"',
+        'AZ_LOCATION="canadacentral"',
+        'AZ_RG="rg-unitx"',
+        'AZ_STORAGE="stunitx"',
+        'AZ_FILE_SHARE="unitx-data"',
+        'AZ_ACR="acrunitx"',
+        'AZ_ACA_ENV="cae-unitx"',
+        'AZ_ACA_APP="unitx-app"',
+        'AZ_IMAGE_TAG="v1"',
+        'AZ_ENTRA_APP="UnitX Auth"',
+        'AZ_ENTRA_PRINCIPALS=""',
+        'AZ_ENTRA_MINIMAL_PERMS="true"',
+        'AZ_CUSTOM_DOMAIN="news.unitx.example.edu"',
+        'AZ_CI_IDENTITY="id-unitx-ci"',
+        'GH_REPO="pu-unitx/nlcomposer-config"',
+        'GH_ENVIRONMENT="unitx"',
+        "",
+    ]))
+    (unit / "instance.json").write_text('{"default_template": {"name": "UnitX Default"}}')
+    return unit
+
+
+def test_config_flag_reads_unit_deploy_env(tmp_path):
+    unit = _unit_dir(tmp_path)
+    res = _run_deploy(["setup", "--config", str(unit), "--yes", "--dry-run"], env=_mock_path(tmp_path))
+    out = res.stdout + res.stderr
+    for needle in ("rg-unitx", "id-unitx-ci", "pu-unitx/nlcomposer-config", "environment unitx",
+                   "news.unitx.example.edu"):
+        assert needle in out, f"{needle!r} missing:\n{out}"
+    assert "Target Suffix" not in out
+
+
+def test_setup_wires_ci_as_managed_identity_scoped_to_environment(tmp_path):
+    unit = _unit_dir(tmp_path)
+    res = _run_deploy(["setup", "--config", str(unit), "--yes", "--dry-run"], env=_mock_path(tmp_path))
+    out = res.stdout + res.stderr
+    assert res.returncode == 0, out
+    assert "az identity create -n id-unitx-ci -g rg-unitx" in out
+    assert "--subject repo:pu-unitx/nlcomposer-config:environment:unitx" in out
+    assert "gh variable set AZURE_CLIENT_ID --repo pu-unitx/nlcomposer-config" in out
+    assert "repos/pu-unitx/nlcomposer-config/environments/unitx" in out
+    # The old path: an app-registration SP, branch-scoped subject, secrets.
+    assert "gh secret set" not in out
+    assert "az ad app create --display-name sp-" not in out
+    assert "ref:refs/heads/main" not in out
+
+
+def test_update_requires_config_dir(tmp_path):
+    env_file = tmp_path / "deploy.env"
+    env_file.write_text('AZ_RG="rg"\n')
+    res = _run_deploy(["update", "--yes", "--dry-run"],
+                      env={**_mock_path(tmp_path), "DEPLOY_ENV_FILE": str(env_file)})
+    assert res.returncode == 2
+    assert "--config" in res.stderr
+
+
+def test_update_delegates_to_ci_deploy(tmp_path):
+    unit = _unit_dir(tmp_path)
+    env = {
+        **_mock_path(tmp_path),
+        "ENGINE_SHA": "0123456789abcdef0123456789abcdef01234567",
+        "NLC_PYTHON": sys.executable,
+    }
+    res = _run_deploy(["update", "--config", str(unit), "--yes", "--dry-run"], env=env)
+    out = res.stdout + res.stderr
+    assert res.returncode == 0, out
+    assert "acrunitx.azurecr.io/unitx-app:dev-0123456" in out
+    assert "dry-run: would build" in out
