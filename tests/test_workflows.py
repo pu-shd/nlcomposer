@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -160,24 +161,37 @@ def test_validate_is_check_only_and_runs_on_prs():
     assert "--check-only" in r and "tools/lock.sh" in r
 
 
-def test_update_check_only_rewrites_template_lock_and_dispatches_validate():
-    wf = load(CFG_WF / "update-check.yml")
-    r = runs(wf, "check")
-    adds = re.findall(r"git add (.+)", r)
-    assert adds == ["template.lock"]
-    assert "gh workflow run validate.yml" in r
+def test_update_check_only_rewrites_template_lock():
+    r = runs(load(CFG_WF / "update-check.yml"), "check")
+    assert re.findall(r"git add (.+)", r) == ["template.lock"]
     assert "compare/" in r  # release commit must be on engine main
     assert "sort -V" in r  # never downgrade
+
+
+def test_update_check_reports_validate_as_a_commit_status():
+    """Checks from workflow_dispatch runs are not counted toward a PR, and the
+    bot PR's own pull_request run waits for approval, so the update check
+    validates the new pin itself and reports the required `validate` context
+    as a commit status on the PR head (statuses count however produced)."""
+    wf = load(CFG_WF / "update-check.yml")
+    r = runs(wf, "check")
+    assert "--check-only" in r and "tools/lock.sh" in r
+    assert re.search(r"statuses/\$\{?sha\}?|statuses/\$head", r), r
+    assert "context=validate" in r and "state=success" in r
+    assert "gh workflow run" not in r
     assert wf["jobs"]["check"]["permissions"] == {
-        "contents": "write", "pull-requests": "write", "actions": "write",
+        "contents": "write", "pull-requests": "write", "statuses": "write",
     }
+    st = steps(wf, "check")
+    engine = next(s for s in st if s.get("with", {}).get("repository") == "pu-shd/nlcomposer")
+    assert engine["with"]["ref"] == "${{ steps.latest.outputs.sha }}"
 
 
 def test_example_unit_config_passes_engine_validation(tmp_path):
     r = subprocess.run(
         ["bash", str(REPO_ROOT / "scripts" / "ci-deploy.sh"),
          "--config", str(CFG / "example"), "--engine-ref", "v0.0.0", "--check-only"],
-        env={**os.environ, "NLC_PYTHON": os.environ.get("PYTHON", "python3"),
+        env={**os.environ, "NLC_PYTHON": sys.executable,
              "ENGINE_SHA": "0" * 40, "ENGINE_ROOT": str(REPO_ROOT)},
         capture_output=True, text=True, timeout=60,
     )

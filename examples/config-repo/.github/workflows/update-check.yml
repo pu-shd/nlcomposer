@@ -1,9 +1,12 @@
 name: Engine update check
 
-# Daily: if pu-shd/nlcomposer has a newer release, open a PR that changes only
-# template.lock, then dispatch Validate on it (the required check). Merging
-# the PR deploys. Requires "Allow GitHub Actions to create and approve pull
-# requests" in this repository's Actions settings.
+# Daily: if pu-shd/nlcomposer has a newer release, validate this repo's config
+# against it, open a PR that changes only template.lock, and report the
+# required `validate` check on that PR as a commit status. (Check runs from
+# workflow_dispatch don't count toward a PR, and the bot PR's own
+# pull_request run waits for approval, so the check is reported here.)
+# Merging the PR deploys. Requires "Allow GitHub Actions to create and
+# approve pull requests" in this repository's Actions settings.
 
 on:
   schedule:
@@ -19,7 +22,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      actions: write
+      statuses: write
+    env:
+      UNIT: example
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Compare with the latest engine release
@@ -43,8 +48,24 @@ jobs:
           sha="$(python3 -c 'import json; print(json.load(open("template.lock"))["sha"])')"
           status="$(gh api "repos/pu-shd/nlcomposer/compare/$sha...main" --jq .status)"
           case "$status" in ahead|identical) ;; *) echo "::error::$tag ($sha) is not on pu-shd/nlcomposer main ($status)"; exit 1 ;; esac
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Open the PR and dispatch Validate
+          { echo "tag=$tag"; echo "sha=$sha"; } >> "$GITHUB_OUTPUT"
+      - name: Check out the new engine release
+        if: steps.latest.outputs.tag != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: pu-shd/nlcomposer
+          ref: ${{ steps.latest.outputs.sha }}
+          path: .engine
+          persist-credentials: false
+      - name: Validate this config against it
+        if: steps.latest.outputs.tag != ''
+        env:
+          ENGINE_ROOT: .engine
+          ENGINE_REF: ${{ steps.latest.outputs.tag }}
+        run: |
+          tools/lock.sh template.lock
+          bash .engine/scripts/ci-deploy.sh --config "$UNIT" --engine-ref "$ENGINE_REF" --check-only
+      - name: Open the PR and report the validate check
         if: steps.latest.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
@@ -62,8 +83,12 @@ jobs:
           git add template.lock
           git commit -m "Pin engine $TAG"
           git push --force -u origin "$branch"
+          head="$(git rev-parse HEAD)"
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$head" \
+            -f state=success -f context=validate \
+            -f description="template.lock and $UNIT config validated against $TAG" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
           gh pr create --base main --head "$branch" --title "Pin engine $TAG" --body \
             "Release notes: https://github.com/pu-shd/nlcomposer/releases/tag/$TAG
 
-          Changes only \`template.lock\`. **Merging deploys.**"
-          gh workflow run validate.yml --ref "$branch"
+          Changes only \`template.lock\`; validated against $TAG by this update check. **Merging deploys.**"
