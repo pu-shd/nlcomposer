@@ -1823,7 +1823,7 @@
     }
     // issue_year is no longer a form field — derive it from the issue
     // date and the configured initial publication date so the masthead
-    // line ("Nth year of SmartDrivingCars eLetter") stays accurate as
+    // line ("Nth year of <newsletter> eLetter") stays accurate as
     // the publication ages. If the setting is unset (fresh install) we
     // fall back to "1st year" so the preview keeps rendering; the
     // user-facing display flags this with a tooltip pointing at Settings.

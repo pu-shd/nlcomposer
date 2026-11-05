@@ -46,10 +46,9 @@ def test_settings_model_has_sane_defaults():
     assert s.from_name == ""
     assert s.from_email == ""
     assert s.to_email == ""
-    # Inception Date defaults to the historical SmartDrivingCars launch
-    # so a brand-new install renders the right "Nth year" without first
-    # making the user open Settings.
-    assert s.initial_publication_date == date(2013, 1, 1)
+    # Inception Date is per-newsletter: neutral (unset) in the engine,
+    # supplied by a deployment's instance config or entered in Settings.
+    assert s.initial_publication_date is None
 
 
 def test_settings_model_accepts_initial_publication_date():

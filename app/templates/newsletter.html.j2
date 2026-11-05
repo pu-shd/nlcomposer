@@ -177,8 +177,8 @@
   <tr><td class="footer-pad" style="padding:32px 16px 24px 16px;border-top:1px solid #ddd;font-size:12px;color:#666;text-align:center;">
     {%- if issue.footer_html %}
       {{ issue.footer_html | safe }}
-    {%- else %}
-      <p style="margin:0 0 6px 0;">This newsletter is maintained by the newsletter editor.</p>
+    {%- elif footer_fallback_html %}
+      {{ footer_fallback_html | safe }}
     {%- endif %}
     {%- if issue.unsubscribe_url %}
       <p style="margin:0;">To unsubscribe from this list, click <a href="{{ issue.unsubscribe_url }}" style="color:#1a4480;">here</a>.</p>

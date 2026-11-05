@@ -100,12 +100,12 @@ def validate_youtube_url(url: str) -> str:
 
 
 def fetch_channel_by_handle(handle: str) -> Optional[dict]:
-    """Find a channel by its handle (e.g. @smartdrivingcars)."""
+    """Find a channel by its handle (e.g. @examplechannel)."""
     youtube = get_youtube_client()
     try:
         # Handles started with @ are relatively new in the API. 
         # forHandle works for the old custom URLs, but let's try it.
-        # If it's a handle like @smartdrivingcars, we might need to search or use the handle parameter.
+        # If it's a handle like @examplechannel, we might need to search or use the handle parameter.
         request = youtube.channels().list(
             part="snippet,contentDetails",
             forHandle=handle

@@ -1,6 +1,6 @@
 """Data access layer for YouTube channels and episodes.
 
-Channels are managed by handle (e.g. @smartdrivingcars) and their recent
+Channels are managed by handle (e.g. @examplechannel) and their recent
 uploads are cached in the ``youtube_episodes`` table.
 """
 

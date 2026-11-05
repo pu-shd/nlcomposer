@@ -192,69 +192,46 @@ def delete_template(conn: sqlite3.Connection, template_id: int) -> bool:
 # ───────── Builtin seed ──────────────────────────────────────────────
 
 
-_DEFAULT_TEMPLATE_NAME = "SmartDrivingCars Default"
-_DEFAULT_TEMPLATE_DESCRIPTION = (
-    "Empty starter shaped like a typical SmartDrivingCars issue: header, "
-    "envelope, podcast section, sponsor/conference static blocks."
-)
-
-
 def _default_template_payload() -> dict[str, Any]:
-    """The starter payload — a partial NewsletterIssue, no articles, no date.
+    """The neutral starter payload — a partial NewsletterIssue, no content.
 
-    Numeric fields (``issue_year``, ``issue_number``) are present so the
-    composer's number inputs land on a sensible value; the user is
-    expected to bump them per issue. ``issue_date`` is omitted on purpose
-    so the front-end's "today" seed wins on first load.
+    A deployment's instance config (``default_template.payload``) is merged
+    over this, so units add their own envelope, static blocks and numbering
+    without the engine carrying any one newsletter's brand. ``issue_date`` is
+    omitted on purpose so the front-end's "today" seed wins on first load.
     """
     return {
-        "issue_year": 14,
+        "issue_year": 1,
         "issue_number": 1,
         "issue_title": "NewIssue",
-        "from_name": "Newsletter Editor",
-        "from_email": "editor@example.edu",
-        "to_email": "subscribers@example.edu",
         "articles": [],
-        "static_blocks": [
-            {
-                "title": "The Real Case for Driverless Mobility",
-                "html": (
-                    "<p>Narrated by Fred Fishkin, available now on "
-                    '<a href="https://www.audible.com/">Audible</a>.</p>'
-                ),
-                "enabled": True,
-            },
-            {
-                "title": "2026 Automated Transportation Symposium (ATS)",
-                "html": (
-                    "<p>July 27-30, 2026, San Diego, CA. "
-                    '<a href="https://www.cvent.com/">Call for papers</a>.</p>'
-                ),
-                "enabled": True,
-            },
-        ],
+        "static_blocks": [],
         "highlights": [],
-        "unsubscribe_url": "https://newsletter.example.edu/newsletter",
     }
 
 
 def seed_default_templates(conn: sqlite3.Connection) -> None:
     """Idempotent: insert the built-in starter if it isn't already present.
 
-    Matches by ``name`` (which is UNIQUE in the schema). Does not touch
-    user edits to an existing builtin row — only fills in a missing slot.
+    Name, description and payload overrides come from the deployment's
+    instance config (``default_template``). Matches by ``name`` (UNIQUE in
+    the schema), so an existing deployment keeps its starter as long as its
+    config names it. Never touches user edits to an existing builtin row.
     """
+    from .instance import get_instance_config
+
+    tmpl = get_instance_config().default_template
     row = conn.execute(
-        "SELECT id FROM templates WHERE name = ?", (_DEFAULT_TEMPLATE_NAME,)
+        "SELECT id FROM templates WHERE name = ?", (tmpl.name,)
     ).fetchone()
     if row is not None:
         return
     create_template(
         conn,
         TemplateCreate(
-            name=_DEFAULT_TEMPLATE_NAME,
-            description=_DEFAULT_TEMPLATE_DESCRIPTION,
-            payload=_default_template_payload(),
+            name=tmpl.name,
+            description=tmpl.description,
+            payload={**_default_template_payload(), **tmpl.payload},
         ),
         builtin=True,
     )

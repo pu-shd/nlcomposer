@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date
 
 import pytest
@@ -40,6 +41,18 @@ def _isolate_data_dir(tmp_path, monkeypatch):
     which calls ``init_db`` against the developer's working tree.
     """
     monkeypatch.setenv("SDC_DATA_DIR", str(tmp_path / "data"))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_instance_config(monkeypatch):
+    """Every test starts with no deployment instance config (neutral engine)."""
+    from app import instance
+
+    monkeypatch.delenv("NLC_INSTANCE_JSON", raising=False)
+    monkeypatch.delenv("NLC_INSTANCE_FILE", raising=False)
+    instance.reset_instance_config_cache()
+    yield
+    instance.reset_instance_config_cache()
 
 
 @pytest.fixture
@@ -146,3 +159,18 @@ def sample_issue() -> NewsletterIssue:
         ],
         unsubscribe_url="https://smartdrivingcar.com/unsubscribe",
     )
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """In CI (NLC_FAIL_ON_SKIP=1) a skipped test fails the run.
+
+    Skips are silent; a suite that quietly skips the deploy-script tests
+    because zsh is missing must not report success.
+    """
+    if os.environ.get("NLC_FAIL_ON_SKIP") != "1":
+        return
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    skipped = len(reporter.stats.get("skipped", [])) if reporter else 0
+    if skipped:
+        print(f"\nNLC_FAIL_ON_SKIP=1: {skipped} test(s) skipped; failing the run.")
+        session.exitstatus = 1

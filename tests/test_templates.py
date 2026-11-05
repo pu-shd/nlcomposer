@@ -159,7 +159,7 @@ def test_seed_is_idempotent():
         conn.close()
     builtins = [r for r in rows if r.builtin]
     assert len(builtins) == 1
-    assert builtins[0].name == "SmartDrivingCars Default"
+    assert builtins[0].name == "Default"
 
 
 # ───────── HTTP endpoints ────────────────────────────────────────────
@@ -170,8 +170,8 @@ def test_list_includes_seeded_default(client: TestClient):
     assert res.status_code == 200
     body = res.json()
     names = [t["name"] for t in body]
-    assert "SmartDrivingCars Default" in names
-    seeded = next(t for t in body if t["name"] == "SmartDrivingCars Default")
+    assert "Default" in names
+    seeded = next(t for t in body if t["name"] == "Default")
     assert seeded["builtin"] is True
 
 
@@ -181,7 +181,7 @@ def test_get_returns_full_payload(client: TestClient):
     res = client.get(f"/api/templates/{seeded['id']}")
     assert res.status_code == 200
     body = res.json()
-    assert body["name"] == "SmartDrivingCars Default"
+    assert body["name"] == "Default"
     assert isinstance(body["payload"], dict)
     assert "static_blocks" in body["payload"]
 
@@ -216,7 +216,7 @@ def test_create_duplicate_name_returns_409(client: TestClient):
 def test_create_collision_with_builtin_returns_409(client: TestClient):
     res = client.post(
         "/api/templates",
-        json={"name": "SmartDrivingCars Default", "payload": {}},
+        json={"name": "Default", "payload": {}},
     )
     assert res.status_code == 409
 

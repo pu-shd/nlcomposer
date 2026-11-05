@@ -58,8 +58,8 @@
 {% endif -%}
 {% if issue.footer_html -%}
 {{ issue.footer_html | striptags }}
-{% else -%}
-This newsletter is maintained by the newsletter editor.
+{% elif footer_fallback_html -%}
+{{ footer_fallback_html | striptags }}
 {% endif -%}
 {% if issue.unsubscribe_url -%}
 Unsubscribe: {{ issue.unsubscribe_url }}

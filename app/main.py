@@ -31,6 +31,7 @@ from .controllers import (
     templates as templates_ctrl,
 )
 from .db import connect, init_db
+from .instance import get_instance_config
 from .template_store import seed_default_templates
 
 
@@ -39,6 +40,9 @@ _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Raises InstanceConfigError on a bad deployment config, so the
+    # container stops instead of serving a half-configured newsletter.
+    get_instance_config()
     conn = connect()
     try:
         init_db(conn)

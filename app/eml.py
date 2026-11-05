@@ -36,12 +36,22 @@ _env = Environment(
 )
 
 
+def _footer_fallback_html() -> str | None:
+    from .instance import get_instance_config
+
+    return get_instance_config().footer_fallback_html
+
+
 def render_html(issue: NewsletterIssue) -> str:
-    return _env.get_template("newsletter.html.j2").render(issue=issue)
+    return _env.get_template("newsletter.html.j2").render(
+        issue=issue, footer_fallback_html=_footer_fallback_html()
+    )
 
 
 def render_text(issue: NewsletterIssue) -> str:
-    return _env.get_template("newsletter.txt.j2").render(issue=issue)
+    return _env.get_template("newsletter.txt.j2").render(
+        issue=issue, footer_fallback_html=_footer_fallback_html()
+    )
 
 
 def build_eml(

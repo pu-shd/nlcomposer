@@ -1,7 +1,7 @@
-"""Data models for a SmartDrivingCars newsletter issue.
+"""Data models for a newsletter issue.
 
 The shape mirrors the patterns observed in the historical issue corpus
-(`smartdrivingcar/_newsletters/<slug>/index.md`). Each section is optional
+(a static-site archive of one Markdown file per issue). Each section is optional
 so partial drafts validate, but a fully-populated issue covers every block
 seen in production newsletters.
 """
@@ -355,9 +355,10 @@ class NewsletterIssue(BaseModel):
         description="Optional intro paragraph(s) above the first article. Raw HTML.",
     )
 
-    # Email envelope (defaults are sensible for the SmartDrivingCars list)
-    from_name: str = "SmartDrivingCars"
-    from_email: str = "newsletter@smartdrivingcar.com"
+    # Email envelope. Neutral placeholders; real values come from Settings
+    # (seeded per deployment by the instance config).
+    from_name: str = "Newsletter"
+    from_email: str = "newsletter@example.com"
     to_email: str = "subscriber@example.com"
     reply_to: Optional[str] = None
     subject: Optional[str] = Field(

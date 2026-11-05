@@ -81,14 +81,14 @@ class AppSettings(BaseModel):
 
     # Issue numbering
     initial_publication_date: Optional[_date] = Field(
-        default=_date(2013, 1, 1),
+        default=None,
         description=(
             "Date the newsletter first launched ('Inception Date' in the "
             "settings UI). The composer derives an issue's enumerated "
             "year (e.g. '14th year') from "
             "(issue_date − initial_publication_date), so the user no "
-            "longer enters a Year value per issue. Default of 2013-01-01 "
-            "matches the historical SmartDrivingCars launch."
+            "longer enters a Year value per issue. Unset by default; a "
+            "deployment supplies it via instance settings_defaults."
         ),
     )
 
@@ -206,15 +206,24 @@ class AppSettings(BaseModel):
 
 
 def load_settings(conn: sqlite3.Connection) -> AppSettings:
-    """Return the stored settings, or model defaults if no row exists."""
+    """Return the effective settings.
+
+    Precedence: engine defaults < the deployment's instance
+    ``settings_defaults`` < the row saved from the Settings dialog. A saved
+    row that predates a setting lacks its key, so the instance default
+    fills it.
+    """
+    from .instance import get_instance_config
+
+    defaults = dict(get_instance_config().settings_defaults)
     row = conn.execute("SELECT payload FROM settings WHERE id = 1").fetchone()
     if row is None:
-        return AppSettings()
+        return AppSettings.model_validate(defaults)
     try:
         data = json.loads(row["payload"])
     except (TypeError, ValueError, json.JSONDecodeError):
-        return AppSettings()
-    return AppSettings.model_validate(data)
+        return AppSettings.model_validate(defaults)
+    return AppSettings.model_validate({**defaults, **data})
 
 
 def save_settings(conn: sqlite3.Connection, settings: AppSettings) -> AppSettings:
