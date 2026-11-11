@@ -2,15 +2,15 @@ name: Validate
 
 # Required status check. Validates template.lock against the engine's tag and
 # this deployment's config against the pinned engine, with no Azure access.
-# The update check dispatches this on its PR branch, because PRs opened with
-# the default token do not trigger pull_request workflows.
+# Engine bump PRs get this check as a commit status from the update check.
+# No workflow_dispatch: a manual run on main would execute engine code with
+# write access to the default-branch cache (CodeQL cache-poisoning).
 
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
