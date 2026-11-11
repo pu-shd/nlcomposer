@@ -156,9 +156,18 @@ def test_deploy_checks_out_engine_at_verified_lock_sha():
 
 def test_validate_is_check_only_and_runs_on_prs():
     wf = load(CFG_WF / "validate.yml")
-    assert "pull_request" in wf["on"] and "workflow_dispatch" in wf["on"]
+    assert "pull_request" in wf["on"]
     r = runs(wf, "validate")
     assert "--check-only" in r and "tools/lock.sh" in r
+
+
+def test_validate_cannot_be_dispatched():
+    """A manual run on main would execute engine code with write access to the
+    default-branch cache (CodeQL actions/cache-poisoning/poisonable-step).
+    Nothing needs to dispatch it: the update check reports `validate` itself."""
+    wf = load(CFG_WF / "validate.yml")
+    assert set(wf["on"]) == {"pull_request", "push"}, wf["on"]
+    assert wf["on"]["push"]["branches"] == ["main"]
 
 
 def test_update_check_only_rewrites_template_lock():
